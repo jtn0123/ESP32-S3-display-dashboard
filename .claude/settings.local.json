@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(arduino-cli board:*)",
+      "Bash(arduino-cli upload:*)",
+      "Bash(arduino-cli monitor:*)",
+      "Bash(timeout 10 arduino-cli upload:*)"
+    ],
+    "deny": []
+  }
+}

@@ -1,0 +1,29 @@
+# WiFi Configuration Files (contains sensitive credentials)
+dashboard/wifi_config.h
+**/wifi_config.h
+
+# Arduino/ESP32 build files
+*.bin
+*.elf
+*.map
+build/
+.pio/
+.vscode/
+*.tmp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE files
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+*.bak
+*.orig

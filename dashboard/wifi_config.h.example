@@ -1,0 +1,15 @@
+// WiFi Configuration Template
+// Copy this file to wifi_config.h and enter your WiFi credentials
+
+#ifndef WIFI_CONFIG_H
+#define WIFI_CONFIG_H
+
+// WiFi Network Configuration
+#define WIFI_SSID "YourNetworkName"
+#define WIFI_PASSWORD "YourPassword"
+
+// WiFi Connection Settings
+#define WIFI_TIMEOUT_SECONDS 30
+#define WIFI_RETRY_ATTEMPTS 3
+
+#endif
