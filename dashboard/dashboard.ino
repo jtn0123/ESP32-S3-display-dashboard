@@ -2,8 +2,13 @@
 // Uses only essential functions to reduce program size
 
 #include <WiFi.h>
+#include <ArduinoOTA.h>       // OTA updates over WiFi
+#include <ESPmDNS.h>          // mDNS for OTA discovery
+#include <WebServer.h>        // Lightweight web server
+#include <Update.h>           // For OTA updates
 #include <Preferences.h>
 #include "soc/gpio_struct.h"  // For direct GPIO register access
+#include "driver/gpio.h"      // For gpio_pullup_dis/gpio_pulldown_dis
 #include "wifi_config.h"      // WiFi credentials (not committed to git)
 
 // EXPANDED DISPLAY AREA - Using maximum usable coordinates (50% wider!)
@@ -35,11 +40,14 @@
 
 // Battery detection
 #define BATTERY_PIN  4   // GPIO4 for battery voltage
-#define USB_DETECT_THRESHOLD 4500  // mV threshold for USB power
-#define CHARGING_THRESHOLD 4300    // mV threshold to detect charging
+#define USB_DETECT_THRESHOLD 4400  // mV threshold for USB power (lowered for better detection)
+#define CHARGING_THRESHOLD 4250    // mV threshold to detect charging (more reasonable)
+#define NO_BATTERY_ADC_MIN 100     // ADC values below this indicate no battery
+#define NO_BATTERY_ADC_MAX 3900    // ADC values above this indicate floating pin
+#define MAX_BATTERY_VOLTAGE 4300   // mV - maximum reasonable battery voltage
 
 // Version constant - UPDATE THIS WHEN MAKING CHANGES
-#define DASHBOARD_VERSION "2.0-EASY-EXIT"
+#define DASHBOARD_VERSION "3.9-ADC-FIX"
 
 // MODERN COLOR PALETTE - Enhanced semantic colors
 #define RED        0x07FF  // Send YELLOW to get RED
@@ -225,6 +233,261 @@ void applyTheme(int themeIndex) {
 
 Preferences preferences;
 
+// OTA Update variables
+bool otaInProgress = false;
+int otaProgress = 0;
+
+// Lightweight Web Server for OTA
+WebServer server(80);
+bool webOtaInProgress = false;
+
+// OTA setup function
+void setupOTA() {
+  if (!WiFi.isConnected()) {
+    Serial.println("OTA: WiFi not connected, skipping OTA setup");
+    return;
+  }
+  
+  // CRITICAL: Start mDNS first for ESP32-S3
+  if (!MDNS.begin("esp32-dashboard")) {
+    Serial.println("OTA: Error starting mDNS");
+  } else {
+    Serial.println("OTA: mDNS responder started");
+  }
+  
+  // Add a delay for network stack to stabilize
+  delay(500);
+  
+  // Set hostname (customize as needed)
+  ArduinoOTA.setHostname("esp32-dashboard");
+  
+  // Set OTA port explicitly
+  ArduinoOTA.setPort(3232);
+  
+  // Set password for OTA updates (optional but recommended)
+  // ArduinoOTA.setPassword("your-ota-password");
+  
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else {  // U_SPIFFS
+      type = "filesystem";
+    }
+    Serial.println("OTA: Start updating " + type);
+    otaInProgress = true;
+    
+    // Clear screen and show OTA message
+    fillScreen(BLACK);
+    drawTextLabel(50, 80, "OTA UPDATE", TEXT_PRIMARY);
+    drawTextLabel(50, 120, "IN PROGRESS...", TEXT_SECONDARY);
+  });
+  
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nOTA: Update complete!");
+    otaInProgress = false;
+    fillScreen(BLACK);
+    drawTextLabel(50, 80, "UPDATE COMPLETE", GREEN);
+    drawTextLabel(50, 120, "RESTARTING...", TEXT_SECONDARY);
+    delay(1000);
+  });
+  
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    int percentage = (progress / (total / 100));
+    Serial.printf("OTA Progress: %u%%\r", percentage);
+    otaProgress = percentage;
+    
+    // Draw progress bar
+    fillRect(40, 150, 220, 20, BORDER_COLOR);  // Background
+    fillRect(42, 152, (216 * percentage) / 100, 16, PRIMARY_GREEN);  // Progress
+    
+    // Draw percentage text
+    char buf[10];
+    snprintf(buf, sizeof(buf), "%d%%", percentage);
+    drawTextLabel(130, 180, buf, TEXT_PRIMARY);
+  });
+  
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA Error[%u]: ", error);
+    String errorMsg = "Unknown";
+    if (error == OTA_AUTH_ERROR) errorMsg = "Auth Failed";
+    else if (error == OTA_BEGIN_ERROR) errorMsg = "Begin Failed";
+    else if (error == OTA_CONNECT_ERROR) errorMsg = "Connect Failed";
+    else if (error == OTA_RECEIVE_ERROR) errorMsg = "Receive Failed";
+    else if (error == OTA_END_ERROR) errorMsg = "End Failed";
+    
+    Serial.println(errorMsg);
+    otaInProgress = false;
+    
+    // Show error on screen
+    fillScreen(BLACK);
+    drawTextLabel(50, 80, "OTA ERROR", PRIMARY_RED);
+    drawTextLabel(50, 120, errorMsg.c_str(), TEXT_SECONDARY);
+    delay(3000);
+  });
+  
+  ArduinoOTA.begin();
+  
+  // Add mDNS service advertising for better discovery
+  MDNS.addService("arduino", "tcp", 3232);
+  
+  Serial.println("OTA: Ready for updates");
+  Serial.print("OTA: Hostname: ");
+  Serial.println(ArduinoOTA.getHostname());
+  Serial.print("OTA: IP Address: ");
+  Serial.println(WiFi.localIP());
+  Serial.println("OTA: Port: 3232");
+  
+  // Test if OTA is really running
+  delay(100);
+  Serial.println("OTA: Service started successfully");
+}
+
+// Minimal Web OTA Implementation
+void setupWebOTA() {
+  if (!WiFi.isConnected()) return;
+  
+  // Simple upload page - minimal HTML
+  server.on("/", HTTP_GET, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/html", 
+      "<form method='POST' action='/update' enctype='multipart/form-data'>"
+      "<input type='file' name='update'>"
+      "<input type='submit' value='Update'>"
+      "</form>");
+  });
+  
+  // Handle upload
+  server.on("/update", HTTP_POST, 
+    // Upload done
+    []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+      delay(1000);
+      ESP.restart();
+    },
+    // Upload in progress
+    []() {
+      HTTPUpload& upload = server.upload();
+      if (upload.status == UPLOAD_FILE_START) {
+        Serial.printf("Update: %s\n", upload.filename.c_str());
+        webOtaInProgress = true;
+        
+        // Initial display will be drawn on first chunk
+        
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+          Update.printError(Serial);
+        }
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+          Update.printError(Serial);
+        }
+        
+        // Track total bytes received
+        static size_t totalReceived = 0;
+        static unsigned long startTime = 0;
+        static bool firstChunk = true;
+        
+        if (firstChunk) {
+          startTime = millis();
+          totalReceived = 0;
+          firstChunk = false;
+          
+          // Clear screen and set up layout
+          fillScreen(BLACK);
+          
+          // Title box at top
+          fillRect(60, 30, 180, 30, SURFACE_DARK);
+          drawTextLabel(90, 40, "WEB UPDATE", PRIMARY_GREEN);
+          
+          // Draw progress bar frame (centered)
+          fillRect(40, 100, 220, 24, BORDER_COLOR);
+          fillRect(42, 102, 216, 20, BLACK);
+        }
+        
+        totalReceived += upload.currentSize;
+        
+        // Update display with better spacing
+        static unsigned long lastProgressUpdate = 0;
+        static int animStep = 0;
+        
+        if (millis() - lastProgressUpdate > 400) {  // Update every 400ms
+          lastProgressUpdate = millis();
+          
+          // Clear text areas with background color to reduce flicker
+          fillRect(60, 70, 180, 25, BLACK);
+          fillRect(60, 130, 180, 20, BLACK);
+          
+          // Data counter - larger, centered
+          char kbText[20];
+          snprintf(kbText, sizeof(kbText), "%d KB", totalReceived/1024);
+          
+          // Center the KB text
+          int textWidth = strlen(kbText) * 6;  // Approximate width
+          int xPos = 150 - (textWidth / 2);
+          drawTextLabel(xPos, 75, kbText, TEXT_PRIMARY);
+          
+          // "Uploading" with animation below KB count
+          const char* states[] = {"Uploading", "Uploading.", "Uploading..", "Uploading..."};
+          drawTextLabel(85, 135, states[animStep], TEXT_SECONDARY);
+          animStep = (animStep + 1) % 4;
+          
+          // Calculate and draw progress
+          int progress = (totalReceived * 100) / 987000;
+          if (progress > 98) progress = 98;  // Cap at 98% until done
+          
+          // Fill progress bar smoothly
+          if (progress > 0) {
+            // Clear bar first
+            fillRect(42, 102, 216, 20, BLACK);
+            // Draw new progress
+            fillRect(42, 102, (216 * progress) / 100, 20, PRIMARY_GREEN);
+          }
+          
+          // Percentage text - centered below progress bar
+          char pctText[10];
+          snprintf(pctText, sizeof(pctText), "%d%%", progress);
+          drawTextLabel(140, 155, pctText, TEXT_PRIMARY);
+        }
+        
+        
+      } else if (upload.status == UPLOAD_FILE_END) {
+        // Reset static variables for next upload
+        static bool firstChunk = true;
+        firstChunk = true;
+        
+        if (Update.end(true)) {
+          Serial.printf("Update Success: %u bytes\n", upload.totalSize);
+          
+          // Clear screen and show success
+          fillScreen(BLACK);
+          drawTextLabel(80, 60, "UPDATE", TEXT_PRIMARY);
+          drawTextLabel(70, 80, "COMPLETE!", GREEN);
+          
+          // Show final stats
+          char sizeText[30];
+          snprintf(sizeText, sizeof(sizeText), "%d KB uploaded", upload.totalSize/1024);
+          drawTextLabel(70, 110, sizeText, TEXT_SECONDARY);
+          
+          drawTextLabel(60, 140, "Restarting...", TEXT_SECONDARY);
+        } else {
+          Update.printError(Serial);
+          
+          // Show error
+          fillScreen(BLACK);
+          drawTextLabel(80, 70, "UPDATE", TEXT_PRIMARY);
+          drawTextLabel(80, 90, "FAILED!", PRIMARY_RED);
+          drawTextLabel(50, 120, "Please try again", TEXT_SECONDARY);
+        }
+        webOtaInProgress = false;
+      }
+    }
+  );
+  
+  server.begin();
+  Serial.println("Web OTA: Server started at http://" + WiFi.localIP().toString());
+}
+
 // WiFi initialization function
 void initWiFiConnection() {
   Serial.println("=== WiFi Connection Attempt ===");
@@ -324,8 +587,11 @@ void setup() {
   pinMode(BUTTON_1, INPUT_PULLUP);
   pinMode(BUTTON_2, INPUT_PULLUP);
   
-  // Initialize battery pin
+  // Initialize battery pin - ensure no pull-up/pull-down
   pinMode(BATTERY_PIN, INPUT);
+  // Explicitly disable internal pull-up/pull-down resistors
+  gpio_pullup_dis((gpio_num_t)BATTERY_PIN);
+  gpio_pulldown_dis((gpio_num_t)BATTERY_PIN);
   
   // Initialize display
   initDisplay();
@@ -397,6 +663,12 @@ void setup() {
     Serial.println(" dBm");
     Serial.print("  Channel: ");
     Serial.println(WiFi.channel());
+    
+    // Setup OTA updates after successful WiFi connection
+    Serial.println("\n=== Setting up OTA Updates ===");
+    setupOTA();
+    setupWebOTA();  // Add web-based OTA
+    Serial.println("=== OTA Setup Complete ===\n");
   } else {
     Serial.println("FAILED! WiFi NOT CONNECTED");
     Serial.print("  Final Status Code: ");
@@ -447,6 +719,27 @@ void setup() {
 }
 
 void loop() {
+  // Handle OTA updates first
+  if (WiFi.isConnected()) {
+    ArduinoOTA.handle();
+    server.handleClient();  // Handle web requests
+  }
+  
+  // Skip normal operation during OTA
+  if (otaInProgress || webOtaInProgress) {
+    return;
+  }
+  
+  // Debug OTA status every 10 seconds
+  static unsigned long lastOTADebug = 0;
+  if (millis() - lastOTADebug > 10000) {
+    lastOTADebug = millis();
+    Serial.print("OTA: Active, WiFi: ");
+    Serial.print(WiFi.isConnected() ? "Connected" : "Disconnected");
+    Serial.print(", IP: ");
+    Serial.println(WiFi.localIP());
+  }
+  
   static bool needsRedraw = true;
   static unsigned long lastUpdate = 0;
   
@@ -560,7 +853,10 @@ void loop() {
   if (millis() - lastPowerCheck > 100) {  // Check every 100ms
     lastPowerCheck = millis();
     
-    int currentBatteryMv = analogRead(BATTERY_PIN) * 2;
+    // Proper ADC calibration for T-Display-S3
+    int rawADC = analogRead(BATTERY_PIN);
+    float adcVoltage = (rawADC / 4095.0) * 3.3;
+    int currentBatteryMv = constrain((int)(adcVoltage * 2110), 0, 5000);  // 2.11 calibration
     bool currentUSBState = currentBatteryMv > USB_DETECT_THRESHOLD;
     
     // Check if power state changed (USB plugged/unplugged)
@@ -712,7 +1008,35 @@ void drawHeader() {
 // Draw power indicator in content area
 void drawPowerIndicator() {
   static int lastBatteryMv = 0;
-  int batteryMv = analogRead(BATTERY_PIN) * 2;
+  static int indicatorHistory[5] = {0};
+  static int indicatorIndex = 0;
+  static bool indicatorInitialized = false;
+  
+  // Get raw reading
+  int rawADC = analogRead(BATTERY_PIN);
+  
+  // Initialize history
+  if (!indicatorInitialized) {
+    for (int i = 0; i < 5; i++) {
+      indicatorHistory[i] = rawADC;
+    }
+    indicatorInitialized = true;
+  }
+  
+  // Update circular buffer
+  indicatorHistory[indicatorIndex] = rawADC;
+  indicatorIndex = (indicatorIndex + 1) % 5;
+  
+  // Calculate average (5 samples for header, faster update)
+  long sum = 0;
+  for (int i = 0; i < 5; i++) {
+    sum += indicatorHistory[i];
+  }
+  int avgADC = sum / 5;
+  
+  // Calibrated voltage
+  float adcVoltage = (avgADC / 4095.0) * 3.3;
+  int batteryMv = constrain((int)(adcVoltage * 2110), 0, 5000);  // 2.11 calibration
   bool onUSB = batteryMv > USB_DETECT_THRESHOLD;
   bool isCharging = onUSB && (batteryMv > CHARGING_THRESHOLD || batteryMv > lastBatteryMv + 20);
   lastBatteryMv = batteryMv;
@@ -839,10 +1163,137 @@ void drawPowerStatus() {
     lastScreenIndex = screenIndex;
   }
   
-  // Read current state
-  int batteryMv = analogRead(BATTERY_PIN) * 2;
-  bool onUSB = batteryMv > USB_DETECT_THRESHOLD;
-  bool isCharging = onUSB && (batteryMv > CHARGING_THRESHOLD || batteryMv > lastBatteryMv + 20);
+  // Read current state with smoothing
+  static int adcHistory[10] = {0};
+  static int historyIndex = 0;
+  static bool historyInitialized = false;
+  
+  int rawADC = analogRead(BATTERY_PIN);
+  
+  // Initialize history on first read
+  if (!historyInitialized) {
+    for (int i = 0; i < 10; i++) {
+      adcHistory[i] = rawADC;
+    }
+    historyInitialized = true;
+  }
+  
+  // Add to circular buffer
+  adcHistory[historyIndex] = rawADC;
+  historyIndex = (historyIndex + 1) % 10;
+  
+  // Calculate average
+  long adcSum = 0;
+  for (int i = 0; i < 10; i++) {
+    adcSum += adcHistory[i];
+  }
+  int avgADC = adcSum / 10;
+  
+  // T-Display-S3 voltage divider calibration
+  // Using averaged ADC value for stable readings
+  float adcVoltage = (avgADC / 4095.0) * 3.3;
+  
+  // Debug raw ADC values on power screen
+  static unsigned long lastADCDebug = 0;
+  if (screenIndex == 1 && millis() - lastADCDebug > 2000) {
+    lastADCDebug = millis();
+    Serial.print("[ADC-DEBUG] Raw: ");
+    Serial.print(rawADC);
+    Serial.print(", Avg: ");
+    Serial.print(avgADC);
+    Serial.print(", Voltage: ");
+    Serial.print(adcVoltage, 3);
+    Serial.print("V");
+  }
+  
+  // Check if battery is actually connected
+  // ADC floating (no battery) typically shows very high or very low values
+  bool batteryConnected = (avgADC > NO_BATTERY_ADC_MIN && avgADC < NO_BATTERY_ADC_MAX);
+  
+  int batteryMv;
+  if (!batteryConnected) {
+    // No battery connected - ADC is floating
+    batteryMv = 0;
+    if (screenIndex == 1 && millis() - lastADCDebug < 100) {
+      Serial.println(" - No battery (floating)");
+    }
+  } else {
+    // Calculate battery voltage
+    batteryMv = (int)(adcVoltage * 2110);  // 2.11 calibration factor
+    
+    // Sanity check - Li-ion shouldn't exceed 4.3V
+    if (batteryMv > MAX_BATTERY_VOLTAGE) {
+      if (screenIndex == 1 && millis() - lastADCDebug < 100) {
+        Serial.print(" - Capping voltage from ");
+        Serial.print(batteryMv);
+        Serial.println(" to 4300mV");
+      }
+      batteryMv = MAX_BATTERY_VOLTAGE;
+    }
+    
+    if (screenIndex == 1 && millis() - lastADCDebug < 100) {
+      Serial.print(", Battery: ");
+      Serial.print(batteryMv);
+      Serial.println("mV");
+    }
+  }
+  
+  // Constrain to reasonable values
+  batteryMv = constrain(batteryMv, 0, MAX_BATTERY_VOLTAGE);
+  
+  // Determine power source
+  bool onUSB = false;
+  if (!batteryConnected) {
+    // No battery detected = must be on USB
+    onUSB = true;
+  } else if (batteryMv > USB_DETECT_THRESHOLD) {
+    // High voltage = USB power
+    onUSB = true;
+  }
+  
+  // Enhanced charging detection with voltage trend analysis
+  static int voltageHistory[5] = {0};
+  static int voltageHistoryIndex = 0;
+  static bool voltageHistoryInit = false;
+  static unsigned long lastVoltageStore = 0;
+  
+  if (!voltageHistoryInit) {
+    for (int i = 0; i < 5; i++) {
+      voltageHistory[i] = batteryMv;
+    }
+    voltageHistoryInit = true;
+  }
+  
+  // Store voltage history every 500ms
+  if (millis() - lastVoltageStore > 500) {
+    lastVoltageStore = millis();
+    voltageHistory[voltageHistoryIndex] = batteryMv;
+    voltageHistoryIndex = (voltageHistoryIndex + 1) % 5;
+  }
+  
+  // Calculate voltage trend
+  int avgHistoricalVoltage = 0;
+  for (int i = 0; i < 5; i++) {
+    avgHistoricalVoltage += voltageHistory[i];
+  }
+  avgHistoricalVoltage /= 5;
+  
+  int voltageTrend = batteryMv - avgHistoricalVoltage;
+  
+  // Debug charging detection
+  Serial.print(" Trend: ");
+  Serial.print(voltageTrend);
+  Serial.print("mV");
+  
+  // Improved charging detection:
+  // 1. Voltage above 4.3V (definitely charging)
+  // 2. Consistent rise in voltage (>5mV average increase)
+  // 3. Voltage in charging range (3.6-4.15V) with upward trend
+  bool isCharging = onUSB && (
+    batteryMv > CHARGING_THRESHOLD ||                    // High voltage
+    voltageTrend > 5 ||                                  // Rising trend
+    (batteryMv > 3600 && batteryMv < 4150 && voltageTrend > 2)  // Mid-range with slight rise
+  );
   
   // Detect state changes
   bool usbChanged = (onUSB != lastOnUSB);
@@ -859,7 +1310,9 @@ void drawPowerStatus() {
   static unsigned long lastDebugPrint = 0;
   if (firstDraw || millis() - lastDebugPrint > 1000) {
     lastDebugPrint = millis();
-    Serial.print("[PWR-DEBUG-v3] Battery: ");
+    Serial.print("[PWR-DEBUG-v3] Raw ADC: ");
+    Serial.print(rawADC);
+    Serial.print(", Battery: ");
     Serial.print(batteryMv);
     Serial.print("mV, USB: ");
     Serial.print(onUSB ? "Yes" : "No");
@@ -888,19 +1341,75 @@ void drawPowerStatus() {
     if (needsFullRedraw) {
       Serial.println("[PWR-DEBUG] Drawing USB/Charging display");
       // Draw main power card
-      drawCard(40, 27, DISPLAY_WIDTH - 80, 35, isCharging ? "CHARGING" : "USB POWER", 
-               isCharging ? YELLOW : getGoodColor());
-      drawTextLabel(50, 45, isCharging ? "Charging Battery" : "Connected - 5V Input", 
-                    isCharging ? BLACK : getGoodColor());
+      const char* title = !batteryConnected ? "USB ONLY" : 
+                          (isCharging ? "CHARGING" : "USB POWER");
+      uint16_t cardColor = !batteryConnected ? PRIMARY_BLUE : 
+                           (isCharging ? YELLOW : getGoodColor());
       
-      // Draw status card
-      drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "STATUS", isCharging ? YELLOW : getGoodColor());
-      drawTextLabel(50, 88, isCharging ? "Charging ~120mA" : "Battery Maintained", 
-                    isCharging ? BLACK : getLabelColor());
+      drawCard(40, 27, DISPLAY_WIDTH - 80, 35, title, cardColor);
+      
+      const char* subtitle = !batteryConnected ? "No Battery Detected" :
+                             (isCharging ? "Charging Battery" : "Connected - 5V Input");
+      uint16_t subtitleColor = !batteryConnected ? PRIMARY_BLUE :
+                               (isCharging ? BLACK : getGoodColor());
+      drawTextLabel(50, 45, subtitle, subtitleColor);
+      
+      // Draw status card with voltage info
+      if (batteryConnected) {
+        drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "STATUS", isCharging ? YELLOW : getGoodColor());
+        drawTextLabel(50, 81, isCharging ? "Charging" : "Maintained", 
+                      isCharging ? BLACK : getLabelColor());
+        
+        // Show voltage
+        drawNumberLabel(50, 93, batteryMv, isCharging ? BLACK : getInfoColor());
+        drawTextLabel(85, 93, "mV", isCharging ? BLACK : TEXT_SECONDARY);
+        
+        // Show trend or current
+        if (voltageTrend != 0) {
+          char trendText[20];
+          snprintf(trendText, sizeof(trendText), "%+dmV/s", voltageTrend * 2);  // x2 for per second
+          drawTextLabel(120, 93, trendText, isCharging ? BLACK : TEXT_SECONDARY);
+        } else if (isCharging) {
+          drawTextLabel(120, 93, "~120mA", BLACK);
+        }
+        
+        // Debug card showing ADC values
+        drawCard(40, 113, DISPLAY_WIDTH - 80, 35, "DEBUG", TEXT_SECONDARY);
+        drawTextLabel(50, 125, "ADC:", TEXT_SECONDARY);
+        drawNumberLabel(80, 125, avgADC, TEXT_SECONDARY);
+        drawTextLabel(115, 125, "Raw:", TEXT_SECONDARY);
+        drawNumberLabel(145, 125, rawADC, PRIMARY_GREEN);
+        
+        char adcVoltStr[20];
+        snprintf(adcVoltStr, sizeof(adcVoltStr), "ADC: %.3fV", adcVoltage);
+        drawTextLabel(50, 137, adcVoltStr, TEXT_SECONDARY);
+      } else {
+        // No battery detected
+        drawCard(40, 70, DISPLAY_WIDTH - 80, 65, "NO BATTERY", PRIMARY_BLUE);
+        drawTextLabel(50, 81, "ADC Pin Floating", TEXT_SECONDARY);
+        
+        char adcStr[32];
+        snprintf(adcStr, sizeof(adcStr), "ADC: %d (%.3fV)", avgADC, adcVoltage);
+        drawTextLabel(50, 93, adcStr, TEXT_SECONDARY);
+        
+        drawTextLabel(50, 110, "Insert battery for", TEXT_SECONDARY);
+        drawTextLabel(50, 122, "voltage monitoring", TEXT_SECONDARY);
+      }
     }
   } else {
-    // Battery mode display
-    int batPercent = constrain(map(batteryMv, 3000, 4200, 0, 100), 0, 100);
+    // Battery mode display with better Li-ion curve
+    // Li-ion battery curve: 3.0V = 0%, 3.7V = 50%, 4.2V = 100%
+    int batPercent;
+    if (batteryMv < 3300) {
+      batPercent = map(batteryMv, 3000, 3300, 0, 10);
+    } else if (batteryMv < 3700) {
+      batPercent = map(batteryMv, 3300, 3700, 10, 50);
+    } else if (batteryMv < 4100) {
+      batPercent = map(batteryMv, 3700, 4100, 50, 90);
+    } else {
+      batPercent = map(batteryMv, 4100, 4200, 90, 100);
+    }
+    batPercent = constrain(batPercent, 0, 100);
     uint16_t batteryColor = batPercent > 50 ? getGoodColor() : 
                            (batPercent > 20 ? getWarningColor() : getErrorColor());
     
@@ -939,6 +1448,14 @@ void drawPowerStatus() {
       drawTextLabel(110, 91, "Est:", getLabelColor());
       drawNumberLabel(135, 91, estHours, batteryColor);
       drawTextLabel(150, 91, "h", getLabelColor());
+      
+      // Debug info - show raw and averaged ADC
+      drawCard(40, 113, DISPLAY_WIDTH - 80, 35, "DEBUG", TEXT_SECONDARY);
+      drawTextLabel(50, 125, "ADC:", TEXT_SECONDARY);
+      drawNumberLabel(80, 125, rawADC, TEXT_SECONDARY);
+      drawTextLabel(115, 125, "Avg:", TEXT_SECONDARY);
+      drawNumberLabel(145, 125, avgADC, PRIMARY_GREEN);
+      drawTextLabel(50, 137, "Samples: 10", TEXT_SECONDARY);
     } else if (batPercent != lastBatPercent) {
       // Only update changing values
       fillVisibleRect(50, 45, 25, 12, SURFACE_DARK);
@@ -1053,25 +1570,48 @@ void drawWiFiStatus() {
   Serial.println();
   
   if (isConnected) {
-    // Status card with semantic colors
-    drawCard(40, 25, DISPLAY_WIDTH - 50, 35, "CONNECTED", getGoodColor());
-    drawTextLabel(45, 43, WiFi.SSID().c_str(), getInfoColor());
+    // Refined layout with better spacing
     
-    // Signal card with intelligent coloring
+    // Connection status - compact top section
+    fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
+    fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 1, getGoodColor());  // Top border
+    
+    // Network name
+    drawTextLabel(45, 30, "Connected to", TEXT_SECONDARY);
+    drawTextLabel(45, 42, WiFi.SSID().c_str(), getGoodColor());
+    
+    // Signal strength inline
     int rssi = WiFi.RSSI();
     int signalQuality = constrain(map(rssi, -90, -30, 0, 100), 0, 100);
     uint16_t signalColor = signalQuality > 60 ? getGoodColor() : (signalQuality > 30 ? getWarningColor() : getErrorColor());
-    drawCard(40, 65, DISPLAY_WIDTH - 50, 40, "SIGNAL", signalColor);
     
-    // Signal bar with theme colors
-    fillVisibleRect(45, 85, DISPLAY_WIDTH - 60, 10, currentTheme->progress_bg);
-    fillVisibleRect(45, 85, ((DISPLAY_WIDTH - 60) * signalQuality) / 100, 10, signalColor);
-    drawNumberLabel(DISPLAY_WIDTH - 60, 86, rssi, signalColor);
-    drawTextLabel(DISPLAY_WIDTH - 40, 86, "dBm", getLabelColor());
+    // Mini signal bar
+    fillVisibleRect(45, 57, 60, 5, BORDER_COLOR);
+    fillVisibleRect(46, 58, (58 * signalQuality) / 100, 3, signalColor);
     
-    // IP card
-    drawCard(40, 110, DISPLAY_WIDTH - 80, 30, "IP ADDRESS", getInfoColor());
-    drawTextLabel(45, 125, WiFi.localIP().toString().c_str(), getInfoColor());
+    // Signal text
+    char signalText[30];
+    snprintf(signalText, sizeof(signalText), "%d%% (%d dBm)", signalQuality, rssi);
+    drawTextLabel(110, 56, signalText, signalColor);
+    
+    // IP section - cleaner
+    fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 30, SURFACE_DARK);
+    fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 1, getInfoColor());  // Top border
+    
+    drawTextLabel(45, 80, "IP Address", TEXT_SECONDARY);
+    drawTextLabel(45, 92, WiFi.localIP().toString().c_str(), getInfoColor());
+    
+    // Web Update - prominent call to action
+    fillVisibleRect(40, 110, DISPLAY_WIDTH - 80, 40, PRIMARY_GREEN);
+    fillVisibleRect(42, 112, DISPLAY_WIDTH - 84, 36, SURFACE_DARK);
+    
+    drawTextLabel(50, 118, "WEB UPDATE READY", PRIMARY_GREEN);
+    drawTextLabel(50, 130, "Open browser and go to:", TEXT_SECONDARY);
+    
+    // URL in contrasting color
+    char url[50];
+    snprintf(url, sizeof(url), "http://%s", WiFi.localIP().toString().c_str());
+    drawTextLabel(50, 142, url, PRIMARY_GREEN);
   } else {
     // Not connected card
     drawCard(40, 40, DISPLAY_WIDTH - 80, 40, "DISCONNECTED", getErrorColor());
@@ -1110,7 +1650,10 @@ void drawSensorData() {
   // SYSTEM RESOURCES - compact inline layout
   drawCard(40, 113, DISPLAY_WIDTH - 80, 35, "RESOURCES", PRIMARY_GREEN);
   
-  int battery = analogRead(BATTERY_PIN) * 2;
+  // Proper ADC calibration
+  int rawADC = analogRead(BATTERY_PIN);
+  float adcVoltage = (rawADC / 4095.0) * 3.3;
+  int battery = constrain((int)(adcVoltage * 2110), 0, 5000);  // 2.11 calibration
   int freeKB = ESP.getFreeHeap() / 1024;
   
   // Single line resources info
@@ -1260,8 +1803,8 @@ void drawTextLabel(int x, int y, const char* text, uint16_t color) {
 }
 
 void drawNumberLabel(int x, int y, int num, uint16_t color) {
-  char buf[10];
-  sprintf(buf, "%d", num);
+  char buf[16];  // Increased size for safety (int can be up to 11 chars with sign)
+  snprintf(buf, sizeof(buf), "%d", num);
   drawString(x, y, buf, color);
 }
 
@@ -1969,7 +2512,10 @@ void updateUptimeDisplay() {
 }
 
 void updateBatteryDisplayEnhanced() {
-  int batteryMv = analogRead(BATTERY_PIN) * 2;
+  // Proper ADC calibration
+  int rawADC = analogRead(BATTERY_PIN);
+  float adcVoltage = (rawADC / 4095.0) * 3.3;
+  int batteryMv = constrain((int)(adcVoltage * 2110), 0, 5000);  // 2.11 calibration
   bool onUSB = batteryMv > USB_DETECT_THRESHOLD;
   
   if (!onUSB) {
@@ -2060,7 +2606,10 @@ void updateSensorReadingsEnhanced() {
   
   // System resources mini charts (real data) - cleaned up
   int freeKB = ESP.getFreeHeap() / 1024;
-  int battery = analogRead(BATTERY_PIN) * 2;
+  // Proper ADC calibration
+  int rawADC = analogRead(BATTERY_PIN);
+  float adcVoltage = (rawADC / 4095.0) * 3.3;
+  int battery = constrain((int)(adcVoltage * 2110), 0, 5000);  // 2.11 calibration
   
   // Clean mini charts - prevent weird values
   int batteryDisplay = (battery > 4000) ? 100 : constrain(map(battery, 3000, 4200, 0, 100), 0, 100);
