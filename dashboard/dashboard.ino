@@ -36,6 +36,10 @@
 // Battery detection
 #define BATTERY_PIN  4   // GPIO4 for battery voltage
 #define USB_DETECT_THRESHOLD 4500  // mV threshold for USB power
+#define CHARGING_THRESHOLD 4300    // mV threshold to detect charging
+
+// Version constant - UPDATE THIS WHEN MAKING CHANGES
+#define DASHBOARD_VERSION "2.0-EASY-EXIT"
 
 // MODERN COLOR PALETTE - Enhanced semantic colors
 #define RED        0x07FF  // Send YELLOW to get RED
@@ -265,9 +269,18 @@ void initWiFiConnection() {
   }
 }
 
+// Global screen index - moved here to be accessible in setup()
+int screenIndex = 0;
+bool forcePowerRedraw = true;  // Force power screen to redraw on first visit
+
 void setup() {
   Serial.begin(115200);
   delay(2000); // Give serial time to initialize
+  
+  // Version info for upload verification
+  Serial.println("\n\n=== ESP32-S3 Dashboard v" DASHBOARD_VERSION " ===");
+  Serial.println("Upload successful - Version " DASHBOARD_VERSION);
+  Serial.println("===============================\n");
   
   // SPEED OPTIMIZATION: Boost CPU to 240MHz
   setCpuFrequencyMhz(240);
@@ -417,6 +430,13 @@ void setup() {
     Serial.print(" (IP: ");
     Serial.print(WiFi.localIP());
     Serial.println(")");
+    
+    // Force screen refresh if we're on WiFi page
+    if (screenIndex == 2) {
+      clearContentArea();
+      drawWiFiStatus();
+      Serial.println("WiFi page refreshed with connection status");
+    }
   } else {
     Serial.println("NOT CONNECTED");
     Serial.print("Status code: ");
@@ -425,9 +445,6 @@ void setup() {
   
   Serial.println("Dashboard ready - auto-updating content");
 }
-
-// Global screen index
-int screenIndex = 0;
 
 void loop() {
   static bool needsRedraw = true;
@@ -458,20 +475,24 @@ void loop() {
   // Track navigation direction for smooth transitions
   static int transitionDirection = 0; // 0=none, 1=forward, -1=back
   
-  // ULTRA SIMPLE: BOOT button = Next Screen
-  if (btn1Event == BUTTON_CLICK) {
+  // ULTRA SIMPLE: BOOT button = Next Screen (only when not in menu)
+  if (btn1Event == BUTTON_CLICK && currentMenu == MENU_NONE) {
     int previousScreen = screenIndex;
     screenIndex = (screenIndex + 1) % 5;
     needsRedraw = true;
     fastTransition = true;  // Enable fast transition
     lastActivityTime = millis();  // Reset activity timer
+    if (screenIndex == 1) {
+      forcePowerRedraw = true;  // Force power screen redraw
+      Serial.println("[MAIN] Navigated to power screen, forcing redraw");
+    }
     
     // FORCE navigation update immediately
     drawNavigationIndicator(previousScreen);
   }
   
-  // CONTEXTUAL: USER button performs different actions per screen
-  if (btn2Event == BUTTON_CLICK) {
+  // CONTEXTUAL: USER button performs different actions per screen (only when not in menu)
+  if (btn2Event == BUTTON_CLICK && currentMenu == MENU_NONE) {
     needsRedraw = true;
     lastActivityTime = millis();  // Reset activity timer
     if (screenIndex == 4) {
@@ -510,7 +531,11 @@ void loop() {
     // Draw content with minimal overhead
     switch(screenIndex) {
       case 0: drawSystemInfo(); break;
-      case 1: drawPowerStatus(); break;
+      case 1: 
+        Serial.print("[MAIN-DEBUG] Drawing power screen, index=");
+        Serial.println(screenIndex);
+        drawPowerStatus(); 
+        break;
       case 2: drawWiFiStatus(); break;
       case 3: drawSensorData(); break;
       case 4: drawSettings(); break;
@@ -526,9 +551,51 @@ void loop() {
     needsRedraw = false;
   }
   
-  // Enable dynamic updates for System page only
-  if (currentMenu == MENU_NONE && screenIndex == 0) {
-    updateSystemPageDynamic();
+  // Detect power state changes for immediate update
+  static bool lastUSBState = false;
+  static int lastBatteryReading = 0;
+  static unsigned long lastPowerCheck = 0;
+  
+  // Check power state more frequently for better responsiveness
+  if (millis() - lastPowerCheck > 100) {  // Check every 100ms
+    lastPowerCheck = millis();
+    
+    int currentBatteryMv = analogRead(BATTERY_PIN) * 2;
+    bool currentUSBState = currentBatteryMv > USB_DETECT_THRESHOLD;
+    
+    // Check if power state changed (USB plugged/unplugged)
+    bool powerStateChanged = (currentUSBState != lastUSBState) || 
+                            (abs(currentBatteryMv - lastBatteryReading) > 50);  // More sensitive
+    
+    if (powerStateChanged) {
+      lastUSBState = currentUSBState;
+      lastBatteryReading = currentBatteryMv;
+      
+      // Always update header immediately
+      drawPowerIndicator();
+      
+      // Force immediate update if on power screen
+      if (currentMenu == MENU_NONE && screenIndex == 1) {
+        // Don't clear - drawPowerStatus handles it properly now
+        drawPowerStatus();
+      }
+    }
+  }
+  
+  // Enable dynamic updates for System and Power pages
+  if (currentMenu == MENU_NONE) {
+    if (screenIndex == 0) {
+      updateSystemPageDynamic();
+    } else if (screenIndex == 1) {
+      // Update power status every 250ms for smooth updates
+      static unsigned long lastPowerUpdate = 0;
+      if (millis() - lastPowerUpdate > 250) {
+        lastPowerUpdate = millis();
+        drawPowerStatus();
+        // Always update header power indicator
+        drawPowerIndicator();
+      }
+    }
   }
   
   // Auto-dim handling - FIXED logic
@@ -553,7 +620,8 @@ void loop() {
     if (btn2Event == BUTTON_CLICK) {
       handleMenuSelect();
     }
-    if (btn1Event == BUTTON_LONG_PRESS) {
+    // Quick exit: Long press BOOT or USER exits menu immediately
+    if (btn1Event == BUTTON_LONG_PRESS || btn2Event == BUTTON_LONG_PRESS) {
       exitMenu();
     }
   }
@@ -631,7 +699,7 @@ void drawHeader() {
   fillVisibleRect(0, 18, DISPLAY_WIDTH, 2, 0x4208);  // Bottom border
   
   // Screen name in center
-  const char* screenNames[] = {"System", "Power", "WiFi", "Hardware", "Settings"};
+  const char* screenNames[] = {"System-v1.3", "Power", "WiFi", "Hardware", "Settings"};
   drawTextLabel(DISPLAY_WIDTH/2 - 20, 6, screenNames[screenIndex], 0x07E0);  // Force bright color
   
   // Power indicator on right
@@ -643,41 +711,52 @@ void drawHeader() {
 
 // Draw power indicator in content area
 void drawPowerIndicator() {
+  static int lastBatteryMv = 0;
   int batteryMv = analogRead(BATTERY_PIN) * 2;
   bool onUSB = batteryMv > USB_DETECT_THRESHOLD;
+  bool isCharging = onUSB && (batteryMv > CHARGING_THRESHOLD || batteryMv > lastBatteryMv + 20);
+  lastBatteryMv = batteryMv;
   
   // In header, right side - expand to edge
-  int x = DISPLAY_WIDTH - 70;
-  int y = 4;
+  int x = DISPLAY_WIDTH - 80;  // Wider area for better clearing
+  int y = 2;  // Align better
   
-  // Clear area - wider
-  fillVisibleRect(x, y, 70, 12, BLUE);
+  // Clear area - wider to ensure complete clearing
+  fillVisibleRect(x, y, 80, 14, BLUE);
   
   if (onUSB) {
-    // USB icon and text - better spacing
-    drawTextLabel(x + 5, y + 2, "USB Power", CYAN);
+    // USB icon and text with charging indicator
+    drawTextLabel(x + 5, y + 4, isCharging ? "Charging" : "USB Power", isCharging ? BLACK : CYAN);
     // Small plug icon
-    fillVisibleRect(x + 50, y + 2, 8, 6, CYAN);
-    fillVisibleRect(x + 48, y + 3, 2, 4, CYAN);
-    fillVisibleRect(x + 58, y + 4, 2, 2, CYAN);
+    fillVisibleRect(x + 60, y + 4, 8, 6, CYAN);
+    fillVisibleRect(x + 58, y + 5, 2, 4, CYAN);
+    fillVisibleRect(x + 68, y + 6, 2, 2, CYAN);
+    
+    // Lightning bolt animation for charging
+    if (isCharging && (millis() / 500) % 2) {
+      // Simple lightning bolt
+      fillVisibleRect(x + 72, y + 3, 1, 3, YELLOW);
+      fillVisibleRect(x + 73, y + 5, 1, 2, YELLOW);
+      fillVisibleRect(x + 74, y + 7, 1, 3, YELLOW);
+    }
   } else {
     // Battery percentage and icon
     int percent = constrain(map(batteryMv, 3000, 4200, 0, 100), 0, 100);
     uint16_t color = percent > 50 ? GREEN : (percent > 20 ? YELLOW : RED);
     
-    // Percentage text
-    drawNumberLabel(x + 5, y + 2, percent, color);
-    drawTextLabel(x + 20, y + 2, "%", color);
+    // Percentage text - adjusted position
+    drawNumberLabel(x + 15, y + 4, percent, color);
+    drawTextLabel(x + 30, y + 4, "%", color);
     
-    // Battery icon - moved right
-    fillVisibleRect(x + 35, y + 2, 12, 7, TEXT_PRIMARY);
-    fillVisibleRect(x + 36, y + 3, 10, 5, BLACK);
-    fillVisibleRect(x + 47, y + 4, 1, 3, TEXT_PRIMARY);
+    // Battery icon - adjusted position
+    fillVisibleRect(x + 45, y + 4, 12, 7, TEXT_PRIMARY);
+    fillVisibleRect(x + 46, y + 5, 10, 5, BLACK);
+    fillVisibleRect(x + 57, y + 6, 1, 3, TEXT_PRIMARY);
     
     // Battery fill
     int fillW = (9 * percent) / 100;
     if (fillW > 0) {
-      fillVisibleRect(x + 37, y + 4, fillW, 3, color);
+      fillVisibleRect(x + 47, y + 6, fillW, 3, color);
     }
   }
 }
@@ -738,52 +817,163 @@ void drawMetricCard(int x, int y, int w, const char* title, int value, const cha
   fillVisibleRect(x + 5, y + 42, ((w - 10) * percent) / 100, 3, color);
 }
 
+// Instant power status drawing - immediate response to state changes
 void drawPowerStatus() {
+  static int lastBatteryMv = 0;
+  static bool lastOnUSB = false;
+  static bool lastCharging = false;
+  static int lastBatPercent = -1;
+  static bool firstDraw = true;
+  static int lastScreenIndex = -1;
+  
+  // Force redraw on screen change or when forcePowerRedraw is set
+  if (screenIndex == 1) {
+    if (lastScreenIndex != 1 || forcePowerRedraw) {
+      Serial.print("[PWR-DEBUG] Power screen activated, lastScreen=");
+      Serial.print(lastScreenIndex);
+      Serial.print(", forcePowerRedraw=");
+      Serial.println(forcePowerRedraw);
+      firstDraw = true;
+      forcePowerRedraw = false;
+    }
+    lastScreenIndex = screenIndex;
+  }
+  
+  // Read current state
   int batteryMv = analogRead(BATTERY_PIN) * 2;
   bool onUSB = batteryMv > USB_DETECT_THRESHOLD;
+  bool isCharging = onUSB && (batteryMv > CHARGING_THRESHOLD || batteryMv > lastBatteryMv + 20);
+  
+  // Detect state changes
+  bool usbChanged = (onUSB != lastOnUSB);
+  bool chargingChanged = (isCharging != lastCharging);
+  bool needsFullRedraw = firstDraw || usbChanged || chargingChanged;
+  
+  // CRITICAL: Ensure we always draw something on power screen
+  if (screenIndex == 1 && !needsFullRedraw && lastBatPercent == -1) {
+    Serial.println("[PWR-DEBUG] Forcing redraw - no previous battery data");
+    needsFullRedraw = true;
+  }
+  
+  // Debug output - always print on first draw
+  static unsigned long lastDebugPrint = 0;
+  if (firstDraw || millis() - lastDebugPrint > 1000) {
+    lastDebugPrint = millis();
+    Serial.print("[PWR-DEBUG-v3] Battery: ");
+    Serial.print(batteryMv);
+    Serial.print("mV, USB: ");
+    Serial.print(onUSB ? "Yes" : "No");
+    Serial.print(", Charging: ");
+    Serial.print(isCharging ? "Yes" : "No");
+    Serial.print(", FirstDraw: ");
+    Serial.print(firstDraw ? "Yes" : "No");
+    Serial.print(", NeedsRedraw: ");
+    Serial.println(needsFullRedraw ? "Yes" : "No");
+  }
+  
+  // Handle USB state transitions immediately
+  if (usbChanged && !firstDraw) {
+    // Clear entire power display area immediately on USB change
+    fillVisibleRect(40, 27, DISPLAY_WIDTH - 80, DISPLAY_HEIGHT - 47, BLACK);
+    needsFullRedraw = true;
+  }
+  
+  Serial.print("[PWR-DEBUG] About to draw, onUSB=");
+  Serial.print(onUSB);
+  Serial.print(", needsFullRedraw=");
+  Serial.println(needsFullRedraw);
   
   if (onUSB) {
-    // USB power mode - compact single card
-    drawCard(40, 27, DISPLAY_WIDTH - 80, 35, "USB POWER", getGoodColor());
-    drawTextLabel(50, 45, "Connected - 5V Input", getGoodColor());
-    
-    // Status card
-    drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "STATUS", getGoodColor());
-    drawTextLabel(50, 88, "Charging ~120mA", getLabelColor());
-    
+    // USB/Charging mode display
+    if (needsFullRedraw) {
+      Serial.println("[PWR-DEBUG] Drawing USB/Charging display");
+      // Draw main power card
+      drawCard(40, 27, DISPLAY_WIDTH - 80, 35, isCharging ? "CHARGING" : "USB POWER", 
+               isCharging ? YELLOW : getGoodColor());
+      drawTextLabel(50, 45, isCharging ? "Charging Battery" : "Connected - 5V Input", 
+                    isCharging ? BLACK : getGoodColor());
+      
+      // Draw status card
+      drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "STATUS", isCharging ? YELLOW : getGoodColor());
+      drawTextLabel(50, 88, isCharging ? "Charging ~120mA" : "Battery Maintained", 
+                    isCharging ? BLACK : getLabelColor());
+    }
   } else {
-    // Battery mode - compact layout
+    // Battery mode display
     int batPercent = constrain(map(batteryMv, 3000, 4200, 0, 100), 0, 100);
     uint16_t batteryColor = batPercent > 50 ? getGoodColor() : 
                            (batPercent > 20 ? getWarningColor() : getErrorColor());
     
-    // Battery card - compact with inline info
-    drawCard(40, 27, DISPLAY_WIDTH - 80, 35, "BATTERY", batteryColor);
-    drawNumberLabel(50, 45, batPercent, batteryColor);
-    drawTextLabel(75, 45, "%", getLabelColor());
-    drawNumberLabel(100, 45, batteryMv, batteryColor);
-    drawTextLabel(135, 45, "mV", getLabelColor());
-    
-    // Battery level visualization - simplified
-    drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "LEVEL", batteryColor);
-    
-    // Simple battery icon
-    fillVisibleRect(60, 88, 40, 12, SURFACE_LIGHT);  // Battery outline
-    fillVisibleRect(61, 89, 38, 10, SURFACE_DARK);   // Interior
-    fillVisibleRect(100, 91, 2, 6, SURFACE_LIGHT);   // Terminal
-    
-    // Battery fill
-    int fillWidth = (36 * batPercent) / 100;
-    if (fillWidth > 0) {
-      fillVisibleRect(62, 90, fillWidth, 8, batteryColor);
+    // Always redraw structure on battery mode or when needed
+    if (needsFullRedraw || firstDraw) {
+      Serial.print("[PWR-DEBUG] Drawing battery display, batPercent=");
+      Serial.print(batPercent);
+      Serial.print(", batteryMv=");
+      Serial.println(batteryMv);
+      
+      // Draw battery info card with all elements
+      drawCard(40, 27, DISPLAY_WIDTH - 80, 35, "BATTERY-v1.9", batteryColor);
+      
+      // Draw all battery info in one go
+      drawNumberLabel(50, 45, batPercent, batteryColor);
+      drawTextLabel(75, 45, "%", getLabelColor());
+      drawNumberLabel(100, 45, batteryMv, batteryColor);
+      drawTextLabel(135, 45, "mV", getLabelColor());
+      
+      // Draw battery level card with icon
+      drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "LEVEL", batteryColor);
+      
+      // Draw complete battery icon
+      fillVisibleRect(60, 88, 40, 12, SURFACE_LIGHT);  // Battery outline
+      fillVisibleRect(61, 89, 38, 10, SURFACE_DARK);   // Interior
+      fillVisibleRect(100, 91, 2, 6, SURFACE_LIGHT);   // Terminal
+      
+      // Draw battery fill
+      int fillWidth = (36 * batPercent) / 100;
+      if (fillWidth > 0) {
+        fillVisibleRect(62, 90, fillWidth, 8, batteryColor);
+      }
+      
+      // Draw estimate
+      int estHours = (batPercent / 15) + 1;
+      drawTextLabel(110, 91, "Est:", getLabelColor());
+      drawNumberLabel(135, 91, estHours, batteryColor);
+      drawTextLabel(150, 91, "h", getLabelColor());
+    } else if (batPercent != lastBatPercent) {
+      // Only update changing values
+      fillVisibleRect(50, 45, 25, 12, SURFACE_DARK);
+      drawNumberLabel(50, 45, batPercent, batteryColor);
+      
+      fillVisibleRect(100, 45, 35, 12, SURFACE_DARK);
+      drawNumberLabel(100, 45, batteryMv, batteryColor);
+      
+      // Update battery fill
+      fillVisibleRect(62, 90, 36, 8, SURFACE_DARK);
+      int fillWidth = (36 * batPercent) / 100;
+      if (fillWidth > 0) {
+        fillVisibleRect(62, 90, fillWidth, 8, batteryColor);
+      }
+      
+      // Update estimate if changed
+      int estHours = (batPercent / 15) + 1;
+      fillVisibleRect(135, 91, 15, 10, SURFACE_DARK);
+      drawNumberLabel(135, 91, estHours, batteryColor);
     }
     
-    // Simple estimate
-    int estHours = (batPercent / 15) + 1;
-    drawTextLabel(110, 91, "Est:", getLabelColor());
-    drawNumberLabel(135, 91, estHours, batteryColor);
-    drawTextLabel(150, 91, "h", getLabelColor());
+    lastBatPercent = batPercent;
   }
+  
+  // Update state tracking
+  lastBatteryMv = batteryMv;
+  lastOnUSB = onUSB;
+  lastCharging = isCharging;
+  firstDraw = false;
+  
+  // Debug final state
+  Serial.print("[PWR-DEBUG] Draw complete - USB: ");
+  Serial.print(lastOnUSB ? "Yes" : "No");
+  Serial.print(", Bat%: ");
+  Serial.println(lastBatPercent);
 }
 
 void drawSystemInfo() {
@@ -851,7 +1041,18 @@ void drawSystemInfo() {
 }
 
 void drawWiFiStatus() {
-  if (WiFi.isConnected()) {
+  bool isConnected = WiFi.isConnected();
+  Serial.print("Drawing WiFi status - Connected: ");
+  Serial.print(isConnected ? "YES" : "NO");
+  if (isConnected) {
+    Serial.print(" | SSID: ");
+    Serial.print(WiFi.SSID());
+    Serial.print(" | IP: ");
+    Serial.print(WiFi.localIP());
+  }
+  Serial.println();
+  
+  if (isConnected) {
     // Status card with semantic colors
     drawCard(40, 25, DISPLAY_WIDTH - 50, 35, "CONNECTED", getGoodColor());
     drawTextLabel(45, 43, WiFi.SSID().c_str(), getInfoColor());
@@ -941,8 +1142,8 @@ void drawSettings() {
   }
   
   // Version card
-  drawCard(40, 130, DISPLAY_WIDTH - 80, 20, "VERSION", getGoodColor());
-  drawTextLabel(DISPLAY_WIDTH/2 - 10, 135, "v1.2", getTextColor());
+  drawCard(40, 130, DISPLAY_WIDTH - 80, 20, "VERSION-NEW", getGoodColor());
+  drawTextLabel(DISPLAY_WIDTH/2 - 10, 135, "v" DASHBOARD_VERSION, getTextColor());
 }
 
 // Basic 5x8 font data for essential characters (0-9, A-Z, and some symbols)
@@ -1690,9 +1891,23 @@ void updateDynamicContent() {
       }
       break;
       
-    case 2:  // WiFi with signal history
-      if (now - lastWiFiUpdate > WIFI_UPDATE_INTERVAL * speedMultiplier && WiFi.isConnected()) {
-        updateWiFiSignalEnhanced();
+    case 2:  // WiFi with real-time status monitoring
+      if (now - lastWiFiUpdate > WIFI_UPDATE_INTERVAL * speedMultiplier) {
+        // Always check WiFi status (connected or not)
+        static bool lastWiFiState = false;
+        bool currentWiFiState = WiFi.isConnected();
+        
+        // Force full redraw if WiFi status changed
+        if (currentWiFiState != lastWiFiState) {
+          Serial.print("WiFi status changed: ");
+          Serial.println(currentWiFiState ? "CONNECTED" : "DISCONNECTED");
+          clearContentArea();
+          drawWiFiStatus();
+          lastWiFiState = currentWiFiState;
+        } else if (currentWiFiState) {
+          // Update signal strength if connected
+          updateWiFiSignalEnhanced();
+        }
         lastWiFiUpdate = now;
       }
       break;
@@ -1864,17 +2079,20 @@ void enterSettingsMenu() {
 
 void exitMenu() {
   currentMenu = MENU_NONE;
+  menuSelection = 0;  // Reset menu selection
   saveSettings();
   
-  // Redraw current screen
+  // Option 1: Return to System screen after exiting menu
+  screenIndex = 0;  // Go to System screen
+  
+  // Clear and redraw
   clearContentArea();
-  switch(screenIndex) {
-    case 0: drawSystemInfo(); break;
-    case 1: drawPowerStatus(); break;
-    case 2: drawWiFiStatus(); break;
-    case 3: drawSensorData(); break;
-    case 4: drawSettings(); break;
-  }
+  drawHeader();  // Redraw header with new screen
+  drawNavigationIndicator(-1);  // Redraw navigation
+  drawSystemInfo();  // Draw system screen
+  
+  // Redraw button hints to show normal navigation
+  drawSimpleButtonHints();
 }
 
 void handleMenuNavigation() {
@@ -1905,10 +2123,9 @@ void handleMenuSelect() {
         case 1: // Auto-dim
           settings.autoDim = !settings.autoDim;
           break;
-        case 2: // Back
-          currentMenu = MENU_MAIN;
-          menuSelection = 0;
-          break;
+        case 2: // Back/Exit
+          exitMenu();  // Exit completely instead of going back to main menu
+          return;
       }
       drawSettingsMenu();
       break;
@@ -1918,10 +2135,9 @@ void handleMenuSelect() {
         case 0: // Update speed
           settings.updateSpeed = (settings.updateSpeed + 1) % 3;
           break;
-        case 1: // Back
-          currentMenu = MENU_MAIN;
-          menuSelection = 1;
-          break;
+        case 1: // Back/Exit
+          exitMenu();  // Exit completely
+          return;
       }
       drawSettingsMenu();
       break;
@@ -1931,10 +2147,9 @@ void handleMenuSelect() {
         case 0: // Reset settings
           resetSettings();
           break;
-        case 1: // Back
-          currentMenu = MENU_MAIN;
-          menuSelection = 2;
-          break;
+        case 1: // Back/Exit
+          exitMenu();  // Exit completely
+          return;
       }
       drawSettingsMenu();
       break;
@@ -1949,8 +2164,8 @@ void drawSettingsMenu() {
     case MENU_MAIN: {
       drawCard(40, 45, DISPLAY_WIDTH - 80, 140, "SETTINGS MENU", getInfoColor());
       
-      const char* mainItems[] = {"Display", "Theme", "Update Speed", "System", "Exit"};
-      menuItemCount = 5;
+      const char* mainItems[] = {"Display", "Update Speed", "System", "Exit"};
+      menuItemCount = 4;
       for (int i = 0; i < menuItemCount; i++) {
         int y = 70 + (i * 20);
         if (i == menuSelection) {
@@ -1960,6 +2175,9 @@ void drawSettingsMenu() {
           drawTextLabel(50, y, mainItems[i], getTextColor());
         }
       }
+      
+      // Add hint at bottom
+      drawTextLabel(45, 155, "Hold any button to exit", TEXT_SECONDARY);
       break;
     }
       
@@ -1995,9 +2213,9 @@ void drawSettingsMenu() {
       y += 20;
       if (menuSelection == 2) {
         fillVisibleRect(45, y - 2, DISPLAY_WIDTH - 90, 16, GREEN);
-        drawTextLabel(50, y, "<< Back", TEXT_SECONDARY);
+        drawTextLabel(50, y, "<< Exit Menu", TEXT_SECONDARY);
       } else {
-        drawTextLabel(50, y, "<< Back", TEXT_SECONDARY);
+        drawTextLabel(50, y, "<< Exit Menu", TEXT_SECONDARY);
       }
       break;
     }
@@ -2022,9 +2240,9 @@ void drawSettingsMenu() {
       y += 20;
       if (menuSelection == 1) {
         fillVisibleRect(45, y - 2, DISPLAY_WIDTH - 90, 16, YELLOW);
-        drawTextLabel(50, y, "<< Back", TEXT_SECONDARY);
+        drawTextLabel(50, y, "<< Exit Menu", TEXT_SECONDARY);
       } else {
-        drawTextLabel(50, y, "<< Back", TEXT_SECONDARY);
+        drawTextLabel(50, y, "<< Exit Menu", TEXT_SECONDARY);
       }
       break;
     }
@@ -2046,9 +2264,9 @@ void drawSettingsMenu() {
       y += 20;
       if (menuSelection == 1) {
         fillVisibleRect(45, y - 2, DISPLAY_WIDTH - 90, 16, RED);
-        drawTextLabel(50, y, "<< Back", TEXT_SECONDARY);
+        drawTextLabel(50, y, "<< Exit Menu", TEXT_SECONDARY);
       } else {
-        drawTextLabel(50, y, "<< Back", TEXT_SECONDARY);
+        drawTextLabel(50, y, "<< Exit Menu", TEXT_SECONDARY);
       }
       break;
     }

@@ -55,19 +55,44 @@ for (int i = 0; i < 480 * 320; i++) {
 
 ## 📱 Programming & Upload
 
-### Arduino CLI Method (Recommended)
+### Quick Upload Script (Recommended) 🚀
 
-The ESP32-S3 T-Display can be programmed directly without entering boot mode manually:
+The easiest way to upload is using the provided upload script:
+
+```bash
+# From project root directory
+./upload.sh
+```
+
+This script automatically:
+- ✅ Detects connected ESP32 board
+- ✅ Handles correct file paths
+- ✅ Compiles and uploads in one step
+- ✅ Provides clear success/error feedback
+
+### Alternative: Make Commands
+
+```bash
+make upload    # Compile and upload
+make clean     # Clear build cache
+make monitor   # Open serial monitor
+make all       # Clean, compile, and upload
+```
+
+### Manual Arduino CLI Method
+
+If you prefer manual control:
 
 ```bash
 # 1. Check connected devices
 arduino-cli board list
 
-# 2. Compile for T-Display-S3
-arduino-cli compile --fqbn esp32:esp32:lilygo_t_display_s3 minimal_dashboard/minimal_dashboard.ino
+# 2. Navigate to dashboard directory
+cd dashboard
 
-# 3. Upload directly (auto-reset)
-arduino-cli upload -p /dev/cu.usbmodem101 --fqbn esp32:esp32:lilygo_t_display_s3 minimal_dashboard/minimal_dashboard.ino
+# 3. Compile and upload (use . for current directory)
+arduino-cli compile --fqbn esp32:esp32:lilygo_t_display_s3 . && \
+arduino-cli upload -p /dev/cu.usbmodem101 --fqbn esp32:esp32:lilygo_t_display_s3 .
 ```
 
 **Key Benefits:**
@@ -142,27 +167,37 @@ If using Arduino IDE:
 
 ## 🚀 Quick Start
 
-### Arduino IDE Method
+### Fastest Method - Upload Script
 1. **Clone this repository**
-2. **Open `src/dashboard.ino` in Arduino IDE**
-3. **Install ESP32 board support** (esp32:esp32:esp32s3)
-4. **Upload to your T-Display-S3**
-5. **Watch the dashboard cycle through 4 demo screens**
-
-### Arduino CLI Method (Recommended)
-1. **Clone this repository**
-2. **Put T-Display-S3 in boot mode** (hold BOOT, press RESET, release BOOT)
-3. **Compile and upload**:
+2. **Connect your T-Display-S3 via USB**
+3. **Run the upload script**:
    ```bash
    cd ESP32-S3-Display-Dashboard
-   arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc src/dashboard
-   arduino-cli upload --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc --port /dev/cu.usbmodem* src/dashboard
+   ./upload.sh
    ```
-4. **For enhanced graphics demo**:
-   ```bash
-   arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc enhanced_dashboard
-   arduino-cli upload --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc --port /dev/cu.usbmodem* enhanced_dashboard
-   ```
+4. **Watch the dashboard start with 5 screens** (System, Power, WiFi, Hardware, Settings)
+
+### Alternative Methods
+
+#### Using Make
+```bash
+cd ESP32-S3-Display-Dashboard
+make upload      # Compile and upload in one step
+make monitor     # View serial output
+```
+
+#### Arduino IDE Method
+1. **Open `dashboard/dashboard.ino` in Arduino IDE**
+2. **Select Board**: LilyGo T-Display-S3
+3. **Select Port**: Your USB port
+4. **Click Upload** - no boot mode needed!
+
+#### Manual Arduino CLI
+```bash
+cd ESP32-S3-Display-Dashboard/dashboard
+arduino-cli compile --fqbn esp32:esp32:lilygo_t_display_s3 .
+arduino-cli upload -p /dev/cu.usbmodem101 --fqbn esp32:esp32:lilygo_t_display_s3 .
+```
 
 ### Boot Mode Instructions
 - **Enter Boot Mode**: Hold BOOT button, press and release RESET, then release BOOT
