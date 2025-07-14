@@ -1,0 +1,78 @@
+# Hardware Configuration for ESP32-S3 T-Display
+
+[display]
+# Display dimensions
+width = 320
+height = 170
+
+# Display pins (GPIO numbers)
+[display.pins]
+d0 = 39
+d1 = 40
+d2 = 41
+d3 = 42
+d4 = 45
+d5 = 46
+d6 = 47
+d7 = 48
+wr = 8
+dc = 7
+cs = 6
+rst = 5
+backlight = 38
+
+[buttons]
+# Button GPIO pins
+button1 = 0
+button2 = 14
+# Debounce time in milliseconds
+debounce_ms = 50
+# Long press duration in milliseconds
+long_press_ms = 1000
+
+[battery]
+# Voltage divider ratio (Vbat / Vadc)
+voltage_divider_ratio = 2.0
+# ADC pin for battery voltage
+adc_pin = 4
+# Battery voltage range in millivolts
+min_voltage_mv = 3000
+max_voltage_mv = 4200
+
+[sensors]
+# Temperature sensor configuration
+[sensors.temperature]
+# Internal temperature sensor enabled
+use_internal = true
+# External temperature sensor pin (if used)
+# external_pin = 15
+
+# Ambient light sensor (if connected via I2C)
+[sensors.light]
+enabled = false
+# i2c_address = 0x23
+
+[power]
+# Power management timeouts in seconds
+dim_timeout = 30
+power_save_timeout = 120
+sleep_timeout = 300
+# Brightness levels (0-100)
+active_brightness = 100
+dimmed_brightness = 50
+power_save_brightness = 20
+# Low battery threshold percentage
+low_battery_threshold = 20
+
+[wifi]
+# WiFi credentials (can be overridden at runtime)
+ssid = "YOUR_WIFI_SSID"
+password = "YOUR_WIFI_PASSWORD"
+# mDNS hostname
+hostname = "esp32-dashboard"
+
+[ota]
+# OTA server port
+port = 80
+# Update check interval in seconds
+check_interval = 3600
