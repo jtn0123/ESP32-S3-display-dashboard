@@ -22,6 +22,11 @@ mod display;
 mod hardware;
 mod ui;
 mod ota;
+mod animation;
+mod power;
+
+#[cfg(test)]
+mod tests;
 
 use display::{Display, DisplayPins, Color};
 use hardware::{ButtonManager, ButtonEvent};
