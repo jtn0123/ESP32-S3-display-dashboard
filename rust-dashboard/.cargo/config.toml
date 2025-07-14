@@ -1,0 +1,12 @@
+[build]
+target = "xtensa-esp32s3-espidf"
+
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+
+[env]
+ESP_IDF_VERSION = "5.1.2"
+
+[unstable]
+build-std = ["std", "panic_abort"]
