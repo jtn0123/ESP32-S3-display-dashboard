@@ -63,7 +63,7 @@
 #define PRIMARY_GREEN   0x07E5   // Success/positive green
 #define PRIMARY_PURPLE  0x7817   // Data/info purple
 #define PRIMARY_RED     0xF800   // Error/warning red
-#define SURFACE_DARK    BLACK    // Dark theme - unified black backgrounds
+#define SURFACE_DARK    0x1082   // Card backgrounds
 #define SURFACE_LIGHT   0x3186   // Secondary surfaces
 #define TEXT_PRIMARY    0xFFFF   // Primary text - TRUE BLACK for readability (BGR mapping)
 #define TEXT_SECONDARY  0xBDF7   // Secondary text - improved contrast
@@ -209,8 +209,8 @@ ColorTheme* themes[] = {&readableTheme, &darkTheme, &highContrastTheme};
 ColorTheme* currentTheme = &readableTheme;
 
 // Color Helper Functions - DRAMATIC CHANGES FOR VISIBILITY
-uint16_t getTextColor() { return TEXT_SECONDARY; }  // Visible gray text
-uint16_t getLabelColor() { return TEXT_SECONDARY; }  // Visible gray text
+uint16_t getTextColor() { return 0xFFFF; }  // Pure white - very visible change
+uint16_t getLabelColor() { return 0xFFFF; }  // Pure white - very visible change
 uint16_t getAccentColor() { return currentTheme->text_accent; }
 uint16_t getValueColor(float value, float minVal, float maxVal) {
   if (value < minVal * 1.2) return currentTheme->value_error;
@@ -277,43 +277,19 @@ void setupOTA() {
     Serial.println("OTA: Start updating " + type);
     otaInProgress = true;
     
-    // Clear screen with BLACK
+    // Clear screen and show OTA message
     fillScreen(BLACK);
-    
-    // Simple title - no boxes
-    drawTextLabel(125, 30, "OTA", PRIMARY_BLUE);
-    drawTextLabel(110, 50, "UPDATE", PRIMARY_BLUE);
-    
-    // Status message
-    drawTextLabel(75, 80, "Receiving firmware", TEXT_SECONDARY);
-    drawTextLabel(65, 95, "Do not power off!", PRIMARY_RED);
-    
-    // Progress bar frame
-    fillVisibleRect(50, 115, 200, 24, BORDER_COLOR);
-    fillVisibleRect(52, 117, 196, 20, BLACK);
+    drawTextLabel(50, 80, "OTA UPDATE", TEXT_PRIMARY);
+    drawTextLabel(50, 120, "IN PROGRESS...", TEXT_SECONDARY);
   });
   
   ArduinoOTA.onEnd([]() {
     Serial.println("\nOTA: Update complete!");
     otaInProgress = false;
-    
-    // Clear and show completion
     fillScreen(BLACK);
-    
-    // Simple success message
-    drawTextLabel(110, 40, "UPDATE", PRIMARY_GREEN);
-    drawTextLabel(100, 60, "COMPLETE", PRIMARY_GREEN);
-    
-    // Success line under text
-    fillRect(90, 82, 120, 2, PRIMARY_GREEN);
-    
-    // Info
-    drawTextLabel(70, 105, "Firmware updated", TEXT_SECONDARY);
-    
-    drawTextLabel(75, 130, "Restarting in", TEXT_SECONDARY);
-    drawTextLabel(100, 145, "3 seconds", PRIMARY_GREEN);
-    
-    delay(3000);
+    drawTextLabel(50, 80, "UPDATE COMPLETE", GREEN);
+    drawTextLabel(50, 120, "RESTARTING...", TEXT_SECONDARY);
+    delay(1000);
   });
   
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
@@ -321,26 +297,14 @@ void setupOTA() {
     Serial.printf("OTA Progress: %u%%\r", percentage);
     otaProgress = percentage;
     
-    // Update progress bar without clearing
-    static int lastPercentage = -1;
-    if (percentage != lastPercentage) {
-      // Only draw new progress
-      int newWidth = (196 * percentage) / 100;
-      int oldWidth = (196 * lastPercentage) / 100;
-      if (oldWidth < 0) oldWidth = 0;
-      
-      if (newWidth > oldWidth) {
-        fillVisibleRect(52 + oldWidth, 117, newWidth - oldWidth, 20, PRIMARY_BLUE);
-      }
-      
-      // Update percentage text only if changed  
-      fillVisibleRect(100, 148, 100, 16, BLACK);  // Use correct coordinate system
-      char buf[10];
-      snprintf(buf, sizeof(buf), "%d%%", percentage);
-      drawTextLabel(130, 150, buf, PRIMARY_BLUE);
-      
-      lastPercentage = percentage;
-    }
+    // Draw progress bar
+    fillRect(40, 150, 220, 20, BORDER_COLOR);  // Background
+    fillRect(42, 152, (216 * percentage) / 100, 16, PRIMARY_GREEN);  // Progress
+    
+    // Draw percentage text
+    char buf[10];
+    snprintf(buf, sizeof(buf), "%d%%", percentage);
+    drawTextLabel(130, 180, buf, TEXT_PRIMARY);
   });
   
   ArduinoOTA.onError([](ota_error_t error) {
@@ -357,20 +321,8 @@ void setupOTA() {
     
     // Show error on screen
     fillScreen(BLACK);
-    
-    // Simple error message
-    drawTextLabel(125, 40, "OTA", PRIMARY_RED);
-    drawTextLabel(110, 60, "ERROR", PRIMARY_RED);
-    
-    // Error line under text
-    fillRect(90, 82, 120, 2, PRIMARY_RED);
-    
-    // Error message
-    drawTextLabel(60, 105, "Update failed:", TEXT_SECONDARY);
-    drawTextLabel(70, 120, errorMsg.c_str(), PRIMARY_RED);
-    
-    // Help text
-    drawTextLabel(85, 145, "Try again", TEXT_SECONDARY);
+    drawTextLabel(50, 80, "OTA ERROR", PRIMARY_RED);
+    drawTextLabel(50, 120, errorMsg.c_str(), TEXT_SECONDARY);
     delay(3000);
   });
   
@@ -441,73 +393,61 @@ void setupWebOTA() {
           totalReceived = 0;
           firstChunk = false;
           
-          // Clear screen with BLACK (0xFFFF)
+          // Clear screen and set up layout
           fillScreen(BLACK);
           
-          // Simple title - no box to avoid artifacts
-          drawTextLabel(110, 20, "FIRMWARE", PRIMARY_GREEN);
-          drawTextLabel(120, 40, "UPDATE", PRIMARY_GREEN);
-          
-          // Status text
-          drawTextLabel(85, 70, "Receiving data...", TEXT_SECONDARY);
+          // Title box at top
+          fillRect(60, 30, 180, 30, SURFACE_DARK);
+          drawTextLabel(90, 40, "WEB UPDATE", PRIMARY_GREEN);
           
           // Draw progress bar frame (centered)
-          fillVisibleRect(50, 100, 200, 24, BORDER_COLOR);
-          fillVisibleRect(52, 102, 196, 20, BLACK);
+          fillRect(40, 100, 220, 24, BORDER_COLOR);
+          fillRect(42, 102, 216, 20, BLACK);
         }
         
         totalReceived += upload.currentSize;
         
         // Update display with better spacing
         static unsigned long lastProgressUpdate = 0;
+        static int animStep = 0;
         
-        if (millis() - lastProgressUpdate > 200) {  // Update every 200ms
+        if (millis() - lastProgressUpdate > 400) {  // Update every 400ms
           lastProgressUpdate = millis();
+          
+          // Clear text areas with background color to reduce flicker
+          fillRect(60, 70, 180, 25, BLACK);
+          fillRect(60, 130, 180, 20, BLACK);
+          
+          // Data counter - larger, centered
+          char kbText[20];
+          snprintf(kbText, sizeof(kbText), "%d KB", totalReceived/1024);
+          
+          // Center the KB text
+          int textWidth = strlen(kbText) * 6;  // Approximate width
+          int xPos = 150 - (textWidth / 2);
+          drawTextLabel(xPos, 75, kbText, TEXT_PRIMARY);
+          
+          // "Uploading" with animation below KB count
+          const char* states[] = {"Uploading", "Uploading.", "Uploading..", "Uploading..."};
+          drawTextLabel(85, 135, states[animStep], TEXT_SECONDARY);
+          animStep = (animStep + 1) % 4;
           
           // Calculate and draw progress
           int progress = (totalReceived * 100) / 987000;
           if (progress > 98) progress = 98;  // Cap at 98% until done
           
-          // Update progress bar without clearing entire bar
-          static int lastProgress = -1;
-          if (progress != lastProgress && progress > 0) {
-            // Only draw the new progress, don't clear
-            int newWidth = (196 * progress) / 100;
-            int oldWidth = (196 * lastProgress) / 100;
-            if (oldWidth < 0) oldWidth = 0;
-            
-            // Fill only the new portion
-            if (newWidth > oldWidth) {
-              fillVisibleRect(52 + oldWidth, 102, newWidth - oldWidth, 20, PRIMARY_GREEN);
-            }
-            lastProgress = progress;
+          // Fill progress bar smoothly
+          if (progress > 0) {
+            // Clear bar first
+            fillRect(42, 102, 216, 20, BLACK);
+            // Draw new progress
+            fillRect(42, 102, (216 * progress) / 100, 20, PRIMARY_GREEN);
           }
           
-          // ALWAYS clear and redraw percentage area - use fillVisibleRect for correct coordinates
-          fillVisibleRect(0, 130, 300, 40, BLACK);
-          
-          // Draw percentage
+          // Percentage text - centered below progress bar
           char pctText[10];
           snprintf(pctText, sizeof(pctText), "%d%%", progress);
-          drawTextLabel(130, 140, pctText, PRIMARY_GREEN);
-          
-          // Draw data info
-          int currentKB = totalReceived/1024;
-          char infoText[80];
-          unsigned long elapsed = millis() - startTime;
-          
-          if (elapsed > 1000) {
-            int speed = currentKB / (elapsed / 1000);
-            if (speed > 0) {
-              snprintf(infoText, sizeof(infoText), "%d KB @ %d KB/s", currentKB, speed);
-            } else {
-              snprintf(infoText, sizeof(infoText), "%d KB", currentKB);
-            }
-          } else {
-            snprintf(infoText, sizeof(infoText), "%d KB", currentKB);
-          }
-          
-          drawTextLabel(80, 155, infoText, TEXT_SECONDARY);
+          drawTextLabel(140, 155, pctText, TEXT_PRIMARY);
         }
         
         
@@ -519,48 +459,25 @@ void setupWebOTA() {
         if (Update.end(true)) {
           Serial.printf("Update Success: %u bytes\n", upload.totalSize);
           
-          // Clear screen with BLACK
+          // Clear screen and show success
           fillScreen(BLACK);
+          drawTextLabel(80, 60, "UPDATE", TEXT_PRIMARY);
+          drawTextLabel(70, 80, "COMPLETE!", GREEN);
           
-          // Simple success message - no boxes
-          drawTextLabel(110, 30, "UPDATE", PRIMARY_GREEN);
-          drawTextLabel(100, 50, "COMPLETE", PRIMARY_GREEN);
+          // Show final stats
+          char sizeText[30];
+          snprintf(sizeText, sizeof(sizeText), "%d KB uploaded", upload.totalSize/1024);
+          drawTextLabel(70, 110, sizeText, TEXT_SECONDARY);
           
-          // Success line under text
-          fillRect(90, 72, 120, 2, PRIMARY_GREEN);
-          
-          // Update stats
-          char sizeText[50];
-          snprintf(sizeText, sizeof(sizeText), "Size: %d KB", upload.totalSize/1024);
-          drawTextLabel(90, 95, sizeText, TEXT_SECONDARY);
-          
-          // Version info
-          drawTextLabel(75, 110, "Version " DASHBOARD_VERSION, TEXT_SECONDARY);
-          
-          // Restart info
-          drawTextLabel(70, 135, "Restarting in", TEXT_SECONDARY);
-          drawTextLabel(95, 150, "3 seconds", PRIMARY_GREEN);
+          drawTextLabel(60, 140, "Restarting...", TEXT_SECONDARY);
         } else {
           Update.printError(Serial);
           
-          // Show error - clear screen with actual black
-          fillScreen(0x0000);
-          
-          // Simple error message - no boxes
-          drawTextLabel(110, 30, "UPDATE", PRIMARY_RED);
-          drawTextLabel(110, 50, "FAILED", PRIMARY_RED);
-          
-          // Error line under text
-          fillRect(90, 72, 120, 2, PRIMARY_RED);
-          
-          // Error details
-          drawTextLabel(60, 95, "Please try again", TEXT_SECONDARY);
-          
-          // Help text
-          drawTextLabel(40, 120, "Upload .bin file at:", TEXT_SECONDARY);
-          char ipText[40];
-          snprintf(ipText, sizeof(ipText), "http://%s", WiFi.localIP().toString().c_str());
-          drawTextLabel(60, 135, ipText, PRIMARY_GREEN);
+          // Show error
+          fillScreen(BLACK);
+          drawTextLabel(80, 70, "UPDATE", TEXT_PRIMARY);
+          drawTextLabel(80, 90, "FAILED!", PRIMARY_RED);
+          drawTextLabel(50, 120, "Please try again", TEXT_SECONDARY);
         }
         webOtaInProgress = false;
       }
@@ -1073,16 +990,13 @@ int getButtonEvent(ButtonState &btn) {
 }
 
 void drawHeader() {
-  // Professional header - distinctive blue background  
-  fillVisibleRect(0, 0, DISPLAY_WIDTH, 20, PRIMARY_BLUE);   // Blue header for distinction
-  fillVisibleRect(0, 18, DISPLAY_WIDTH, 2, PRIMARY_BLUE);  // Blue accent border
+  // Minimal header - just a thin bar
+  fillVisibleRect(0, 0, DISPLAY_WIDTH, 20, BLUE);    // Thinner header
+  fillVisibleRect(0, 18, DISPLAY_WIDTH, 2, 0x4208);  // Bottom border
   
-  // Screen name in center - clean, visible text, avoid navigation area
-  const char* screenNames[] = {"System", "Power", "WiFi", "Hardware", "Settings"};
-  // Calculate proper center position, avoiding left navigation (starts at x=40)
-  int textWidth = strlen(screenNames[screenIndex]) * 6;  // Approximate text width
-  int centerX = (40 + (DISPLAY_WIDTH - 80)) / 2 - textWidth / 2;  // Center between navigation and power area
-  drawStringTransparent(centerX, 6, screenNames[screenIndex], 0x0000);  // White text on blue background
+  // Screen name in center
+  const char* screenNames[] = {"System-v1.3", "Power", "WiFi", "Hardware", "Settings"};
+  drawTextLabel(DISPLAY_WIDTH/2 - 20, 6, screenNames[screenIndex], 0x07E0);  // Force bright color
   
   // Power indicator on right
   drawPowerIndicator();
@@ -1132,11 +1046,11 @@ void drawPowerIndicator() {
   int y = 2;  // Align better
   
   // Clear area - wider to ensure complete clearing
-  fillVisibleRect(x, y, 80, 14, PRIMARY_BLUE);  // Match blue header background
+  fillVisibleRect(x, y, 80, 14, BLUE);
   
   if (onUSB) {
-    // USB icon and text with charging indicator - use transparent text
-    drawStringTransparent(x + 5, y + 4, isCharging ? "Charging" : "USB Power", isCharging ? YELLOW : CYAN);
+    // USB icon and text with charging indicator
+    drawTextLabel(x + 5, y + 4, isCharging ? "Charging" : "USB Power", isCharging ? BLACK : CYAN);
     // Small plug icon
     fillVisibleRect(x + 60, y + 4, 8, 6, CYAN);
     fillVisibleRect(x + 58, y + 5, 2, 4, CYAN);
@@ -1154,10 +1068,9 @@ void drawPowerIndicator() {
     int percent = constrain(map(batteryMv, 3000, 4200, 0, 100), 0, 100);
     uint16_t color = percent > 50 ? GREEN : (percent > 20 ? YELLOW : RED);
     
-    // Percentage text - adjusted position, use transparent text
-    char percentText[8];
-    snprintf(percentText, sizeof(percentText), "%d%%", percent);
-    drawStringTransparent(x + 15, y + 4, percentText, color);
+    // Percentage text - adjusted position
+    drawNumberLabel(x + 15, y + 4, percent, color);
+    drawTextLabel(x + 30, y + 4, "%", color);
     
     // Battery icon - adjusted position
     fillVisibleRect(x + 45, y + 4, 12, 7, TEXT_PRIMARY);
@@ -1177,8 +1090,8 @@ void drawCard(int x, int y, int w, int h, const char* title, uint16_t borderColo
   // Single shadow layer
   fillVisibleRect(x + 2, y + 2, w, h, 0x2104);
   
-  // Main card - BLACK background for dark theme
-  fillVisibleRect(x, y, w, h, BLACK);
+  // Main card
+  fillVisibleRect(x, y, w, h, SURFACE_DARK);
   
   // Simple border - single pixel
   fillVisibleRect(x, y, w, 1, borderColor);          // Top
@@ -1424,77 +1337,64 @@ void drawPowerStatus() {
   Serial.println(needsFullRedraw);
   
   if (onUSB) {
-    // USB/Charging mode display - cleaner UI
+    // USB/Charging mode display
     if (needsFullRedraw) {
       Serial.println("[PWR-DEBUG] Drawing USB/Charging display");
+      // Draw main power card
+      const char* title = !batteryConnected ? "USB ONLY" : 
+                          (isCharging ? "CHARGING" : "USB POWER");
+      uint16_t cardColor = !batteryConnected ? PRIMARY_BLUE : 
+                           (isCharging ? YELLOW : getGoodColor());
       
-      // Power status - compact top section (similar to WiFi)
-      fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
-      uint16_t topBorderColor = !batteryConnected ? PRIMARY_BLUE : 
-                               (isCharging ? YELLOW : getGoodColor());
-      fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 1, topBorderColor);  // Top border
+      drawCard(40, 27, DISPLAY_WIDTH - 80, 35, title, cardColor);
       
-      // Power source info
-      drawTextLabel(45, 30, "Power Source", TEXT_SECONDARY);
-      const char* powerText = !batteryConnected ? "USB Only" :
-                             (isCharging ? "USB Charging" : "USB Power");
-      drawTextLabel(45, 42, powerText, topBorderColor);
+      const char* subtitle = !batteryConnected ? "No Battery Detected" :
+                             (isCharging ? "Charging Battery" : "Connected - 5V Input");
+      uint16_t subtitleColor = !batteryConnected ? PRIMARY_BLUE :
+                               (isCharging ? BLACK : getGoodColor());
+      drawTextLabel(50, 45, subtitle, subtitleColor);
       
+      // Draw status card with voltage info
       if (batteryConnected) {
-        // Battery percentage with inline progress bar
-        int batPercent = constrain(map(batteryMv, 3000, 4200, 0, 100), 0, 100);
+        drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "STATUS", isCharging ? YELLOW : getGoodColor());
+        drawTextLabel(50, 81, isCharging ? "Charging" : "Maintained", 
+                      isCharging ? BLACK : getLabelColor());
         
-        // Mini battery bar
-        fillVisibleRect(45, 57, 60, 5, BORDER_COLOR);
-        fillVisibleRect(46, 58, (58 * batPercent) / 100, 3, topBorderColor);
+        // Show voltage
+        drawNumberLabel(50, 93, batteryMv, isCharging ? BLACK : getInfoColor());
+        drawTextLabel(85, 93, "mV", isCharging ? BLACK : TEXT_SECONDARY);
         
-        // Status text
-        char statusText[30];
-        if (isCharging) {
-          snprintf(statusText, sizeof(statusText), "Charging %d%%", batPercent);
-        } else {
-          snprintf(statusText, sizeof(statusText), "Maintained %d%%", batPercent);
-        }
-        drawTextLabel(110, 56, statusText, topBorderColor);
-        
-        // Battery details section - standardized card layout
-        drawCard(40, 75, DISPLAY_WIDTH - 80, 30, "BATTERY", getInfoColor());
-        
-        drawTextLabel(45, 80, "Battery Voltage", TEXT_SECONDARY);
-        char voltText[50];
+        // Show trend or current
         if (voltageTrend != 0) {
-          snprintf(voltText, sizeof(voltText), "%d mV (%+dmV/s)", batteryMv, voltageTrend * 2);
-        } else {
-          snprintf(voltText, sizeof(voltText), "%d mV", batteryMv);
+          char trendText[20];
+          snprintf(trendText, sizeof(trendText), "%+dmV/s", voltageTrend * 2);  // x2 for per second
+          drawTextLabel(120, 93, trendText, isCharging ? BLACK : TEXT_SECONDARY);
+        } else if (isCharging) {
+          drawTextLabel(120, 93, "~120mA", BLACK);
         }
-        drawTextLabel(45, 92, voltText, getInfoColor());
         
-        // ADC Debug section - inline
-        fillVisibleRect(40, 110, DISPLAY_WIDTH - 80, 25, SURFACE_DARK);
-        fillVisibleRect(40, 110, DISPLAY_WIDTH - 80, 1, TEXT_SECONDARY);  // Top border
+        // Debug card showing ADC values
+        drawCard(40, 113, DISPLAY_WIDTH - 80, 35, "DEBUG", TEXT_SECONDARY);
+        drawTextLabel(50, 125, "ADC:", TEXT_SECONDARY);
+        drawNumberLabel(80, 125, avgADC, TEXT_SECONDARY);
+        drawTextLabel(115, 125, "Raw:", TEXT_SECONDARY);
+        drawNumberLabel(145, 125, rawADC, PRIMARY_GREEN);
         
-        char debugText[60];
-        snprintf(debugText, sizeof(debugText), "ADC: %d avg (%.3fV)", avgADC, adcVoltage);
-        drawTextLabel(45, 115, "Debug Info", TEXT_SECONDARY);
-        drawTextLabel(45, 127, debugText, PRIMARY_GREEN);
+        char adcVoltStr[20];
+        snprintf(adcVoltStr, sizeof(adcVoltStr), "ADC: %.3fV", adcVoltage);
+        drawTextLabel(50, 137, adcVoltStr, TEXT_SECONDARY);
       } else {
-        // No battery section
-        fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 40, SURFACE_DARK);
-        fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 1, PRIMARY_BLUE);  // Top border
+        // No battery detected
+        drawCard(40, 70, DISPLAY_WIDTH - 80, 65, "NO BATTERY", PRIMARY_BLUE);
+        drawTextLabel(50, 81, "ADC Pin Floating", TEXT_SECONDARY);
         
-        drawTextLabel(45, 80, "Battery Status", TEXT_SECONDARY);
-        drawTextLabel(45, 92, "No battery detected", ACCENT_ORANGE);
+        char adcStr[32];
+        snprintf(adcStr, sizeof(adcStr), "ADC: %d (%.3fV)", avgADC, adcVoltage);
+        drawTextLabel(50, 93, adcStr, TEXT_SECONDARY);
         
-        char adcText[40];
-        snprintf(adcText, sizeof(adcText), "ADC: %d (floating)", avgADC);
-        drawTextLabel(45, 104, adcText, TEXT_SECONDARY);
+        drawTextLabel(50, 110, "Insert battery for", TEXT_SECONDARY);
+        drawTextLabel(50, 122, "voltage monitoring", TEXT_SECONDARY);
       }
-      
-      // Info section at bottom
-      fillVisibleRect(40, 140, DISPLAY_WIDTH - 80, 20, SURFACE_DARK);
-      fillVisibleRect(40, 140, DISPLAY_WIDTH - 80, 1, getInfoColor());  // Top border
-      
-      drawTextLabel(45, 145, batteryConnected ? "USB + Battery backup" : "USB power only", getInfoColor());
     }
   } else {
     // Battery mode display with better Li-ion curve
@@ -1520,83 +1420,61 @@ void drawPowerStatus() {
       Serial.print(", batteryMv=");
       Serial.println(batteryMv);
       
-      // Battery status - compact top section (similar to WiFi)
-      fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
-      fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 1, batteryColor);  // Top border
+      // Draw battery info card with all elements
+      drawCard(40, 27, DISPLAY_WIDTH - 80, 35, "BATTERY-v1.9", batteryColor);
       
-      // Battery info
-      drawTextLabel(45, 30, "Battery Power", TEXT_SECONDARY);
-      char batText[30];
-      snprintf(batText, sizeof(batText), "%d%% - %d mV", batPercent, batteryMv);
-      drawTextLabel(45, 42, batText, batteryColor);
+      // Draw all battery info in one go
+      drawNumberLabel(50, 45, batPercent, batteryColor);
+      drawTextLabel(75, 45, "%", getLabelColor());
+      drawNumberLabel(100, 45, batteryMv, batteryColor);
+      drawTextLabel(135, 45, "mV", getLabelColor());
       
-      // Battery icon with fill inline
-      fillVisibleRect(45, 55, 40, 12, SURFACE_LIGHT);  // Battery outline
-      fillVisibleRect(46, 56, 38, 10, SURFACE_DARK);   // Interior
-      fillVisibleRect(85, 58, 2, 6, SURFACE_LIGHT);    // Terminal
+      // Draw battery level card with icon
+      drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "LEVEL", batteryColor);
+      
+      // Draw complete battery icon
+      fillVisibleRect(60, 88, 40, 12, SURFACE_LIGHT);  // Battery outline
+      fillVisibleRect(61, 89, 38, 10, SURFACE_DARK);   // Interior
+      fillVisibleRect(100, 91, 2, 6, SURFACE_LIGHT);   // Terminal
       
       // Draw battery fill
       int fillWidth = (36 * batPercent) / 100;
       if (fillWidth > 0) {
-        fillVisibleRect(47, 57, fillWidth, 8, batteryColor);
+        fillVisibleRect(62, 90, fillWidth, 8, batteryColor);
       }
       
-      // Estimate text
+      // Draw estimate
       int estHours = (batPercent / 15) + 1;
-      char estText[20];
-      snprintf(estText, sizeof(estText), "~%d hours", estHours);
-      drawTextLabel(95, 58, estText, batteryColor);
+      drawTextLabel(110, 91, "Est:", getLabelColor());
+      drawNumberLabel(135, 91, estHours, batteryColor);
+      drawTextLabel(150, 91, "h", getLabelColor());
       
-      // Status section
-      fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 30, SURFACE_DARK);
-      fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 1, getInfoColor());  // Top border
-      
-      drawTextLabel(45, 80, "Battery Status", TEXT_SECONDARY);
-      const char* statusText = batPercent > 50 ? "Good" : 
-                              (batPercent > 20 ? "Low" : "Critical");
-      drawTextLabel(45, 92, statusText, batteryColor);
-      
-      // ADC Debug section - inline
-      fillVisibleRect(40, 110, DISPLAY_WIDTH - 80, 25, SURFACE_DARK);
-      fillVisibleRect(40, 110, DISPLAY_WIDTH - 80, 1, TEXT_SECONDARY);  // Top border
-      
-      char debugText[60];
-      snprintf(debugText, sizeof(debugText), "ADC: %d avg / %d raw", avgADC, rawADC);
-      drawTextLabel(45, 115, "Debug Info", TEXT_SECONDARY);
-      drawTextLabel(45, 127, debugText, PRIMARY_GREEN);
-      
-      // Info section at bottom
-      fillVisibleRect(40, 140, DISPLAY_WIDTH - 80, 20, SURFACE_DARK);
-      fillVisibleRect(40, 140, DISPLAY_WIDTH - 80, 1, getInfoColor());  // Top border
-      
-      drawTextLabel(45, 145, "Battery powered mode", getInfoColor());
+      // Debug info - show raw and averaged ADC
+      drawCard(40, 113, DISPLAY_WIDTH - 80, 35, "DEBUG", TEXT_SECONDARY);
+      drawTextLabel(50, 125, "ADC:", TEXT_SECONDARY);
+      drawNumberLabel(80, 125, rawADC, TEXT_SECONDARY);
+      drawTextLabel(115, 125, "Avg:", TEXT_SECONDARY);
+      drawNumberLabel(145, 125, avgADC, PRIMARY_GREEN);
+      drawTextLabel(50, 137, "Samples: 10", TEXT_SECONDARY);
     } else if (batPercent != lastBatPercent) {
       // Only update changing values
-      // Update battery percentage and voltage text
-      fillVisibleRect(45, 42, 150, 12, SURFACE_DARK);
-      char batText[30];
-      snprintf(batText, sizeof(batText), "%d%% - %d mV", batPercent, batteryMv);
-      drawTextLabel(45, 42, batText, batteryColor);
+      fillVisibleRect(50, 45, 25, 12, SURFACE_DARK);
+      drawNumberLabel(50, 45, batPercent, batteryColor);
       
-      // Update battery icon fill
-      fillVisibleRect(47, 57, 36, 8, SURFACE_DARK);
+      fillVisibleRect(100, 45, 35, 12, SURFACE_DARK);
+      drawNumberLabel(100, 45, batteryMv, batteryColor);
+      
+      // Update battery fill
+      fillVisibleRect(62, 90, 36, 8, SURFACE_DARK);
       int fillWidth = (36 * batPercent) / 100;
       if (fillWidth > 0) {
-        fillVisibleRect(47, 57, fillWidth, 8, batteryColor);
+        fillVisibleRect(62, 90, fillWidth, 8, batteryColor);
       }
       
-      // Update estimate
+      // Update estimate if changed
       int estHours = (batPercent / 15) + 1;
-      fillVisibleRect(95, 58, 80, 10, SURFACE_DARK);
-      char estText[20];
-      snprintf(estText, sizeof(estText), "~%d hours", estHours);
-      drawTextLabel(95, 58, estText, batteryColor);
-      
-      // Update status text if threshold crossed
-      fillVisibleRect(45, 92, 100, 12, SURFACE_DARK);
-      const char* statusText = batPercent > 50 ? "Good" : 
-                              (batPercent > 20 ? "Low" : "Critical");
-      drawTextLabel(45, 92, statusText, batteryColor);
+      fillVisibleRect(135, 91, 15, 10, SURFACE_DARK);
+      drawNumberLabel(135, 91, estHours, batteryColor);
     }
     
     lastBatPercent = batPercent;
@@ -1616,24 +1494,22 @@ void drawPowerStatus() {
 }
 
 void drawSystemInfo() {
-  // Memory section - standardized rectangle layout
+  // Memory metric card with semantic coloring
   int memPercent = (ESP.getFreeHeap() * 100) / ESP.getHeapSize();
   int freeKB = ESP.getFreeHeap() / 1024;
   int totalKB = ESP.getHeapSize() / 1024;
   
-  // Memory section background and border
+  // Memory card - compact with details inside
   uint16_t memColor = memPercent > 50 ? getGoodColor() : (memPercent > 25 ? getWarningColor() : getErrorColor());
-  fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
-  fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 1, memColor);
+  drawCard(40, 27, DISPLAY_WIDTH - 80, 35, "MEMORY", memColor);
   
-  // Memory section content - spread across lines for readability
-  drawTextLabel(45, 30, "Memory Usage", TEXT_SECONDARY);
-  drawNumberLabel(45, 42, memPercent, memColor);
-  drawTextLabel(70, 42, "% free", getLabelColor());
-  drawNumberLabel(45, 54, freeKB, memColor);
-  drawTextLabel(70, 54, "KB available", getLabelColor());
+  // Memory display - all on one line inside card
+  drawNumberLabel(50, 45, memPercent, memColor);
+  drawTextLabel(75, 45, "% free", getLabelColor());
+  drawNumberLabel(130, 45, freeKB, memColor);
+  drawTextLabel(155, 45, "KB", getLabelColor());
   
-  // CPU section - standardized rectangle layout
+  // CPU metric card - calculate real usage
   static unsigned long lastCpuCheck = 0;
   static int cpuUsage = 45;
   
@@ -1646,44 +1522,38 @@ void drawSystemInfo() {
     lastCpuCheck = now;
   }
   
-  // CPU section background and border
   uint16_t cpuColor = cpuUsage < 70 ? getGoodColor() : (cpuUsage < 85 ? getWarningColor() : getErrorColor());
-  fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
-  fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 1, cpuColor);
+  drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "CPU", cpuColor);
   
-  // CPU section content - spread across lines for readability
-  drawTextLabel(45, 80, "CPU Performance", TEXT_SECONDARY);
-  drawNumberLabel(45, 92, cpuUsage, cpuColor);
-  drawTextLabel(70, 92, "% usage", getLabelColor());
-  drawTextLabel(45, 104, "2 cores @ 240MHz", getLabelColor());
+  // CPU display - all on one line inside card
+  drawNumberLabel(50, 88, cpuUsage, cpuColor);
+  drawTextLabel(75, 88, "% usage", getLabelColor());
+  drawTextLabel(130, 88, "2 cores", getLabelColor());
+  drawTextLabel(180, 88, "240MHz", getLabelColor());
   
-  // System uptime section - standardized rectangle layout
-  fillVisibleRect(40, 125, DISPLAY_WIDTH - 80, 35, SURFACE_DARK);
-  fillVisibleRect(40, 125, DISPLAY_WIDTH - 80, 1, getInfoColor());
-  
-  // Uptime section content
-  drawTextLabel(45, 130, "System Uptime", TEXT_SECONDARY);
+  // System uptime card - moved up for better spacing
+  drawCard(40, 113, DISPLAY_WIDTH - 80, 26, "UPTIME", getInfoColor());
   int totalSec = millis() / 1000;
   int hours = totalSec / 3600;
   int minutes = (totalSec % 3600) / 60;
   int seconds = totalSec % 60;
   
-  // Single line uptime display
+  // Single line uptime display - moved down to avoid overlap
   if (hours > 0) {
-    drawNumberLabel(45, 142, hours, getInfoColor());
-    drawTextLabel(60, 142, "h", getLabelColor());
-    drawNumberLabel(70, 142, minutes, getInfoColor());
-    drawTextLabel(85, 142, "m", getLabelColor());
-    drawNumberLabel(95, 142, seconds, getInfoColor());
-    drawTextLabel(110, 142, "s", getLabelColor());
+    drawNumberLabel(50, 131, hours, getInfoColor());
+    drawTextLabel(65, 131, "h", getLabelColor());
+    drawNumberLabel(75, 131, minutes, getInfoColor());
+    drawTextLabel(90, 131, "m", getLabelColor());
+    drawNumberLabel(100, 131, seconds, getInfoColor());
+    drawTextLabel(115, 131, "s", getLabelColor());
   } else if (minutes > 0) {
-    drawNumberLabel(45, 142, minutes, getInfoColor());
-    drawTextLabel(65, 142, "min", getLabelColor());
-    drawNumberLabel(85, 142, seconds, getInfoColor());
-    drawTextLabel(100, 142, "sec", getLabelColor());
+    drawNumberLabel(50, 131, minutes, getInfoColor());
+    drawTextLabel(70, 131, "min", getLabelColor());
+    drawNumberLabel(90, 131, seconds, getInfoColor());
+    drawTextLabel(105, 131, "sec", getLabelColor());
   } else {
-    drawNumberLabel(45, 142, seconds, getInfoColor());
-    drawTextLabel(65, 142, "seconds", getLabelColor());
+    drawNumberLabel(50, 131, seconds, getInfoColor());
+    drawTextLabel(70, 131, "seconds", getLabelColor());
   }
 }
 
@@ -1755,19 +1625,13 @@ void drawWiFiStatus() {
 }
 
 void drawSensorData() {
-  // GPIO status - compact top section
-  fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
-  fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 1, PRIMARY_BLUE);  // Top border
+  // GPIO PINS STATUS - compact inline layout
+  drawCard(40, 27, DISPLAY_WIDTH - 80, 35, "GPIO", PRIMARY_BLUE);
+  drawTextLabel(50, 45, "Available: GPIO 17, 43, 44", PRIMARY_BLUE);
+  drawTextLabel(50, 55, "I2C Ready: SDA/SCL", PRIMARY_GREEN);
   
-  drawTextLabel(45, 30, "GPIO Pins", TEXT_SECONDARY);
-  drawTextLabel(45, 42, "Available: 17, 43, 44", PRIMARY_BLUE);
-  drawTextLabel(45, 54, "I2C: SDA/SCL Ready", PRIMARY_GREEN);
-  
-  // Hardware metrics section
-  fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
-  fillVisibleRect(40, 75, DISPLAY_WIDTH - 80, 1, ACCENT_ORANGE);  // Top border
-  
-  drawTextLabel(45, 80, "Hardware Metrics", TEXT_SECONDARY);
+  // HARDWARE METRICS - compact inline layout
+  drawCard(40, 70, DISPLAY_WIDTH - 80, 35, "HARDWARE", ACCENT_ORANGE);
   
   float cpuTemp = temperatureRead();
   int tempDisplay = constrain((int)cpuTemp, 0, 99);
@@ -1775,81 +1639,54 @@ void drawSensorData() {
   int flashUsed = totalFlash > 0 ? (ESP.getSketchSize() * 100) / totalFlash : 0;
   flashUsed = constrain(flashUsed, 0, 100);
   
-  // CPU temp with mini bar
-  drawTextLabel(45, 92, "CPU:", TEXT_SECONDARY);
-  // Temperature bar (0-100°C scale)
-  fillVisibleRect(70, 93, 40, 5, BORDER_COLOR);
-  int tempBarWidth = constrain((tempDisplay * 38) / 100, 0, 38);
-  uint16_t tempColor = tempDisplay < 50 ? PRIMARY_GREEN : (tempDisplay < 70 ? YELLOW : PRIMARY_RED);
-  fillVisibleRect(71, 94, tempBarWidth, 3, tempColor);
+  // Single line hardware info
+  drawTextLabel(50, 88, "CPU:", TEXT_SECONDARY);
+  drawNumberLabel(80, 88, tempDisplay, ACCENT_ORANGE);
+  drawTextLabel(95, 88, "C", TEXT_SECONDARY);
+  drawTextLabel(110, 88, "Flash:", TEXT_SECONDARY);
+  drawNumberLabel(145, 88, flashUsed, flashUsed > 80 ? PRIMARY_RED : PRIMARY_GREEN);
+  drawTextLabel(165, 88, "%", TEXT_SECONDARY);
   
-  char tempText[20];
-  snprintf(tempText, sizeof(tempText), "%d°C", tempDisplay);
-  drawTextLabel(115, 92, tempText, tempColor);
+  // SYSTEM RESOURCES - compact inline layout
+  drawCard(40, 113, DISPLAY_WIDTH - 80, 35, "RESOURCES", PRIMARY_GREEN);
   
-  // Flash usage
-  drawTextLabel(45, 104, "Flash:", TEXT_SECONDARY);
-  // Flash bar
-  fillVisibleRect(75, 105, 40, 5, BORDER_COLOR);
-  int flashBarWidth = (flashUsed * 38) / 100;
-  uint16_t flashColor = flashUsed < 60 ? PRIMARY_GREEN : (flashUsed < 80 ? YELLOW : PRIMARY_RED);
-  fillVisibleRect(76, 106, flashBarWidth, 3, flashColor);
-  
-  char flashText[20];
-  snprintf(flashText, sizeof(flashText), "%d%% used", flashUsed);
-  drawTextLabel(120, 104, flashText, flashColor);
-  
-  // System resources section
-  fillVisibleRect(40, 125, DISPLAY_WIDTH - 80, 35, SURFACE_DARK);
-  fillVisibleRect(40, 125, DISPLAY_WIDTH - 80, 1, PRIMARY_GREEN);  // Top border
-  
-  drawTextLabel(45, 130, "System Resources", TEXT_SECONDARY);
-  
-  // Get resource info
+  // Proper ADC calibration
   int rawADC = analogRead(BATTERY_PIN);
   float adcVoltage = (rawADC / 4095.0) * 3.3;
-  int battery = constrain((int)(adcVoltage * 2110), 0, 5000);
+  int battery = constrain((int)(adcVoltage * 2110), 0, 5000);  // 2.11 calibration
   int freeKB = ESP.getFreeHeap() / 1024;
-  int totalKB = ESP.getHeapSize() / 1024;
-  int usedKB = totalKB - freeKB;
-  int ramPercent = (usedKB * 100) / totalKB;
   
-  // Power and RAM info
-  char resourceText[50];
+  // Single line resources info
+  drawTextLabel(50, 131, "Power:", TEXT_SECONDARY);
   if (battery > 4000) {
-    snprintf(resourceText, sizeof(resourceText), "Power: USB | RAM: %dKB free", freeKB);
+    drawTextLabel(85, 131, "USB", PRIMARY_GREEN);
   } else {
     int batPercent = constrain(map(battery, 3000, 4200, 0, 100), 0, 100);
-    snprintf(resourceText, sizeof(resourceText), "Battery: %d%% | RAM: %dKB free", batPercent, freeKB);
+    drawNumberLabel(85, 131, batPercent, PRIMARY_GREEN);
+    drawTextLabel(105, 131, "%", TEXT_SECONDARY);
   }
-  drawTextLabel(45, 142, resourceText, PRIMARY_GREEN);
-  
-  // RAM usage bar
-  fillVisibleRect(45, 150, 150, 5, BORDER_COLOR);
-  int ramBarWidth = (ramPercent * 148) / 100;
-  uint16_t ramColor = ramPercent < 60 ? PRIMARY_GREEN : (ramPercent < 80 ? YELLOW : PRIMARY_RED);
-  fillVisibleRect(46, 151, ramBarWidth, 3, ramColor);
+  drawTextLabel(120, 131, "RAM:", TEXT_SECONDARY);
+  drawNumberLabel(150, 131, freeKB, PRIMARY_GREEN);
+  drawTextLabel(170, 131, "KB", TEXT_SECONDARY);
 }
 
 void drawSettings() {
-  // Help section - standardized rectangle layout
-  fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 30, SURFACE_DARK);
-  fillVisibleRect(40, 25, DISPLAY_WIDTH - 80, 1, getInfoColor());
-  drawTextLabel(45, 30, "Help", TEXT_SECONDARY);
-  drawTextLabel(45, 42, "Hold USER for menu", getTextColor());
+  // Help card with semantic colors
+  drawCard(40, 25, DISPLAY_WIDTH - 80, 30, "HELP", getInfoColor());
+  drawTextLabel(45, 40, "Hold USER for menu", getTextColor());
   
-  // Menu preview section - simplified for readability
-  fillVisibleRect(40, 60, DISPLAY_WIDTH - 80, 45, SURFACE_DARK);
-  fillVisibleRect(40, 60, DISPLAY_WIDTH - 80, 1, currentTheme->card_border);
-  drawTextLabel(45, 65, "Quick Menu", TEXT_SECONDARY);
-  drawTextLabel(45, 77, "Hold USER button", getTextColor());
-  drawTextLabel(45, 89, "for full settings", getTextColor());
+  // Menu preview card
+  drawCard(40, 60, DISPLAY_WIDTH - 80, 65, "MENU OPTIONS", currentTheme->card_border);
+  const char* items[] = {"WiFi Setup", "Display", "Auto Refresh", "Reset"};
+  for (int i = 0; i < 4; i++) {
+    int y = 80 + (i * 12);
+    fillVisibleRect(50, y, 3, 3, getInfoColor());
+    drawTextLabel(58, y - 2, items[i], getTextColor());
+  }
   
-  // Version section - adjusted position for better spacing
-  fillVisibleRect(40, 110, DISPLAY_WIDTH - 80, 30, SURFACE_DARK);
-  fillVisibleRect(40, 110, DISPLAY_WIDTH - 80, 1, getGoodColor());
-  drawTextLabel(45, 115, "Version Info", TEXT_SECONDARY);
-  drawTextLabel(45, 127, "v" DASHBOARD_VERSION, getTextColor());
+  // Version card
+  drawCard(40, 130, DISPLAY_WIDTH - 80, 20, "VERSION-NEW", getGoodColor());
+  drawTextLabel(DISPLAY_WIDTH/2 - 10, 135, "v" DASHBOARD_VERSION, getTextColor());
 }
 
 // Basic 5x8 font data for essential characters (0-9, A-Z, and some symbols)
@@ -1926,9 +1763,7 @@ void drawChar(int x, int y, char c, uint16_t color) {
   } else if (c >= 'a' && c <= 'z') {
     charData = fontAZ[c - 'a']; // Map lowercase to uppercase
   } else if (c == ' ') {
-    // Clear space area (6x8 pixels) to remove ghost text
-    fillVisibleRect(x, y, 6, 8, BLACK);
-    return;
+    return; // Skip spaces
   } else if (c == '-') {
     charData = font5x8[13];
   } else if (c == '.') {
@@ -1941,10 +1776,7 @@ void drawChar(int x, int y, char c, uint16_t color) {
   
   if (!charData) return;
   
-  // CRITICAL FIX: Clear entire character background first (6x8 pixels)
-  fillVisibleRect(x, y, 6, 8, BLACK);
-  
-  // Draw character bitmap foreground pixels
+  // Draw character bitmap
   for (int col = 0; col < 5; col++) {
     uint8_t colData = charData[col];
     for (int row = 0; row < 8; row++) {
@@ -1952,52 +1784,6 @@ void drawChar(int x, int y, char c, uint16_t color) {
         fillVisibleRect(x + col, y + row, 1, 1, color);
       }
     }
-  }
-}
-
-// Draw a single character without background clearing (for navigation)
-void drawCharTransparent(int x, int y, char c, uint16_t color) {
-  const uint8_t* charData = nullptr;
-  
-  // Map character to font data
-  if (c >= '0' && c <= '9') {
-    charData = font5x8[c - '0' + 16]; // Numbers start at index 16
-  } else if (c >= 'A' && c <= 'Z') {
-    charData = fontAZ[c - 'A'];
-  } else if (c >= 'a' && c <= 'z') {
-    charData = fontAZ[c - 'a']; // Map lowercase to uppercase
-  } else if (c == ' ') {
-    return; // Skip spaces - no background clearing needed
-  } else if (c == '-') {
-    charData = font5x8[13];
-  } else if (c == '.') {
-    charData = font5x8[14];
-  } else if (c == ':') {
-    charData = font5x8[26];
-  } else if (c == '%') {
-    charData = font5x8[5];
-  }
-  
-  if (!charData) return;
-  
-  // Draw character bitmap - NO background clearing
-  for (int col = 0; col < 5; col++) {
-    uint8_t colData = charData[col];
-    for (int row = 0; row < 8; row++) {
-      if (colData & (1 << row)) {
-        fillVisibleRect(x + col, y + row, 1, 1, color);
-      }
-    }
-  }
-}
-
-// Draw a string with transparent background (for navigation)
-void drawStringTransparent(int x, int y, const char* text, uint16_t color) {
-  int xPos = x;
-  while (*text) {
-    drawCharTransparent(xPos, y, *text, color);
-    xPos += 6; // Character width + spacing
-    text++;
   }
 }
 
@@ -2295,10 +2081,10 @@ void drawNavigationIndicator(int previousIndex) {
       if (i == screenIndex) {
         fillVisibleRect(2, y - 1, 4, 12, CYAN);
         fillVisibleRect(8, y, 27, 10, CYAN);
-        drawStringTransparent(10, y + 2, screenNames[i], 0x0000);  // White text on cyan background
+        drawTextLabel(10, y + 2, screenNames[i], BLACK);
       } else {
         // Clean navigation - no weird dots
-        drawStringTransparent(10, y + 2, screenNames[i], 0x4208);
+        drawTextLabel(10, y + 2, screenNames[i], 0x4208);
       }
     }
   } else {
@@ -2307,13 +2093,13 @@ void drawNavigationIndicator(int previousIndex) {
       int y = startY + (previousIndex * spacing);
       fillVisibleRect(2, y - 1, 33, 12, BLACK);
       // Clean navigation - no weird dots
-      drawStringTransparent(10, y + 2, screenNames[previousIndex], 0x4208);
+      drawTextLabel(10, y + 2, screenNames[previousIndex], 0x4208);
     }
     if (screenIndex >= 0 && screenIndex < 5) {
       int y = startY + (screenIndex * spacing);
       fillVisibleRect(2, y - 1, 4, 12, CYAN);
       fillVisibleRect(8, y, 27, 10, CYAN);
-      drawStringTransparent(10, y + 2, screenNames[screenIndex], 0x0000);  // White text on cyan background
+      drawTextLabel(10, y + 2, screenNames[screenIndex], BLACK);
     }
   }
 }
@@ -2484,13 +2270,12 @@ void updateSystemPageDynamic() {
     int freeKB = ESP.getFreeHeap() / 1024;
     uint16_t memColor = memPercent > 50 ? getGoodColor() : (memPercent > 25 ? getWarningColor() : getErrorColor());
     
-    // Clear and update memory lines - match new layout
-    fillVisibleRect(45, 42, 100, 10, SURFACE_DARK);  // Line 1: percentage
-    fillVisibleRect(45, 54, 120, 10, SURFACE_DARK);  // Line 2: KB
-    drawNumberLabel(45, 42, memPercent, memColor);
-    drawTextLabel(70, 42, "% free", getLabelColor());
-    drawNumberLabel(45, 54, freeKB, memColor);
-    drawTextLabel(70, 54, "KB available", getLabelColor());
+    // Clear and update memory line
+    fillVisibleRect(48, 43, 180, 10, SURFACE_DARK);
+    drawNumberLabel(50, 45, memPercent, memColor);
+    drawTextLabel(75, 45, "% free", getLabelColor());
+    drawNumberLabel(130, 45, freeKB, memColor);
+    drawTextLabel(155, 45, "KB", getLabelColor());
     
     lastMemoryUpdate = now;
   }
@@ -2503,42 +2288,42 @@ void updateSystemPageDynamic() {
     cpuUsage = constrain(35 + memActivity + random(-5, 10), 25, 75);
     uint16_t cpuColor = cpuUsage < 70 ? getGoodColor() : (cpuUsage < 85 ? getWarningColor() : getErrorColor());
     
-    // Clear and update CPU lines - match new layout
-    fillVisibleRect(45, 92, 100, 10, SURFACE_DARK);   // Line 1: usage
-    fillVisibleRect(45, 104, 140, 10, SURFACE_DARK);  // Line 2: cores info
-    drawNumberLabel(45, 92, cpuUsage, cpuColor);
-    drawTextLabel(70, 92, "% usage", getLabelColor());
-    drawTextLabel(45, 104, "2 cores @ 240MHz", getLabelColor());
+    // Clear and update CPU line
+    fillVisibleRect(48, 86, 180, 10, SURFACE_DARK);
+    drawNumberLabel(50, 88, cpuUsage, cpuColor);
+    drawTextLabel(75, 88, "% usage", getLabelColor());
+    drawTextLabel(130, 88, "2 cores", getLabelColor());
+    drawTextLabel(180, 88, "240MHz", getLabelColor());
     
     lastCpuUpdate = now;
   }
   
   // Update uptime every second
   if (now - lastUptimeUpdate > 1000) {
-    // Clear the uptime area - match new layout
-    fillVisibleRect(45, 142, 120, 10, SURFACE_DARK);
+    // Clear the uptime area completely - adjusted coordinates
+    fillVisibleRect(48, 129, 120, 10, SURFACE_DARK);
     
     int totalSec = now / 1000;
     int hours = totalSec / 3600;
     int minutes = (totalSec % 3600) / 60;
     int seconds = totalSec % 60;
     
-    // Draw uptime inline - match new layout coordinates
+    // Draw uptime inline - adjusted coordinates
     if (hours > 0) {
-      drawNumberLabel(45, 142, hours, getInfoColor());
-      drawTextLabel(60, 142, "h", getLabelColor());
-      drawNumberLabel(70, 142, minutes, getInfoColor());
-      drawTextLabel(85, 142, "m", getLabelColor());
-      drawNumberLabel(95, 142, seconds, getInfoColor());
-      drawTextLabel(110, 142, "s", getLabelColor());
+      drawNumberLabel(50, 131, hours, getInfoColor());
+      drawTextLabel(65, 131, "h", getLabelColor());
+      drawNumberLabel(75, 131, minutes, getInfoColor());
+      drawTextLabel(90, 131, "m", getLabelColor());
+      drawNumberLabel(100, 131, seconds, getInfoColor());
+      drawTextLabel(115, 131, "s", getLabelColor());
     } else if (minutes > 0) {
-      drawNumberLabel(45, 142, minutes, getInfoColor());
-      drawTextLabel(65, 142, "min", getLabelColor());
-      drawNumberLabel(85, 142, seconds, getInfoColor());
-      drawTextLabel(100, 142, "sec", getLabelColor());
+      drawNumberLabel(50, 131, minutes, getInfoColor());
+      drawTextLabel(70, 131, "min", getLabelColor());
+      drawNumberLabel(90, 131, seconds, getInfoColor());
+      drawTextLabel(105, 131, "sec", getLabelColor());
     } else {
-      drawNumberLabel(45, 142, seconds, getInfoColor());
-      drawTextLabel(65, 142, "seconds", getLabelColor());
+      drawNumberLabel(50, 131, seconds, getInfoColor());
+      drawTextLabel(70, 131, "seconds", getLabelColor());
     }
     
     lastUptimeUpdate = now;
