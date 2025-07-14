@@ -1,79 +1,134 @@
-// Display module - coordinates LCD_CAM DMA driver with ST7789 display
+// Display module - main interface for LCD operations
 
-pub mod lcd_cam;
-pub mod st7789;
-pub mod graphics;
+use esp_hal::{
+    gpio::{GpioPin, Output, PinDriver},
+    peripherals::LCD_CAM,
+    dma::DmaChannel0,
+};
 
-use esp_idf_hal::gpio::{Gpio5, Gpio6, Gpio7, Output, PinDriver};
-use esp_idf_hal::prelude::*;
-use anyhow::Result;
+pub struct DisplayPins {
+    pub d0: GpioPin<39>,
+    pub d1: GpioPin<40>,
+    pub d2: GpioPin<41>,
+    pub d3: GpioPin<42>,
+    pub d4: GpioPin<45>,
+    pub d5: GpioPin<46>,
+    pub d6: GpioPin<47>,
+    pub d7: GpioPin<48>,
+    pub wr: GpioPin<8>,
+}
 
-use self::lcd_cam::LcdCam;
-use self::st7789::ST7789;
+// Color constants (BGR565 format)
+#[derive(Debug, Clone, Copy)]
+pub struct Color(pub u16);
+
+impl Color {
+    pub const BLACK: Color = Color(0xFFFF);
+    pub const WHITE: Color = Color(0x0000);
+    pub const RED: Color = Color(0x07FF);
+    pub const GREEN: Color = Color(0xF81F);
+    pub const BLUE: Color = Color(0xF8E0);
+    pub const YELLOW: Color = Color(0x001F);
+    pub const CYAN: Color = Color(0xF800);
+    pub const MAGENTA: Color = Color(0x07E0);
+    pub const PRIMARY_BLUE: Color = Color(0x2589);
+}
 
 pub struct Display {
-    lcd_cam: LcdCam,
-    controller: ST7789,
+    framebuffer: [u16; 320 * 170],
+    initialized: bool,
 }
 
 impl Display {
     pub fn new(
-        dc_pin: PinDriver<'static, Gpio7, Output>,
-        cs_pin: PinDriver<'static, Gpio6, Output>,
-        rst_pin: PinDriver<'static, Gpio5, Output>,
-    ) -> Result<Self> {
-        // Initialize LCD_CAM peripheral
-        let lcd_cam = unsafe { LcdCam::new()? };
+        lcd_cam: LCD_CAM,
+        dma_channel: DmaChannel0,
+        pins: DisplayPins,
+        dc_pin: PinDriver<'static, GpioPin<7>, Output>,
+        cs_pin: PinDriver<'static, GpioPin<6>, Output>,
+        rst_pin: PinDriver<'static, GpioPin<5>, Output>,
+        mut backlight_pin: PinDriver<'static, GpioPin<38>, Output>,
+    ) -> Result<Self, &'static str> {
+        // Turn on backlight
+        backlight_pin.set_high().ok();
         
-        // Initialize ST7789 controller
-        let controller = ST7789::new(dc_pin, cs_pin, rst_pin, &lcd_cam)?;
+        // TODO: Initialize LCD_CAM with esp-hal
+        // For now, create a simple framebuffer display
         
         Ok(Display {
-            lcd_cam,
-            controller,
+            framebuffer: [0; 320 * 170],
+            initialized: true,
         })
     }
     
-    pub fn clear(&mut self, color: u16) {
-        // Fill framebuffer with color
-        let fb = self.lcd_cam.get_framebuffer_mut();
-        for pixel in fb.iter_mut() {
-            *pixel = color;
+    pub fn clear(&mut self, color: Color) {
+        for pixel in self.framebuffer.iter_mut() {
+            *pixel = color.0;
         }
-        self.flush();
     }
     
-    pub fn flush(&mut self) {
-        // Trigger DMA transfer
-        self.lcd_cam.start_transfer();
-        self.lcd_cam.wait_transfer_done();
-    }
-    
-    pub fn set_pixel(&mut self, x: u16, y: u16, color: u16) {
+    pub fn set_pixel(&mut self, x: u16, y: u16, color: Color) {
         if x < 320 && y < 170 {
-            let fb = self.lcd_cam.get_framebuffer_mut();
-            fb[(y as usize * 320) + x as usize] = color;
+            self.framebuffer[(y as usize * 320) + x as usize] = color.0;
         }
     }
     
-    pub fn fill_rect(&mut self, x: u16, y: u16, w: u16, h: u16, color: u16) {
-        let fb = self.lcd_cam.get_framebuffer_mut();
-        
+    pub fn fill_rect(&mut self, x: u16, y: u16, w: u16, h: u16, color: Color) {
         for dy in 0..h {
             for dx in 0..w {
-                let px = x + dx;
-                let py = y + dy;
-                if px < 320 && py < 170 {
-                    fb[(py as usize * 320) + px as usize] = color;
-                }
+                self.set_pixel(x + dx, y + dy, color);
             }
         }
     }
+    
+    pub fn draw_rect(&mut self, x: u16, y: u16, w: u16, h: u16, color: Color) {
+        // Top and bottom
+        self.fill_rect(x, y, w, 1, color);
+        self.fill_rect(x, y + h - 1, w, 1, color);
+        // Left and right
+        self.fill_rect(x, y, 1, h, color);
+        self.fill_rect(x + w - 1, y, 1, h, color);
+    }
+    
+    pub fn draw_text(&mut self, x: u16, y: u16, text: &str, color: Color) {
+        // Simple text rendering placeholder
+        // In production, use a proper font library
+        let mut cursor_x = x;
+        for ch in text.chars() {
+            // Draw character placeholder (6x8 block)
+            for dy in 0..8 {
+                for dx in 0..6 {
+                    if dx == 0 || dx == 5 || dy == 0 || dy == 7 {
+                        self.set_pixel(cursor_x + dx, y + dy, color);
+                    }
+                }
+            }
+            cursor_x += 8;
+        }
+    }
+    
+    pub fn draw_number(&mut self, x: u16, y: u16, num: u32, color: Color) {
+        self.draw_text(x, y, &num.to_string(), color);
+    }
+    
+    pub fn draw_card(&mut self, x: u16, y: u16, w: u16, h: u16, title: &str, border_color: Color) {
+        // Shadow
+        self.fill_rect(x + 2, y + 2, w, h, Color(0x2104));
+        
+        // Main card
+        self.fill_rect(x, y, w, h, Color::BLACK);
+        
+        // Border
+        self.draw_rect(x, y, w, h, border_color);
+        
+        // Title
+        if !title.is_empty() {
+            self.draw_text(x + 5, y + 2, title, Color::WHITE);
+        }
+    }
+    
+    pub async fn flush(&mut self) {
+        // TODO: Implement DMA transfer
+        // For now, this is a no-op
+    }
 }
-
-// Color constants (BGR565 format for your display)
-pub const COLOR_BLACK: u16 = 0xFFFF;
-pub const COLOR_WHITE: u16 = 0x0000;
-pub const COLOR_RED: u16 = 0x07FF;
-pub const COLOR_GREEN: u16 = 0xF81F;
-pub const COLOR_BLUE: u16 = 0xF8E0;
