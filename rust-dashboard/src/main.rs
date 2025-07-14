@@ -9,7 +9,7 @@ use esp_hal::{
     clock::ClockControl,
     dma::{Dma, DmaPriority},
     embassy,
-    gpio::{IO, Input, Output, Pull},
+    gpio::IO,
     peripherals::Peripherals,
     prelude::*,
     system::SystemControl,
@@ -21,12 +21,13 @@ use static_cell::make_static;
 mod display;
 mod hardware;
 mod ui;
+mod ota;
 
-use display::{Display, Color};
+use display::{Display, DisplayPins, Color};
 use hardware::{ButtonManager, ButtonEvent};
-use ui::{Screen, Dashboard};
+use ui::{Dashboard};
 
-#[main]
+#[embassy_executor::main]
 async fn main(spawner: Spawner) {
     println!("ESP32-S3 Rust Dashboard Starting...");
     
@@ -47,16 +48,16 @@ async fn main(spawner: Spawner) {
     let dma_channel = dma.channel0;
     
     // Configure display pins
-    let display_pins = display::DisplayPins {
-        d0: io.pins.gpio39,
-        d1: io.pins.gpio40,
-        d2: io.pins.gpio41,
-        d3: io.pins.gpio42,
-        d4: io.pins.gpio45,
-        d5: io.pins.gpio46,
-        d6: io.pins.gpio47,
-        d7: io.pins.gpio48,
-        wr: io.pins.gpio8,
+    let display_pins = DisplayPins {
+        d0: io.pins.gpio39.degrade(),
+        d1: io.pins.gpio40.degrade(),
+        d2: io.pins.gpio41.degrade(),
+        d3: io.pins.gpio42.degrade(),
+        d4: io.pins.gpio45.degrade(),
+        d5: io.pins.gpio46.degrade(),
+        d6: io.pins.gpio47.degrade(),
+        d7: io.pins.gpio48.degrade(),
+        wr: io.pins.gpio8.degrade(),
     };
     
     // Configure control pins
@@ -82,7 +83,7 @@ async fn main(spawner: Spawner) {
     ) {
         Ok(d) => d,
         Err(e) => {
-            println!("Failed to initialize display: {:?}", e);
+            println!("Failed to initialize display: {}", e);
             panic!("Display initialization failed");
         }
     };
@@ -122,7 +123,7 @@ async fn display_task(dashboard: &'static mut Dashboard) {
 
 #[embassy_executor::task]
 async fn button_task(
-    button_manager: &'static ButtonManager,
+    button_manager: &'static mut ButtonManager,
     dashboard: &'static mut Dashboard,
 ) {
     println!("Button task started");
@@ -168,9 +169,11 @@ async fn sensor_task() {
     }
 }
 
-// WiFi task will be added later when we implement networking
+// WiFi and OTA task will be added when we have std support
+// For no_std, we need a different approach for networking
 // #[embassy_executor::task]
-// async fn wifi_task() {
+// async fn network_task() {
 //     // TODO: Initialize WiFi
+//     // TODO: Start OTA web server
 //     // TODO: Handle OTA updates
 // }

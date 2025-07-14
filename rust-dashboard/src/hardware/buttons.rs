@@ -1,7 +1,7 @@
 // Button input handling with debouncing and event detection
 
 use embassy_time::{Duration, Instant};
-use esp_hal::gpio::{Input, Pin};
+use esp_hal::gpio::{AnyPin, Input, PinDriver};
 
 // Button timing constants (matching Arduino implementation)
 const DEBOUNCE_TIME: Duration = Duration::from_millis(50);
@@ -102,15 +102,18 @@ impl ButtonState {
 }
 
 pub struct ButtonManager {
-    button1: Input<'static>,
-    button2: Input<'static>,
+    button1: PinDriver<'static, AnyPin, Input>,
+    button2: PinDriver<'static, AnyPin, Input>,
     button1_state: ButtonState,
     button2_state: ButtonState,
     last_poll: Instant,
 }
 
 impl ButtonManager {
-    pub fn new(button1: Input<'static>, button2: Input<'static>) -> Self {
+    pub fn new(
+        button1: PinDriver<'static, AnyPin, Input>,
+        button2: PinDriver<'static, AnyPin, Input>,
+    ) -> Self {
         Self {
             button1,
             button2,

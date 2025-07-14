@@ -1,21 +1,26 @@
 // Display module - main interface for LCD operations
 
+pub mod font;
+
 use esp_hal::{
-    gpio::{GpioPin, Output, PinDriver},
+    gpio::{AnyPin, Input, Output, PinDriver},
     peripherals::LCD_CAM,
-    dma::DmaChannel0,
+    dma::Channel0,
 };
+use esp_println::println;
+
+pub use font::{Font5x7, FontRenderer};
 
 pub struct DisplayPins {
-    pub d0: GpioPin<39>,
-    pub d1: GpioPin<40>,
-    pub d2: GpioPin<41>,
-    pub d3: GpioPin<42>,
-    pub d4: GpioPin<45>,
-    pub d5: GpioPin<46>,
-    pub d6: GpioPin<47>,
-    pub d7: GpioPin<48>,
-    pub wr: GpioPin<8>,
+    pub d0: AnyPin,
+    pub d1: AnyPin,
+    pub d2: AnyPin,
+    pub d3: AnyPin,
+    pub d4: AnyPin,
+    pub d5: AnyPin,
+    pub d6: AnyPin,
+    pub d7: AnyPin,
+    pub wr: AnyPin,
 }
 
 // Color constants (BGR565 format)
@@ -35,28 +40,42 @@ impl Color {
 }
 
 pub struct Display {
-    framebuffer: [u16; 320 * 170],
+    framebuffer: &'static mut [u16; 320 * 170],
     initialized: bool,
 }
 
 impl Display {
     pub fn new(
         lcd_cam: LCD_CAM,
-        dma_channel: DmaChannel0,
+        dma_channel: Channel0,
         pins: DisplayPins,
-        dc_pin: PinDriver<'static, GpioPin<7>, Output>,
-        cs_pin: PinDriver<'static, GpioPin<6>, Output>,
-        rst_pin: PinDriver<'static, GpioPin<5>, Output>,
-        mut backlight_pin: PinDriver<'static, GpioPin<38>, Output>,
+        mut dc_pin: PinDriver<'static, AnyPin, Output>,
+        mut cs_pin: PinDriver<'static, AnyPin, Output>,
+        mut rst_pin: PinDriver<'static, AnyPin, Output>,
+        mut backlight_pin: PinDriver<'static, AnyPin, Output>,
     ) -> Result<Self, &'static str> {
         // Turn on backlight
         backlight_pin.set_high().ok();
         
+        // Reset display
+        rst_pin.set_high().ok();
+        esp_hal::delay::Delay::new_default().delay_millis(10);
+        rst_pin.set_low().ok();
+        esp_hal::delay::Delay::new_default().delay_millis(10);
+        rst_pin.set_high().ok();
+        esp_hal::delay::Delay::new_default().delay_millis(120);
+        
         // TODO: Initialize LCD_CAM with esp-hal
         // For now, create a simple framebuffer display
         
+        // Allocate framebuffer statically
+        static mut FRAMEBUFFER: [u16; 320 * 170] = [0; 320 * 170];
+        let framebuffer = unsafe { &mut FRAMEBUFFER };
+        
+        println!("Display initialized");
+        
         Ok(Display {
-            framebuffer: [0; 320 * 170],
+            framebuffer,
             initialized: true,
         })
     }
@@ -90,25 +109,17 @@ impl Display {
         self.fill_rect(x + w - 1, y, 1, h, color);
     }
     
+    // Legacy text drawing (replaced by FontRenderer trait)
     pub fn draw_text(&mut self, x: u16, y: u16, text: &str, color: Color) {
-        // Simple text rendering placeholder
-        // In production, use a proper font library
-        let mut cursor_x = x;
-        for ch in text.chars() {
-            // Draw character placeholder (6x8 block)
-            for dy in 0..8 {
-                for dx in 0..6 {
-                    if dx == 0 || dx == 5 || dy == 0 || dy == 7 {
-                        self.set_pixel(cursor_x + dx, y + dy, color);
-                    }
-                }
-            }
-            cursor_x += 8;
-        }
+        // Use the new font system
+        self.draw_text_5x7(x, y, text, color);
     }
     
     pub fn draw_number(&mut self, x: u16, y: u16, num: u32, color: Color) {
-        self.draw_text(x, y, &num.to_string(), color);
+        // Convert number to string and draw
+        let mut buffer = [0u8; 10];
+        let text = num_to_str(num, &mut buffer);
+        self.draw_text(x, y, text, color);
     }
     
     pub fn draw_card(&mut self, x: u16, y: u16, w: u16, h: u16, title: &str, border_color: Color) {
@@ -131,4 +142,81 @@ impl Display {
         // TODO: Implement DMA transfer
         // For now, this is a no-op
     }
+    
+    // Graphics primitives
+    pub fn draw_line(&mut self, x0: u16, y0: u16, x1: u16, y1: u16, color: Color) {
+        // Bresenham's line algorithm
+        let dx = (x1 as i32 - x0 as i32).abs();
+        let dy = (y1 as i32 - y0 as i32).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx - dy;
+        let mut x = x0 as i32;
+        let mut y = y0 as i32;
+        
+        loop {
+            self.set_pixel(x as u16, y as u16, color);
+            
+            if x == x1 as i32 && y == y1 as i32 {
+                break;
+            }
+            
+            let e2 = 2 * err;
+            if e2 > -dy {
+                err -= dy;
+                x += sx;
+            }
+            if e2 < dx {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
+    
+    pub fn draw_circle(&mut self, cx: u16, cy: u16, radius: u16, color: Color) {
+        // Midpoint circle algorithm
+        let mut x = radius as i32;
+        let mut y = 0i32;
+        let mut err = 0i32;
+        
+        while x >= y {
+            self.set_pixel((cx as i32 + x) as u16, (cy as i32 + y) as u16, color);
+            self.set_pixel((cx as i32 + y) as u16, (cy as i32 + x) as u16, color);
+            self.set_pixel((cx as i32 - y) as u16, (cy as i32 + x) as u16, color);
+            self.set_pixel((cx as i32 - x) as u16, (cy as i32 + y) as u16, color);
+            self.set_pixel((cx as i32 - x) as u16, (cy as i32 - y) as u16, color);
+            self.set_pixel((cx as i32 - y) as u16, (cy as i32 - x) as u16, color);
+            self.set_pixel((cx as i32 + y) as u16, (cy as i32 - x) as u16, color);
+            self.set_pixel((cx as i32 + x) as u16, (cy as i32 - y) as u16, color);
+            
+            if err <= 0 {
+                y += 1;
+                err += 2 * y + 1;
+            }
+            
+            if err > 0 {
+                x -= 1;
+                err -= 2 * x + 1;
+            }
+        }
+    }
+}
+
+// Helper function to convert number to string
+fn num_to_str(mut num: u32, buffer: &mut [u8]) -> &str {
+    if num == 0 {
+        buffer[0] = b'0';
+        return unsafe { core::str::from_utf8_unchecked(&buffer[..1]) };
+    }
+    
+    let mut i = 0;
+    while num > 0 && i < buffer.len() {
+        buffer[i] = b'0' + (num % 10) as u8;
+        num /= 10;
+        i += 1;
+    }
+    
+    // Reverse the digits
+    buffer[..i].reverse();
+    unsafe { core::str::from_utf8_unchecked(&buffer[..i]) }
 }
