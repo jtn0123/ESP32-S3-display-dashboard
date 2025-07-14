@@ -1,0 +1,168 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'rust-dashboard/**'
+      - '.github/workflows/rust-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'rust-dashboard/**'
+      - '.github/workflows/rust-ci.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        target: xtensa-esp32s3-none-elf
+        components: rust-src
+    
+    - name: Install espup
+      run: |
+        curl -L https://github.com/esp-rs/espup/releases/latest/download/espup-x86_64-unknown-linux-gnu -o espup
+        chmod +x espup
+        ./espup install
+        source $HOME/export-esp.sh
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+    
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-index-
+    
+    - name: Check
+      working-directory: ./rust-dashboard
+      run: |
+        source $HOME/export-esp.sh
+        cargo check --target xtensa-esp32s3-none-elf
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Run tests
+      working-directory: ./rust-dashboard
+      run: cargo test --lib --bins
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    
+    - name: Check formatting
+      working-directory: ./rust-dashboard
+      run: cargo fmt -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        target: xtensa-esp32s3-none-elf
+        components: clippy, rust-src
+    
+    - name: Install espup
+      run: |
+        curl -L https://github.com/esp-rs/espup/releases/latest/download/espup-x86_64-unknown-linux-gnu -o espup
+        chmod +x espup
+        ./espup install
+        source $HOME/export-esp.sh
+    
+    - name: Run clippy
+      working-directory: ./rust-dashboard
+      run: |
+        source $HOME/export-esp.sh
+        cargo clippy --target xtensa-esp32s3-none-elf -- -D warnings
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [dev, release]
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        target: xtensa-esp32s3-none-elf
+        components: rust-src
+    
+    - name: Install espup
+      run: |
+        curl -L https://github.com/esp-rs/espup/releases/latest/download/espup-x86_64-unknown-linux-gnu -o espup
+        chmod +x espup
+        ./espup install
+        source $HOME/export-esp.sh
+    
+    - name: Build
+      working-directory: ./rust-dashboard
+      run: |
+        source $HOME/export-esp.sh
+        if [ "${{ matrix.profile }}" = "release" ]; then
+          cargo build --target xtensa-esp32s3-none-elf --release
+        else
+          cargo build --target xtensa-esp32s3-none-elf
+        fi
+    
+    - name: Check binary size
+      working-directory: ./rust-dashboard
+      run: |
+        if [ "${{ matrix.profile }}" = "release" ]; then
+          size target/xtensa-esp32s3-none-elf/release/rust-dashboard
+        else
+          size target/xtensa-esp32s3-none-elf/debug/rust-dashboard
+        fi
+
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+    
+    - name: Run security audit
+      working-directory: ./rust-dashboard
+      run: cargo audit

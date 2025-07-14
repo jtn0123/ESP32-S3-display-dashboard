@@ -1,0 +1,47 @@
+name: Arduino CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'minimal_dashboard/**'
+      - '.github/workflows/arduino-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'minimal_dashboard/**'
+      - '.github/workflows/arduino-ci.yml'
+
+jobs:
+  compile:
+    name: Compile Arduino Sketch
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Arduino CLI
+      uses: arduino/setup-arduino-cli@v1
+      
+    - name: Install ESP32 platform
+      run: |
+        arduino-cli core update-index
+        arduino-cli core install esp32:esp32
+        
+    - name: Install required libraries
+      run: |
+        arduino-cli lib install "TFT_eSPI"
+        arduino-cli lib install "Button2"
+        arduino-cli lib install "WiFi"
+        arduino-cli lib install "AsyncTCP"
+        arduino-cli lib install "ESPAsyncWebServer"
+        arduino-cli lib install "ArduinoJson"
+        arduino-cli lib install "Update"
+        
+    - name: Compile sketch
+      run: |
+        arduino-cli compile --fqbn esp32:esp32:lilygo_t_display_s3 minimal_dashboard
+        
+    - name: Check sketch size
+      run: |
+        arduino-cli compile --fqbn esp32:esp32:lilygo_t_display_s3 --show-properties minimal_dashboard | grep -E "(sketch|global|maximum)" || true

@@ -24,6 +24,7 @@ mod ui;
 mod ota;
 mod animation;
 mod power;
+mod sensors;
 
 #[cfg(test)]
 mod tests;
