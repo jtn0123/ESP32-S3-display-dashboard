@@ -1,6 +1,41 @@
 // Animation system for smooth UI transitions
 
-use embassy_time::{Duration, Instant};
+// Simple Duration and Instant replacements for no_std
+#[derive(Debug, Clone, Copy)]
+pub struct Duration {
+    millis: u32,
+}
+
+impl Duration {
+    pub const fn from_millis(millis: u32) -> Self {
+        Self { millis }
+    }
+    
+    pub const fn from_secs(secs: u32) -> Self {
+        Self { millis: secs * 1000 }
+    }
+    
+    pub const fn as_millis(&self) -> u32 {
+        self.millis
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Instant {
+    millis: u32,
+}
+
+impl Instant {
+    pub fn now() -> Self {
+        // In real implementation, this would read from a timer
+        Self { millis: 0 }
+    }
+    
+    pub fn elapsed(&self) -> Duration {
+        // In real implementation, this would calculate actual elapsed time
+        Duration::from_millis(0)
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum EasingFunction {
@@ -50,7 +85,7 @@ impl Animation {
         if let Some(start_time) = self.start_time {
             let elapsed = start_time.elapsed();
             
-            if elapsed >= self.duration {
+            if elapsed.as_millis() >= self.duration.as_millis() {
                 self.completed = true;
                 return self.end_value;
             }
@@ -96,16 +131,16 @@ impl Animation {
                 if t < 0.5 {
                     2.0 * t * t
                 } else {
-                    1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
+                    1.0 - libm::powf(-2.0 * t + 2.0, 2.0) / 2.0
                 }
             }
             EasingFunction::EaseInCubic => t * t * t,
-            EasingFunction::EaseOutCubic => 1.0 - (1.0 - t).powi(3),
+            EasingFunction::EaseOutCubic => 1.0 - libm::powf(1.0 - t, 3.0),
             EasingFunction::EaseInOutCubic => {
                 if t < 0.5 {
                     4.0 * t * t * t
                 } else {
-                    1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+                    1.0 - libm::powf(-2.0 * t + 2.0, 3.0) / 2.0
                 }
             }
             EasingFunction::EaseInElastic => {
@@ -113,7 +148,7 @@ impl Animation {
                     t
                 } else {
                     let c4 = (2.0 * core::f32::consts::PI) / 3.0;
-                    -(2.0_f32.powf(10.0 * t - 10.0)) * libm::sinf((t * 10.0 - 10.75) * c4)
+                    -libm::powf(2.0, 10.0 * t - 10.0) * libm::sinf((t * 10.0 - 10.75) * c4)
                 }
             }
             EasingFunction::EaseOutElastic => {
@@ -121,7 +156,7 @@ impl Animation {
                     t
                 } else {
                     let c4 = (2.0 * core::f32::consts::PI) / 3.0;
-                    2.0_f32.powf(-10.0 * t) * libm::sinf((t * 10.0 - 0.75) * c4) + 1.0
+                    libm::powf(2.0, -10.0 * t) * libm::sinf((t * 10.0 - 0.75) * c4) + 1.0
                 }
             }
             EasingFunction::Bounce => {
@@ -259,7 +294,7 @@ mod tests {
     
     #[test]
     fn test_linear_easing() {
-        let mut anim = Animation::new(0.0, 100.0, Duration::from_secs(1), EasingFunction::Linear);
+        let anim = Animation::new(0.0, 100.0, Duration::from_secs(1), EasingFunction::Linear);
         assert_eq!(anim.apply_easing(0.0), 0.0);
         assert_eq!(anim.apply_easing(0.5), 0.5);
         assert_eq!(anim.apply_easing(1.0), 1.0);
@@ -267,7 +302,7 @@ mod tests {
     
     #[test]
     fn test_ease_in_out() {
-        let mut anim = Animation::new(0.0, 100.0, Duration::from_secs(1), EasingFunction::EaseInOut);
+        let anim = Animation::new(0.0, 100.0, Duration::from_secs(1), EasingFunction::EaseInOut);
         // Should start slow
         assert!(anim.apply_easing(0.1) < 0.1);
         // Should be roughly linear in the middle
