@@ -34,6 +34,14 @@ jobs:
         target: xtensa-esp32s3-none-elf
         components: rust-src
     
+    - name: Cache ESP toolchain
+      uses: actions/cache@v3
+      with:
+        path: ~/.espressif
+        key: ${{ runner.os }}-esp-toolchain-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-esp-toolchain-
+    
     - name: Install espup
       run: |
         curl -L https://github.com/esp-rs/espup/releases/latest/download/espup-x86_64-unknown-linux-gnu -o espup
@@ -126,6 +134,14 @@ jobs:
       with:
         target: xtensa-esp32s3-none-elf
         components: rust-src
+    
+    - name: Cache ESP toolchain
+      uses: actions/cache@v3
+      with:
+        path: ~/.espressif
+        key: ${{ runner.os }}-esp-toolchain-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-esp-toolchain-
     
     - name: Install espup
       run: |

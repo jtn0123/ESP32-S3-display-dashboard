@@ -1,11 +1,15 @@
-[target.xtensa-esp32s3-none-elf]
+[target.xtensa-esp32s3-espidf]
 runner = "espflash flash --monitor"
 
 [build]
-target = "xtensa-esp32s3-none-elf"
-
-[unstable]
-build-std = ["core"]
+target = "xtensa-esp32s3-espidf"
 
 [env]
 ESP_LOGLEVEL = "INFO"
+ESP_IDF_VERSION = "v5.1"
+
+[alias]
+# Common development commands
+build-esp = "build --target xtensa-esp32s3-espidf"
+flash = "run --target xtensa-esp32s3-espidf"
+size = "size --target xtensa-esp32s3-espidf --release"
