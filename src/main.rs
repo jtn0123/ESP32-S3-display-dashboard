@@ -49,6 +49,10 @@ fn main() -> Result<()> {
     lcd_power.set_high()?;
     info!("LCD power enabled on GPIO 15");
     
+    // Small delay to ensure LCD power is stable
+    use esp_idf_hal::delay::Ets;
+    Ets::delay_ms(10);
+    
     let mut display_manager = DisplayManager::new(
         peripherals.pins.gpio39, // D0
         peripherals.pins.gpio40, // D1
