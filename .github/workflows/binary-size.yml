@@ -1,0 +1,117 @@
+name: Binary Size Tracking
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+jobs:
+  size-check:
+    name: Track Binary Size
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        target: xtensa-esp32s3-none-elf
+        components: rust-src
+    
+    - name: Install espup
+      run: |
+        curl -L https://github.com/esp-rs/espup/releases/latest/download/espup-x86_64-unknown-linux-gnu -o espup
+        chmod +x espup
+        ./espup install
+        source $HOME/export-esp.sh
+    
+    - name: Build current branch
+      run: |
+        source $HOME/export-esp.sh
+        cargo build --target xtensa-esp32s3-none-elf --release
+        cp target/xtensa-esp32s3-none-elf/release/esp32-s3-dashboard current-binary
+    
+    - name: Checkout base branch
+      run: |
+        git checkout ${{ github.base_ref }}
+    
+    - name: Build base branch
+      run: |
+        source $HOME/export-esp.sh
+        cargo build --target xtensa-esp32s3-none-elf --release || true
+        if [ -f target/xtensa-esp32s3-none-elf/release/esp32-s3-dashboard ]; then
+          cp target/xtensa-esp32s3-none-elf/release/esp32-s3-dashboard base-binary
+        else
+          echo "No binary found in base branch"
+          touch base-binary
+        fi
+    
+    - name: Compare sizes
+      run: |
+        echo "## Binary Size Comparison" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -s base-binary ]; then
+          BASE_SIZE=$(stat -c%s base-binary)
+          CURRENT_SIZE=$(stat -c%s current-binary)
+          DIFF=$((CURRENT_SIZE - BASE_SIZE))
+          PERCENT=$(awk "BEGIN {printf \"%.2f\", ($DIFF / $BASE_SIZE) * 100}")
+          
+          echo "| Branch | Size | Change |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Base | $(numfmt --to=iec $BASE_SIZE) | - |" >> $GITHUB_STEP_SUMMARY
+          echo "| Current | $(numfmt --to=iec $CURRENT_SIZE) | $(numfmt --to=iec $DIFF) ($PERCENT%) |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Detailed Size Information" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          size current-binary | tee -a $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "No base binary to compare against" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Current Binary Size" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          size current-binary | tee -a $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Comment PR
+      if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
+          
+          // Find and update existing comment or create new one
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const botComment = comments.find(comment => 
+            comment.user.type === 'Bot' && 
+            comment.body.includes('## Binary Size Comparison')
+          );
+          
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: summary
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: summary
+            });
+          }

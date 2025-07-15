@@ -1,8 +1,10 @@
 pub mod colors;
 pub mod font5x7;
+pub mod lcd_bus;
 
 use anyhow::Result;
 use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
+use self::lcd_bus::LcdBus;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::Duration;
@@ -21,11 +23,7 @@ const CMD_RASET: u8 = 0x2B;
 const CMD_RAMWR: u8 = 0x2C;
 
 pub struct DisplayManager {
-    data_pins: [PinDriver<'static, AnyIOPin, Output>; 8],
-    wr: PinDriver<'static, AnyIOPin, Output>,
-    dc: PinDriver<'static, AnyIOPin, Output>,
-    cs: PinDriver<'static, AnyIOPin, Output>,
-    rst: PinDriver<'static, AnyIOPin, Output>,
+    lcd_bus: LcdBus,
     backlight: PinDriver<'static, AnyIOPin, Output>,
     width: u16,
     height: u16,
@@ -48,20 +46,7 @@ impl DisplayManager {
         backlight: impl Into<AnyIOPin> + 'static,
     ) -> Result<Self> {
         let mut display = Self {
-            data_pins: [
-                PinDriver::output(d0.into())?,
-                PinDriver::output(d1.into())?,
-                PinDriver::output(d2.into())?,
-                PinDriver::output(d3.into())?,
-                PinDriver::output(d4.into())?,
-                PinDriver::output(d5.into())?,
-                PinDriver::output(d6.into())?,
-                PinDriver::output(d7.into())?,
-            ],
-            wr: PinDriver::output(wr.into())?,
-            dc: PinDriver::output(dc.into())?,
-            cs: PinDriver::output(cs.into())?,
-            rst: PinDriver::output(rst.into())?,
+            lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
             backlight: PinDriver::output(backlight.into())?,
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
@@ -74,37 +59,27 @@ impl DisplayManager {
     fn init(&mut self) -> Result<()> {
         log::info!("Initializing ST7789 display...");
 
-        // Initial pin states
-        self.cs.set_high()?;
-        self.wr.set_high()?;
-        self.dc.set_high()?;
-        
         // Hardware reset
-        self.rst.set_high()?;
-        FreeRtos::delay_ms(10);
-        self.rst.set_low()?;
-        FreeRtos::delay_ms(10);
-        self.rst.set_high()?;
-        FreeRtos::delay_ms(120);
+        self.lcd_bus.reset()?;
 
         // Software reset
-        self.write_command(CMD_SWRESET)?;
+        self.lcd_bus.write_command(CMD_SWRESET)?;
         FreeRtos::delay_ms(120);
 
         // Sleep out
-        self.write_command(CMD_SLPOUT)?;
+        self.lcd_bus.write_command(CMD_SLPOUT)?;
         FreeRtos::delay_ms(120);
 
         // Memory access control (rotation)
-        self.write_command(CMD_MADCTL)?;
-        self.write_data(0x60)?; // Landscape mode
+        self.lcd_bus.write_command(CMD_MADCTL)?;
+        self.lcd_bus.write_data(0x60)?; // Landscape mode
 
         // Pixel format
-        self.write_command(CMD_COLMOD)?;
-        self.write_data(0x55)?; // 16-bit RGB565
+        self.lcd_bus.write_command(CMD_COLMOD)?;
+        self.lcd_bus.write_data(0x55)?; // 16-bit RGB565
 
         // Display on
-        self.write_command(CMD_DISPON)?;
+        self.lcd_bus.write_command(CMD_DISPON)?;
         FreeRtos::delay_ms(100);
 
         // Turn on backlight
@@ -117,77 +92,35 @@ impl DisplayManager {
         Ok(())
     }
 
-    fn write_byte(&mut self, data: u8) -> Result<()> {
-        // Set data pins
-        for i in 0..8 {
-            if (data >> i) & 1 == 1 {
-                self.data_pins[i].set_high()?;
-            } else {
-                self.data_pins[i].set_low()?;
-            }
-        }
-
-        // Toggle write pin
-        self.wr.set_low()?;
-        // Small delay for signal stability
-        FreeRtos::delay_us(1);
-        self.wr.set_high()?;
-        FreeRtos::delay_us(1);
-
-        Ok(())
-    }
-
-    fn write_command(&mut self, cmd: u8) -> Result<()> {
-        self.cs.set_low()?;
-        self.dc.set_low()?; // Command mode
-        self.write_byte(cmd)?;
-        self.cs.set_high()?;
-        Ok(())
-    }
-
-    fn write_data(&mut self, data: u8) -> Result<()> {
-        self.cs.set_low()?;
-        self.dc.set_high()?; // Data mode
-        self.write_byte(data)?;
-        self.cs.set_high()?;
-        Ok(())
-    }
-
-    fn write_data_16(&mut self, data: u16) -> Result<()> {
-        self.write_data((data >> 8) as u8)?;
-        self.write_data((data & 0xFF) as u8)?;
-        Ok(())
-    }
 
     fn set_window(&mut self, x0: u16, y0: u16, x1: u16, y1: u16) -> Result<()> {
         // Column address set
-        self.write_command(CMD_CASET)?;
-        self.write_data_16(x0)?;
-        self.write_data_16(x1)?;
+        self.lcd_bus.write_command(CMD_CASET)?;
+        self.lcd_bus.write_data_16(x0)?;
+        self.lcd_bus.write_data_16(x1)?;
 
         // Row address set
-        self.write_command(CMD_RASET)?;
-        self.write_data_16(y0)?;
-        self.write_data_16(y1)?;
+        self.lcd_bus.write_command(CMD_RASET)?;
+        self.lcd_bus.write_data_16(y0)?;
+        self.lcd_bus.write_data_16(y1)?;
 
         // Memory write
-        self.write_command(CMD_RAMWR)?;
+        self.lcd_bus.write_command(CMD_RAMWR)?;
         Ok(())
     }
 
     pub fn clear(&mut self, color: u16) -> Result<()> {
         self.set_window(0, 0, self.width - 1, self.height - 1)?;
         
-        self.cs.set_low()?;
-        self.dc.set_high()?;
+        self.lcd_bus.begin_write()?;
         
         let total_pixels = self.width as u32 * self.height as u32;
+        let color_bytes = [(color >> 8) as u8, (color & 0xFF) as u8];
         for _ in 0..total_pixels {
-            self.write_byte((color >> 8) as u8)?;
-            self.write_byte((color & 0xFF) as u8)?;
+            self.lcd_bus.write_raw(&color_bytes)?;
         }
         
-        self.cs.set_high()?;
+        self.lcd_bus.end_write()?;
         Ok(())
     }
 
@@ -197,7 +130,7 @@ impl DisplayManager {
         }
 
         self.set_window(x, y, x, y)?;
-        self.write_data_16(color)?;
+        self.lcd_bus.write_data_16(color)?;
         Ok(())
     }
 
@@ -211,16 +144,15 @@ impl DisplayManager {
 
         self.set_window(x, y, x1, y1)?;
         
-        self.cs.set_low()?;
-        self.dc.set_high()?;
+        self.lcd_bus.begin_write()?;
         
         let total_pixels = (x1 - x + 1) as u32 * (y1 - y + 1) as u32;
+        let color_bytes = [(color >> 8) as u8, (color & 0xFF) as u8];
         for _ in 0..total_pixels {
-            self.write_byte((color >> 8) as u8)?;
-            self.write_byte((color & 0xFF) as u8)?;
+            self.lcd_bus.write_raw(&color_bytes)?;
         }
         
-        self.cs.set_high()?;
+        self.lcd_bus.end_write()?;
         Ok(())
     }
 

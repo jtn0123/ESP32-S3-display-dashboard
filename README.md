@@ -1,8 +1,8 @@
-# ESP32-S3 Display Dashboard (Rust)
+# ESP32-S3 Display Dashboard
 
-A modern dashboard implementation for the LilyGo T-Display-S3, written in Rust using ESP-IDF.
+A modern, high-performance dashboard implementation for the LilyGo T-Display-S3, written in Rust using ESP-IDF.
 
-## 🚀 Rust Quick Start
+## 🚀 Quick Start
 
 ```bash
 # One-time setup
@@ -50,6 +50,7 @@ cargo install espflash cargo-espflash
 │   ├── sensors.rs           # Sensor abstraction
 │   ├── display/
 │   │   ├── mod.rs          # Display driver (ST7789)
+│   │   ├── lcd_bus.rs      # Low-level LCD bus interface
 │   │   ├── colors.rs       # Color definitions
 │   │   └── font5x7.rs      # Bitmap font
 │   ├── network/
@@ -62,7 +63,7 @@ cargo install espflash cargo-espflash
 │   │   └── storage.rs      # Persistent storage
 │   └── ui/
 │       └── mod.rs          # UI screens
-├── Cargo.toml              # Dependencies
+├── Cargo.toml              # Dependencies (pinned versions)
 ├── build.rs                # Build script
 └── sdkconfig.defaults      # ESP-IDF config
 ```
@@ -92,17 +93,23 @@ cargo install espflash cargo-espflash
 # Check code without building
 cargo check
 
-# Run linter
-cargo clippy
+# Run linter with strict warnings
+cargo clippy -- -D warnings
 
 # Format code
 cargo fmt
+
+# Check formatting (CI mode)
+cargo fmt -- --check
 
 # Run tests (host-side only)
 cargo test --lib
 
 # Monitor serial output
 cargo espflash monitor
+
+# View binary size
+cargo size --release
 ```
 
 ## 🔧 Configuration
@@ -158,14 +165,35 @@ rustup target add xtensa-esp32s3-espidf
 3. Test thoroughly on hardware
 4. Submit pull request
 
+## 🔄 CI/CD
+
+This project includes comprehensive CI workflows:
+
+### Automated Checks
+- **Code Formatting** - Enforces consistent style with `cargo fmt`
+- **Linting** - Strict clippy checks with warnings as errors
+- **Security Audit** - Checks dependencies for known vulnerabilities
+- **Binary Size Tracking** - Monitors size changes in PRs
+- **Build Matrix** - Tests both debug and release builds
+
+### Binary Size Reports
+Pull requests automatically receive comments showing binary size changes compared to the base branch.
+
 ## 📝 Migration from Arduino
 
 This is a complete rewrite in Rust of the original Arduino implementation. Benefits include:
 - Memory safety (no buffer overflows)
-- Better error handling
+- Better error handling  
 - Modern async/await concurrency
 - Type-safe hardware abstractions
 - Improved performance
+- Smaller binary size
+
+### Architecture Improvements
+- **Modular Design** - Clear separation between display driver, UI, and system components
+- **Clean LCD Bus Abstraction** - Low-level display operations isolated in `lcd_bus.rs`
+- **Pinned Dependencies** - Reproducible builds with exact version specifications
+- **Modern Tooling** - Full CI/CD pipeline with automated quality checks
 
 ## 📄 License
 

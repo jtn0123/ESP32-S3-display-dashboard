@@ -4,12 +4,18 @@ on:
   push:
     branches: [ main, develop ]
     paths:
-      - 'rust-dashboard/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
       - '.github/workflows/rust-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'rust-dashboard/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
       - '.github/workflows/rust-ci.yml'
 
 env:
@@ -52,7 +58,6 @@ jobs:
           ${{ runner.os }}-cargo-index-
     
     - name: Check
-      working-directory: ./rust-dashboard
       run: |
         source $HOME/export-esp.sh
         cargo check --target xtensa-esp32s3-none-elf
@@ -67,7 +72,6 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
     
     - name: Run tests
-      working-directory: ./rust-dashboard
       run: cargo test --lib --bins
 
   fmt:
@@ -82,7 +86,6 @@ jobs:
         components: rustfmt
     
     - name: Check formatting
-      working-directory: ./rust-dashboard
       run: cargo fmt -- --check
 
   clippy:
@@ -105,7 +108,6 @@ jobs:
         source $HOME/export-esp.sh
     
     - name: Run clippy
-      working-directory: ./rust-dashboard
       run: |
         source $HOME/export-esp.sh
         cargo clippy --target xtensa-esp32s3-none-elf -- -D warnings
@@ -133,7 +135,6 @@ jobs:
         source $HOME/export-esp.sh
     
     - name: Build
-      working-directory: ./rust-dashboard
       run: |
         source $HOME/export-esp.sh
         if [ "${{ matrix.profile }}" = "release" ]; then
@@ -143,13 +144,26 @@ jobs:
         fi
     
     - name: Check binary size
-      working-directory: ./rust-dashboard
       run: |
         if [ "${{ matrix.profile }}" = "release" ]; then
-          size target/xtensa-esp32s3-none-elf/release/rust-dashboard
+          BINARY_PATH="target/xtensa-esp32s3-none-elf/release/esp32-s3-dashboard"
         else
-          size target/xtensa-esp32s3-none-elf/debug/rust-dashboard
+          BINARY_PATH="target/xtensa-esp32s3-none-elf/debug/esp32-s3-dashboard"
         fi
+        
+        echo "## Binary Size Report (${{ matrix.profile }})" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        size $BINARY_PATH | tee -a $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        
+        # Save size for artifact
+        size $BINARY_PATH > binary-size-${{ matrix.profile }}.txt
+    
+    - name: Upload size report
+      uses: actions/upload-artifact@v3
+      with:
+        name: binary-size-${{ matrix.profile }}
+        path: binary-size-${{ matrix.profile }}.txt
 
   security:
     name: Security audit
@@ -164,5 +178,4 @@ jobs:
       run: cargo install cargo-audit
     
     - name: Run security audit
-      working-directory: ./rust-dashboard
       run: cargo audit
