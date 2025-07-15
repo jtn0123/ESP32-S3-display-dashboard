@@ -36,7 +36,7 @@ fi
 
 # Flash and monitor
 echo -e "${GREEN}Flashing to device...${NC}"
-cargo espflash flash --monitor --release
+cargo espflash flash --release
 
 # Alternative method if cargo-espflash is not installed
 if [ $? -ne 0 ]; then

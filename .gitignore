@@ -27,3 +27,8 @@ build/
 # Temporary files
 *.bak
 *.orig
+
+# Rust/ESP-IDF build files
+target/
+.embuild/
+Cargo.lock

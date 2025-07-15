@@ -42,6 +42,13 @@ fn main() -> Result<()> {
 
     // Initialize display
     info!("Initializing display...");
+    
+    // Turn on LCD power first (GPIO 15)
+    use esp_idf_hal::gpio::PinDriver;
+    let mut lcd_power = PinDriver::output(peripherals.pins.gpio15)?;
+    lcd_power.set_high()?;
+    info!("LCD power enabled on GPIO 15");
+    
     let mut display_manager = DisplayManager::new(
         peripherals.pins.gpio39, // D0
         peripherals.pins.gpio40, // D1

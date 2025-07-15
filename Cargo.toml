@@ -16,18 +16,11 @@ opt-level = 1
 [dependencies]
 # ESP-IDF Support (with std)
 esp-idf-sys = { version = "=0.36.1", features = ["binstart"] }
-esp-idf-svc = { 
-    version = "=0.51.0", 
-    default-features = false, 
-    features = ["experimental"] 
-}
+esp-idf-svc = { version = "=0.51.0", default-features = false, features = ["experimental"] }
 esp-idf-hal = { version = "=0.45.2" }
 
 # Async runtime
-embassy-executor = { 
-    version = "=0.7.0", 
-    features = ["task-arena-size-65536"] 
-}
+embassy-executor = { version = "=0.7.0", features = ["task-arena-size-65536"] }
 embassy-time = { version = "=0.4.0" }
 embassy-sync = { version = "=0.6.0" }
 
@@ -36,11 +29,7 @@ anyhow = "=1.0.95"
 log = "=0.4.22"
 
 # Serialization for configuration
-serde = { 
-    version = "=1.0.217", 
-    default-features = false, 
-    features = ["derive"] 
-}
+serde = { version = "=1.0.217", default-features = false, features = ["derive"] }
 serde_json = "=1.0.135"
 
 # Embedded graphics
@@ -52,8 +41,8 @@ embedded-svc = "=0.28.1"
 
 # Utilities
 heapless = "=0.8.0"  # Still useful for fixed-size collections
-static_cell = "=2.1.0"
+static_cell = "2.1"
 
 [build-dependencies]
-embuild = "=0.33.2"
+embuild = "0.33.0"
 anyhow = "=1.0.95"
