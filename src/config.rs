@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use esp_idf_svc::nvs::{EspNvs, EspNvsPartition, NvsDefault};
+use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, EspNvsPartition, NvsDefault};
 
 const CONFIG_NAMESPACE: &str = "dashboard";
 const CONFIG_KEY: &str = "config";
@@ -80,7 +80,7 @@ pub fn save(config: &Config) -> Result<()> {
 }
 
 fn load_from_nvs() -> Result<Config> {
-    let nvs_partition: EspNvsPartition<NvsDefault> = EspNvsPartition::take()?;
+    let nvs_partition = EspDefaultNvsPartition::take()?;
     let nvs = EspNvs::new(nvs_partition, CONFIG_NAMESPACE, true)?;
     
     let mut buf = vec![0u8; 2048]; // Max config size
@@ -94,7 +94,7 @@ fn load_from_nvs() -> Result<Config> {
 }
 
 fn save_to_nvs(config: &Config) -> Result<()> {
-    let nvs_partition: EspNvsPartition<NvsDefault> = EspNvsPartition::take()?;
+    let nvs_partition = EspDefaultNvsPartition::take()?;
     let mut nvs = EspNvs::new(nvs_partition, CONFIG_NAMESPACE, false)?;
     
     let json = serde_json::to_vec(config)?;

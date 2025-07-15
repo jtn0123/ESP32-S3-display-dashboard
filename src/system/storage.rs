@@ -1,5 +1,5 @@
 use anyhow::Result;
-use esp_idf_svc::nvs::{EspNvs, EspNvsPartition, NvsDefault};
+use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, EspNvsPartition, NvsDefault};
 use serde::{Deserialize, Serialize};
 
 pub struct Storage {
@@ -14,7 +14,7 @@ impl Storage {
     }
 
     pub fn read<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Result<Option<T>> {
-        let nvs_partition: EspNvsPartition<NvsDefault> = EspNvsPartition::take()?;
+        let nvs_partition = EspDefaultNvsPartition::take()?;
         let nvs = EspNvs::new(nvs_partition, &self.namespace, true)?;
         
         let mut buf = vec![0u8; 4096]; // Max size
@@ -29,7 +29,7 @@ impl Storage {
     }
 
     pub fn write<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
-        let nvs_partition: EspNvsPartition<NvsDefault> = EspNvsPartition::take()?;
+        let nvs_partition = EspDefaultNvsPartition::take()?;
         let mut nvs = EspNvs::new(nvs_partition, &self.namespace, false)?;
         
         let data = serde_json::to_vec(value)?;
@@ -39,7 +39,7 @@ impl Storage {
     }
 
     pub fn delete(&self, key: &str) -> Result<()> {
-        let nvs_partition: EspNvsPartition<NvsDefault> = EspNvsPartition::take()?;
+        let nvs_partition = EspDefaultNvsPartition::take()?;
         let mut nvs = EspNvs::new(nvs_partition, &self.namespace, false)?;
         
         nvs.remove(key)?;
@@ -47,7 +47,7 @@ impl Storage {
     }
 
     pub fn clear_namespace(&self) -> Result<()> {
-        let nvs_partition: EspNvsPartition<NvsDefault> = EspNvsPartition::take()?;
+        let nvs_partition = EspDefaultNvsPartition::take()?;
         let mut nvs = EspNvs::new(nvs_partition, &self.namespace, false)?;
         
         // Note: ESP-IDF NVS doesn't have a direct clear_all method

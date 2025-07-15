@@ -2,10 +2,10 @@
 
 use super::{Sensor, SensorError, Calibratable};
 use embassy_time::Duration;
-use esp_hal::adc::{AdcPin, Adc, Attenuation};
 
 pub struct TemperatureSensor {
-    pin: Option<AdcPin<'static>>,
+    // TODO: Add ADC pin when ADC API is available
+    // pin: Option<AdcPin<'static>>,
     calibration_offset: f32,
     last_reading: Option<f32>,
     initialized: bool,
@@ -14,17 +14,18 @@ pub struct TemperatureSensor {
 impl TemperatureSensor {
     pub fn new() -> Self {
         Self {
-            pin: None,
+            // pin: None,
             calibration_offset: 0.0,
             last_reading: None,
             initialized: false,
         }
     }
     
-    pub fn with_pin(mut self, pin: AdcPin<'static>) -> Self {
-        self.pin = Some(pin);
-        self
-    }
+    // TODO: Restore when ADC API is available
+    // pub fn with_pin(mut self, pin: AdcPin<'static>) -> Self {
+    //     self.pin = Some(pin);
+    //     self
+    // }
     
     fn adc_to_temperature(&self, adc_value: u16) -> f32 {
         // Convert ADC reading to temperature
@@ -48,12 +49,13 @@ impl Sensor for TemperatureSensor {
     type Reading = f32;
     
     fn init(&mut self) -> Result<(), SensorError> {
-        if self.pin.is_some() {
-            self.initialized = true;
-            Ok(())
-        } else {
-            Err(SensorError::InitializationFailed)
-        }
+        // TODO: Check ADC pin when available
+        // if self.pin.is_some() {
+        self.initialized = true;
+        Ok(())
+        // } else {
+        //     Err(SensorError::InitializationFailed)
+        // }
     }
     
     fn read(&mut self) -> Result<Self::Reading, SensorError> {

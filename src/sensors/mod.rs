@@ -2,6 +2,7 @@
 
 use embassy_time::{Duration, Timer};
 use heapless::Vec;
+use anyhow;
 
 pub mod temperature;
 pub mod battery;
@@ -10,6 +11,30 @@ pub mod ambient_light;
 pub use temperature::TemperatureSensor;
 pub use battery::BatteryVoltageSensor;
 pub use ambient_light::AmbientLightSensor;
+
+// Sensor data struct for UI consumption
+#[derive(Debug, Clone)]
+pub struct SensorData {
+    pub temperature: f32,
+    pub humidity: f32,
+    pub pressure: f32,
+    pub battery_voltage: f32,
+    pub battery_percentage: u8,
+    pub light_level: u16,
+}
+
+impl Default for SensorData {
+    fn default() -> Self {
+        Self {
+            temperature: 25.0,
+            humidity: 50.0,
+            pressure: 1013.25,
+            battery_voltage: 3.7,
+            battery_percentage: 100,
+            light_level: 0,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum SensorError {
@@ -61,7 +86,7 @@ pub struct SensorReading<T> {
     pub quality: ReadingQuality,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ReadingQuality {
     Excellent,
     Good,
@@ -235,13 +260,15 @@ impl<T: Clone> Sensor for MockSensor<T> {
 // Sensor manager for coordinating multiple sensors
 pub struct SensorManager {
     initialized: bool,
+    battery_pin: Option<esp_idf_hal::gpio::AnyIOPin>,
 }
 
 impl SensorManager {
-    pub fn new() -> Self {
-        Self {
+    pub fn new(battery_pin: impl Into<esp_idf_hal::gpio::AnyIOPin> + 'static) -> Result<Self, anyhow::Error> {
+        Ok(Self {
             initialized: false,
-        }
+            battery_pin: Some(battery_pin.into()),
+        })
     }
     
     pub async fn init_all(&mut self) -> Result<(), SensorError> {
@@ -253,6 +280,18 @@ impl SensorManager {
     
     pub fn is_initialized(&self) -> bool {
         self.initialized
+    }
+    
+    pub fn sample(&mut self) -> Result<SensorData, anyhow::Error> {
+        // Return mock sensor data for now
+        Ok(SensorData {
+            temperature: 25.0,
+            humidity: 60.0,
+            pressure: 1013.25,
+            battery_voltage: 3.7,
+            battery_percentage: 85,
+            light_level: 500,
+        })
     }
 }
 

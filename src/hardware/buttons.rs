@@ -1,7 +1,7 @@
 // Button input handling with debouncing and event detection
 
 use embassy_time::{Duration, Instant};
-use esp_hal::gpio::{AnyPin, Input, PinDriver};
+use esp_idf_hal::gpio::{AnyPin, Input, PinDriver};
 
 // Button timing constants (matching Arduino implementation)
 const DEBOUNCE_TIME: Duration = Duration::from_millis(50);

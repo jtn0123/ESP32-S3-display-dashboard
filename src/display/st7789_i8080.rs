@@ -1,8 +1,8 @@
 // ST7789 controller driver for I8080 interface
 // Handles initialization and command/data protocol
 
-use esp_hal::gpio::{Gpio5, Gpio6, Gpio7, Output, PinDriver};
-use esp_hal::delay::FreeRtos;
+use esp_idf_hal::gpio::{Gpio5, Gpio6, Gpio7, Output, PinDriver};
+use esp_idf_hal::delay::FreeRtos;
 use anyhow::Result;
 use log::*;
 

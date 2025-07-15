@@ -157,15 +157,15 @@ impl BatteryStatus {
         }
     }
     
-    pub fn get_color(&self) -> crate::display::Color {
-        use crate::display::Color;
+    pub fn get_color(&self) -> u16 {
+        use crate::display::colors::*;
         match self {
-            Self::Full => Color::GREEN,
-            Self::Normal => Color::GREEN,
-            Self::Low => Color::YELLOW,
-            Self::Critical => Color::RED,
-            Self::Charging => Color::CYAN,
-            Self::Unknown => Color(0x4208), // Gray
+            Self::Full => GREEN,
+            Self::Normal => GREEN,
+            Self::Low => YELLOW,
+            Self::Critical => RED,
+            Self::Charging => CYAN,
+            Self::Unknown => 0x4208, // Gray
         }
     }
 }

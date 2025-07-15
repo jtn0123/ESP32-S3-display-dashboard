@@ -24,7 +24,6 @@ pub struct ButtonManager {
     button2_state: ButtonState,
 }
 
-#[derive(Default)]
 struct ButtonState {
     pressed: bool,
     press_time: Option<Instant>,
@@ -32,13 +31,24 @@ struct ButtonState {
     long_press_fired: bool,
 }
 
+impl Default for ButtonState {
+    fn default() -> Self {
+        Self {
+            pressed: false,
+            press_time: None,
+            last_change: Instant::now(),
+            long_press_fired: false,
+        }
+    }
+}
+
 impl ButtonManager {
     pub fn new(
         button1_pin: impl Into<AnyIOPin> + 'static,
         button2_pin: impl Into<AnyIOPin> + 'static,
     ) -> Result<Self> {
-        let button1 = PinDriver::input(button1_pin.into())?;
-        let button2 = PinDriver::input(button2_pin.into())?;
+        let mut button1 = PinDriver::input(button1_pin.into())?;
+        let mut button2 = PinDriver::input(button2_pin.into())?;
         
         // Set pull-up resistors
         button1.set_pull(Pull::Up)?;
@@ -54,25 +64,25 @@ impl ButtonManager {
 
     pub fn poll(&mut self) -> Option<ButtonEvent> {
         // Check button 1
-        if let Some(event) = self.check_button(&self.button1, &mut self.button1_state, 1) {
+        let button1_pressed = self.button1.is_low(); // Active low
+        if let Some(event) = Self::check_button_state(button1_pressed, &mut self.button1_state, 1) {
             return Some(event);
         }
 
         // Check button 2
-        if let Some(event) = self.check_button(&self.button2, &mut self.button2_state, 2) {
+        let button2_pressed = self.button2.is_low(); // Active low
+        if let Some(event) = Self::check_button_state(button2_pressed, &mut self.button2_state, 2) {
             return Some(event);
         }
 
         None
     }
 
-    fn check_button(
-        &self,
-        pin: &PinDriver<'static, AnyIOPin, Input>,
+    fn check_button_state(
+        pressed: bool,
         state: &mut ButtonState,
         button_num: u8,
     ) -> Option<ButtonEvent> {
-        let pressed = pin.is_low(); // Active low
         let now = Instant::now();
 
         // Debounce

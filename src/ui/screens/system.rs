@@ -3,7 +3,7 @@
 use crate::display::{Display, Color};
 use crate::ui::theme::Theme;
 use super::Screen;
-use esp_hal::system::{SystemExt};
+use esp_idf_hal::system::{SystemExt};
 
 pub struct SystemScreen {
     free_heap: u32,

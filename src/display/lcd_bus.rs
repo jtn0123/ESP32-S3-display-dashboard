@@ -1,6 +1,6 @@
 use anyhow::Result;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
-use esp_idf_hal::delay::FreeRtos;
+use esp_idf_hal::delay::FreeRtos;  // For delay_ms
 
 /// Low-level 8-bit parallel LCD bus driver for ST7789
 pub struct LcdBus {
@@ -76,9 +76,11 @@ impl LcdBus {
         // Toggle write pin
         self.wr.set_low()?;
         // Small delay for signal stability
-        FreeRtos::delay_us(1);
+        // Small delay for signal stability
+        unsafe { esp_idf_sys::esp_rom_delay_us(1); }
         self.wr.set_high()?;
-        FreeRtos::delay_us(1);
+        // Small delay for signal stability
+        unsafe { esp_idf_sys::esp_rom_delay_us(1); }
 
         Ok(())
     }

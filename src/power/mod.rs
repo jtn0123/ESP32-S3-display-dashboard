@@ -1,7 +1,7 @@
 // Power management system for ESP32-S3 dashboard
 
 use embassy_time::{Duration, Instant, Timer};
-use esp_hal::gpio::{AnyPin, Output, PinDriver};
+use esp_idf_hal::gpio::{AnyPin, Output, PinDriver};
 use crate::hardware::SensorData;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

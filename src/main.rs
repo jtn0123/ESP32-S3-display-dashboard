@@ -86,7 +86,7 @@ fn main() -> Result<()> {
     // Initialize network (WiFi + OTA)
     info!("Initializing network...");
     let network_config = config.lock().unwrap();
-    let network_manager = NetworkManager::new(
+    let mut network_manager = NetworkManager::new(
         peripherals.modem,
         sys_loop,
         timer_service,
@@ -95,6 +95,21 @@ fn main() -> Result<()> {
         config.clone(),
     )?;
     drop(network_config);
+
+    // Connect to WiFi
+    network_manager.connect()?;
+
+    // Start web server (needs to be in main thread due to raw pointers)
+    let web_server = match network::web_server::WebConfigServer::new(config.clone()) {
+        Ok(server) => {
+            log::info!("Web configuration server started on port 80");
+            Some(server)
+        }
+        Err(e) => {
+            log::error!("Failed to start web server: {:?}", e);
+            None
+        }
+    };
 
     // Start main application loop
     info!("Starting main loop");
@@ -105,6 +120,7 @@ fn main() -> Result<()> {
         button_manager,
         network_manager,
         config,
+        web_server,
     )?;
 
     Ok(())
@@ -115,19 +131,15 @@ fn run_app(
     mut display_manager: DisplayManager,
     mut sensor_manager: sensors::SensorManager,
     mut button_manager: system::ButtonManager,
-    mut network_manager: NetworkManager,
+    mut _network_manager: NetworkManager,
     config: Arc<Mutex<config::Config>>,
+    _web_server: Option<network::web_server::WebConfigServer>,
 ) -> Result<()> {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    // Spawn network thread
-    let config_clone = config.clone();
-    thread::spawn(move || {
-        if let Err(e) = network_manager.run(config_clone) {
-            log::error!("Network thread error: {:?}", e);
-        }
-    });
+    // Note: OTA checker would run in the main loop instead of a separate thread
+    // due to thread safety constraints with ESP-IDF HTTP server
 
     // Main UI loop
     let target_frame_time = Duration::from_millis(33); // ~30 FPS
@@ -144,7 +156,7 @@ fn run_app(
 
         // Update sensors periodically
         if last_sensor_update.elapsed() >= sensor_update_interval {
-            let sensor_data = sensor_manager.read_all()?;
+            let sensor_data = sensor_manager.sample()?;
             ui_manager.update_sensor_data(sensor_data);
             last_sensor_update = Instant::now();
         }

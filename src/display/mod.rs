@@ -2,6 +2,9 @@ pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
 
+// Re-export Color type from embedded_graphics
+pub use embedded_graphics::pixelcolor::Rgb565 as Color;
+
 use anyhow::Result;
 use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;

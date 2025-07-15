@@ -1,7 +1,7 @@
 // LCD_CAM I8080 driver using esp-hal
 // This replaces our from-scratch implementation with esp-hal's proven driver
 
-use esp_hal::{
+use esp_idf_hal::{
     dma::{Dma, DmaPriority, DmaChannel0},
     dma_descriptors,
     gpio::{OutputPin, GpioPin},
@@ -40,7 +40,7 @@ impl<'d> I8080Display<'d> {
         lcd_cam: LCD_CAM,
         channel: DmaChannel0,
         pins: DisplayPins,
-    ) -> Result<Self, esp_hal::lcd_cam::LcdCamError> {
+    ) -> Result<Self, esp_idf_hal::lcd_cam::LcdCamError> {
         info!("Initializing I8080 display with esp-hal");
         
         // Allocate framebuffer in DMA-capable memory
@@ -86,30 +86,30 @@ impl<'d> I8080Display<'d> {
         })
     }
     
-    fn alloc_framebuffer() -> Result<&'static mut [u16; 320 * 170], esp_hal::lcd_cam::LcdCamError> {
+    fn alloc_framebuffer() -> Result<&'static mut [u16; 320 * 170], esp_idf_hal::lcd_cam::LcdCamError> {
         // In a real implementation, use proper DMA memory allocation
         // For now, we'll use a static buffer
         static mut FRAMEBUFFER: [u16; 320 * 170] = [0; 320 * 170];
         Ok(unsafe { &mut FRAMEBUFFER })
     }
     
-    pub fn send_command(&mut self, cmd: u8) -> Result<(), esp_hal::lcd_cam::LcdCamError> {
+    pub fn send_command(&mut self, cmd: u8) -> Result<(), esp_idf_hal::lcd_cam::LcdCamError> {
         // Send single command byte
         self.i8080.send(cmd, &[cmd])
-            .map_err(|_| esp_hal::lcd_cam::LcdCamError::Other)?;
+            .map_err(|_| esp_idf_hal::lcd_cam::LcdCamError::Other)?;
         Ok(())
     }
     
-    pub fn send_data(&mut self, data: &[u8]) -> Result<(), esp_hal::lcd_cam::LcdCamError> {
+    pub fn send_data(&mut self, data: &[u8]) -> Result<(), esp_idf_hal::lcd_cam::LcdCamError> {
         // Send data bytes
         // Note: For ST7789, we typically send data after command
         // The first byte might need to be a dummy command byte
         self.i8080.send(0x00, data)
-            .map_err(|_| esp_hal::lcd_cam::LcdCamError::Other)?;
+            .map_err(|_| esp_idf_hal::lcd_cam::LcdCamError::Other)?;
         Ok(())
     }
     
-    pub fn send_pixels(&mut self, pixels: &[u16]) -> Result<(), esp_hal::lcd_cam::LcdCamError> {
+    pub fn send_pixels(&mut self, pixels: &[u16]) -> Result<(), esp_idf_hal::lcd_cam::LcdCamError> {
         // Convert u16 pixels to bytes for transmission
         let bytes: Vec<u8> = pixels.iter()
             .flat_map(|&pixel| pixel.to_be_bytes())
@@ -118,7 +118,7 @@ impl<'d> I8080Display<'d> {
         self.send_data(&bytes)
     }
     
-    pub fn update_framebuffer(&mut self) -> Result<(), esp_hal::lcd_cam::LcdCamError> {
+    pub fn update_framebuffer(&mut self) -> Result<(), esp_idf_hal::lcd_cam::LcdCamError> {
         // Convert framebuffer to bytes
         let bytes: Vec<u8> = self.framebuffer.iter()
             .flat_map(|&pixel| pixel.to_be_bytes())
@@ -126,7 +126,7 @@ impl<'d> I8080Display<'d> {
             
         // Send entire framebuffer via DMA
         self.i8080.send(0x2C, &bytes) // 0x2C is RAMWR command
-            .map_err(|_| esp_hal::lcd_cam::LcdCamError::Other)?;
+            .map_err(|_| esp_idf_hal::lcd_cam::LcdCamError::Other)?;
             
         Ok(())
     }

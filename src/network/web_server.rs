@@ -1,11 +1,11 @@
 use anyhow::Result;
 use esp_idf_svc::http::server::{Configuration, EspHttpServer};
-use esp_idf_svc::io::Write;
+use esp_idf_svc::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use crate::config::Config;
 
 pub struct WebConfigServer {
-    server: EspHttpServer,
+    server: EspHttpServer<'static>,
     config: Arc<Mutex<Config>>,
 }
 

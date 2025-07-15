@@ -18,7 +18,6 @@ use crate::config::Config;
 pub struct NetworkManager {
     wifi: WifiManager,
     ota: OtaManager,
-    web_server: Option<WebConfigServer>,
 }
 
 impl NetworkManager {
@@ -36,26 +35,16 @@ impl NetworkManager {
         Ok(Self {
             wifi,
             ota,
-            web_server: None,
         })
     }
 
-    pub fn run(mut self, config: Arc<Mutex<Config>>) -> Result<()> {
-        // Connect to WiFi
+    pub fn connect(&mut self) -> Result<()> {
         self.wifi.connect()?;
         log::info!("WiFi connected, IP: {:?}", self.wifi.get_ip());
+        Ok(())
+    }
 
-        // Start web server after WiFi is connected
-        match WebConfigServer::new(config) {
-            Ok(server) => {
-                self.web_server = Some(server);
-                log::info!("Web configuration server started on port 80");
-            }
-            Err(e) => {
-                log::error!("Failed to start web server: {:?}", e);
-            }
-        }
-
+    pub fn run_ota_checker(&mut self) -> Result<()> {
         // Start OTA update checker
         loop {
             std::thread::sleep(std::time::Duration::from_secs(3600)); // Check hourly

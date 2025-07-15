@@ -29,8 +29,10 @@ impl WifiManager {
 
         // Configure WiFi
         let mut cfg = Configuration::Client(ClientConfiguration {
-            ssid: ssid.as_str().try_into()?,
-            password: password.as_str().try_into()?,
+            ssid: ssid.as_str().try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid SSID format"))?,
+            password: password.as_str().try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid password format"))?,
             auth_method: if password.is_empty() {
                 AuthMethod::None
             } else {
@@ -59,7 +61,7 @@ impl WifiManager {
         
         let mut found = false;
         for ap in ap_infos.iter() {
-            if ap.ssid == self.ssid {
+            if ap.ssid.as_str() == self.ssid.as_str() {
                 found = true;
                 log::info!("Found network: {} (signal: {})", ap.ssid, ap.signal_strength);
                 break;

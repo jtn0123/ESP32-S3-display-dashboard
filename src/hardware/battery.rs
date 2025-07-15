@@ -1,6 +1,6 @@
 // Battery voltage monitoring via ADC
 
-use esp_hal::{
+use esp_idf_hal::{
     adc::{AdcConfig, AdcPin, Attenuation, ADC},
     gpio::Gpio4,
     peripherals::ADC1,

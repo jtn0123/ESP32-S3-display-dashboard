@@ -17,16 +17,15 @@ struct VersionInfo {
 }
 
 pub struct OtaManager {
-    ota: EspOta,
+    // OTA is created per update, not stored
 }
 
 impl OtaManager {
     pub fn new() -> Result<Self> {
-        let ota = EspOta::new()?;
-        Ok(Self { ota })
+        Ok(Self {})
     }
 
-    pub fn check_for_updates(&self) -> Result<()> {
+    pub fn check_for_updates(&mut self) -> Result<()> {
         log::info!("Checking for OTA updates...");
         
         // Check version
@@ -75,11 +74,12 @@ impl OtaManager {
         Ok(version_info)
     }
 
-    fn perform_update(&self, version_info: &VersionInfo) -> Result<()> {
+    fn perform_update(&mut self, version_info: &VersionInfo) -> Result<()> {
         log::info!("Starting OTA update...");
         
         // Start OTA update
-        let mut ota_update = self.ota.initiate_update()?;
+        let ota = EspOta::new()?;
+        let mut ota_update = ota.initiate_update()?;
         
         // Download and write firmware
         let config = HttpConfig {
@@ -125,13 +125,15 @@ impl OtaManager {
     }
 
     pub fn get_running_partition(&self) -> Result<String> {
-        let partition = self.ota.get_running_partition()?;
+        let ota = EspOta::new()?;
+        let partition = ota.get_running_partition()?;
         Ok(format!("{:?}", partition.label()))
     }
 
     pub fn rollback(&mut self) -> Result<()> {
         log::warn!("Rolling back to previous firmware...");
-        self.ota.rollback()?;
+        let ota = EspOta::new()?;
+        ota.rollback()?;
         
         // Restart
         unsafe {
