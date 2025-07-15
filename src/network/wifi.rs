@@ -8,7 +8,7 @@ use esp_idf_svc::{
     },
     nvs::EspDefaultNvsPartition,
 };
-use embedded_svc::wifi::{AccessPointInfo, Wifi};
+use embedded_svc::wifi::AccessPointInfo;
 use std::time::Duration;
 
 pub struct WifiManager {
@@ -28,7 +28,7 @@ impl WifiManager {
         let mut esp_wifi = EspWifi::new(modem, sys_loop.clone(), Some(nvs))?;
 
         // Configure WiFi
-        let mut cfg = Configuration::Client(ClientConfiguration {
+        let cfg = Configuration::Client(ClientConfiguration {
             ssid: ssid.as_str().try_into()
                 .map_err(|_| anyhow::anyhow!("Invalid SSID format"))?,
             password: password.as_str().try_into()
@@ -79,6 +79,18 @@ impl WifiManager {
         self.wifi.wait_netif_up()?;
 
         log::info!("WiFi connected!");
+        
+        // Enable WiFi power save mode
+        unsafe {
+            use esp_idf_sys::*;
+            let result = esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_MIN_MODEM);
+            if result == ESP_OK {
+                log::info!("WiFi power save enabled (MIN_MODEM mode)");
+            } else {
+                log::warn!("Failed to enable WiFi power save: {:?}", result);
+            }
+        }
+        
         Ok(())
     }
 

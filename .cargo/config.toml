@@ -1,12 +1,22 @@
 [target.xtensa-esp32s3-espidf]
 runner = "espflash flash --monitor"
+linker = "/Users/justin/Documents/Github/ESP32-S3-Display-Dashboard/gcc-wrapper.sh"
+rustflags = [
+    # Optimize for size and performance
+    "-C", "link-arg=-Wl,--gc-sections",
+    # Enable frame pointers for better debugging in release
+    "-C", "force-frame-pointers=yes",
+]
 
 [build]
 target = "xtensa-esp32s3-espidf"
 
 [env]
-ESP_LOGLEVEL = "INFO"
+# Reduce logging in release builds
+ESP_LOGLEVEL = { value = "WARN", force = false }
 ESP_IDF_VERSION = "v5.3"
+# Set Rust log level based on profile
+RUST_LOG = { value = "warn", force = false }
 
 [unstable]
 build-std = ["std", "panic_abort"]

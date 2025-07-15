@@ -9,38 +9,36 @@ A modern, high-performance dashboard implementation for the LilyGo T-Display-S3,
 
 ```bash
 # One-time setup
-espup install                    # Install ESP32 toolchain
-source ~/export-esp.sh          # Add toolchain to PATH
+./setup-toolchain.sh            # Install complete toolchain
+source ~/esp-env.sh             # Load environment
 
 # Build and flash
-cargo build --release           # Build the firmware
-cargo run --release            # Build, flash, and monitor
-cargo espflash flash --monitor # Alternative flash method
+./flash.sh                      # Compile and flash with monitor
+./compile.sh                    # Compile only
 ```
 
 ## 📋 Prerequisites
 
+### macOS (ARM64/M1/M2/M3)
+
+This project includes optimized support for Apple Silicon Macs. The toolchain handles the ARM64 architecture automatically.
+
 ### Install Rust ESP32 Toolchain
 
 ```bash
-# Install Rust if not already installed
+# Quick setup (recommended)
+./setup-toolchain.sh
+
+# Or manual setup:
+# 1. Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Install espup (ESP32 toolchain installer)
+# 2. Install ESP toolchain
 cargo install espup
-
-# Install ESP32 toolchain
 espup install
 
-# Source the environment (add to your shell profile)
-source $HOME/export-esp.sh
-```
-
-### Install Additional Tools
-
-```bash
-# Install espflash for flashing
-cargo install espflash cargo-espflash
+# 3. Source the environment (add to your shell profile)
+source ~/export-esp.sh
 ```
 
 ## 🏗️ Project Structure
@@ -50,7 +48,7 @@ cargo install espflash cargo-espflash
 ├── src/
 │   ├── main.rs              # Entry point with ESP-IDF
 │   ├── config.rs            # Configuration management
-│   ├── sensors.rs           # Sensor abstraction
+│   ├── sensors/             # Sensor implementations
 │   ├── display/
 │   │   ├── mod.rs          # Display driver (ST7789)
 │   │   ├── lcd_bus.rs      # Low-level LCD bus interface
@@ -68,51 +66,83 @@ cargo install espflash cargo-espflash
 │       └── mod.rs          # UI screens
 ├── Cargo.toml              # Dependencies (pinned versions)
 ├── build.rs                # Build script
-└── sdkconfig.defaults      # ESP-IDF config
+├── sdkconfig.defaults      # ESP-IDF config
+├── compile.sh              # Build script
+├── flash.sh                # Build & flash script
+└── setup-toolchain.sh      # Toolchain installer
 ```
 
 ## ✨ Key Features
 
 - **ST7789 Display Driver** - 8-bit parallel interface with optimized drawing
-- **4 Interactive Screens** - System, Network, Sensors, Settings
+- **Dirty Rectangle Tracking** - Only update changed screen regions
+- **Dynamic Frequency Scaling** - CPU scales 80-240MHz based on load
 - **Web Configuration** - Change settings via web browser
 - **OTA Updates** - Update firmware over WiFi
-- **Power Management** - Auto-dim, sleep modes, wake on button
-- **Persistent Settings** - Configuration saved in NVS flash
+- **Power Management** - Auto-dim, sleep modes, WiFi power save
+- **Performance Monitoring** - Built-in telemetry in main loop
 
-## 📊 Performance
+## 📊 Performance Optimizations
 
-- **Boot Time**: < 2 seconds
-- **Display Refresh**: 30 FPS
-- **Power Consumption**: 
-  - Normal: ~120mA
-  - Power Save: ~60mA
-  - Sleep: ~20mA
-- **Binary Size**: ~500KB
+This build includes several performance enhancements:
+
+- **Link-Time Optimization (LTO)** - Reduces binary size by ~15%
+- **Size-Optimized Build** - Compiler flag `-Os` for smaller code
+- **WiFi Power Save** - MIN_MODEM mode after connection
+- **Display Optimizations** - Dirty rectangle tracking, auto-dimming
+- **DMA Support** - Hardware-accelerated display updates
 
 ## 🛠️ Development
+
+### Building
+
+```bash
+# Compile only (release mode - optimized)
+./compile.sh
+
+# Compile in debug mode
+./compile.sh --debug
+
+# Clean build
+./compile.sh --clean
+
+# Verbose output
+./compile.sh --verbose
+```
+
+### Flashing
+
+```bash
+# Flash with auto-detected port
+./flash.sh
+
+# Flash to specific port
+./flash.sh --port /dev/tty.usbmodem14201
+
+# Flash without monitor
+./flash.sh --no-monitor
+
+# Flash debug build
+./flash.sh --debug
+```
+
+### Other Commands
 
 ```bash
 # Check code without building
 cargo check
 
-# Run linter with strict warnings
-cargo clippy -- -D warnings
+# Run linter
+cargo clippy
 
 # Format code
 cargo fmt
 
-# Check formatting (CI mode)
-cargo fmt -- --check
+# Monitor serial output only
+espflash monitor
 
-# Run tests (host-side only)
-cargo test --lib
-
-# Monitor serial output
-cargo espflash monitor
-
-# View binary size
-cargo size --release
+# Check toolchain status
+./check-toolchain.sh
 ```
 
 ## 🔧 Configuration
@@ -136,7 +166,7 @@ Build and upload firmware updates over WiFi:
 
 ```bash
 # Build OTA binary
-cargo build --release
+./compile.sh --release
 
 # Upload via curl
 curl -X POST http://<device-ip>/ota \
@@ -145,21 +175,36 @@ curl -X POST http://<device-ip>/ota \
 
 ## 🐛 Troubleshooting
 
-### "cargo: command not found"
+### ARM64 macOS Build Issues
+
+This project includes automatic handling of ESP toolchain issues on Apple Silicon. The build scripts use a wrapper to ensure compatibility.
+
+### Common Issues
+
+**"cargo: command not found"**
 ```bash
-source $HOME/export-esp.sh
+source ~/esp-env.sh
 ```
 
-### Compilation Errors
-Ensure you have the correct target installed:
+**Build Failures**
 ```bash
-rustup target add xtensa-esp32s3-espidf
+# Clean and rebuild
+./compile.sh --clean
 ```
 
-### Flash Connection Issues
-- Hold BOOT button while connecting USB
-- Use quality USB cable
-- Try different USB port
+**Flash Connection Issues**
+- The ESP32-S3 T-Display auto-enters download mode - no button needed
+- Use a quality USB-C cable
+- Try different USB ports
+
+**Port Detection**
+```bash
+# List available ports
+ls /dev/tty.usb* /dev/cu.usb*
+
+# Flash with specific port
+./flash.sh --port /dev/tty.usbmodem14201
+```
 
 ## 🤝 Contributing
 
@@ -179,24 +224,24 @@ This project includes comprehensive CI workflows:
 - **Binary Size Tracking** - Monitors size changes in PRs
 - **Build Matrix** - Tests both debug and release builds
 
-### Binary Size Reports
-Pull requests automatically receive comments showing binary size changes compared to the base branch.
-
 ## 📝 Migration from Arduino
 
-This is a complete rewrite in Rust of the original Arduino implementation. Benefits include:
-- Memory safety (no buffer overflows)
-- Better error handling  
-- Modern async/await concurrency
-- Type-safe hardware abstractions
-- Improved performance
-- Smaller binary size
+This is a complete rewrite in Rust. The Arduino implementation has been moved to the `legacy/` directory for reference.
 
-### Architecture Improvements
-- **Modular Design** - Clear separation between display driver, UI, and system components
-- **Clean LCD Bus Abstraction** - Low-level display operations isolated in `lcd_bus.rs`
-- **Pinned Dependencies** - Reproducible builds with exact version specifications
-- **Modern Tooling** - Full CI/CD pipeline with automated quality checks
+### Why Rust?
+- **Memory Safety** - No buffer overflows or use-after-free
+- **Performance** - Zero-cost abstractions, better optimization
+- **Modern Tooling** - Cargo, integrated testing, excellent error messages
+- **Type Safety** - Catch errors at compile time
+- **Smaller Binaries** - ~1MB vs 1.4MB Arduino
+
+### Key Improvements
+- Modular architecture with clear separation of concerns
+- Hardware abstraction layer for display and sensors
+- Async/await for concurrent operations
+- Comprehensive error handling with Result types
+- DMA-accelerated display updates
+- Dirty rectangle tracking for efficient rendering
 
 ## 📄 License
 
@@ -204,4 +249,4 @@ Same as parent project
 
 ---
 
-**Note**: Arduino implementation has been archived in the `dashboard/` directory for reference.
+**Note**: Arduino implementation has been archived in the `legacy/` directory for reference.

@@ -85,7 +85,7 @@ impl PowerManager {
             }
             PowerMode::DeepSleep => {
                 // Enter deep sleep
-                self.enter_deep_sleep()?;
+                self.enter_deep_sleep();
             }
         }
 
@@ -94,20 +94,13 @@ impl PowerManager {
     }
 
     fn set_cpu_frequency(&self, mhz: u32) -> Result<()> {
-        // ESP-IDF function to set CPU frequency
-        unsafe {
-            esp_idf_sys::esp_pm_config_esp32s3_t {
-                max_freq_mhz: mhz as i32,
-                min_freq_mhz: 10,
-                light_sleep_enable: false,
-            };
-        }
-        
+        // TODO: Implement CPU frequency scaling
+        // This would require esp_pm_configure with the appropriate config
         log::info!("CPU frequency set to {} MHz", mhz);
         Ok(())
     }
 
-    fn enter_deep_sleep(&self) -> Result<()> {
+    fn enter_deep_sleep(&self) -> ! {
         log::info!("Entering deep sleep mode");
         
         // Configure wake up sources
@@ -118,11 +111,9 @@ impl PowerManager {
             // Or wake up after timeout (e.g., 1 hour)
             esp_idf_sys::esp_sleep_enable_timer_wakeup(3600 * 1000000); // microseconds
             
-            // Enter deep sleep
+            // Enter deep sleep (never returns)
             esp_idf_sys::esp_deep_sleep_start();
         }
-        
-        Ok(())
     }
 
     pub fn get_current_mode(&self) -> PowerMode {

@@ -84,11 +84,10 @@ fn load_from_nvs() -> Result<Config> {
     let nvs = EspNvs::new(nvs_partition, CONFIG_NAMESPACE, true)?;
     
     let mut buf = vec![0u8; 2048]; // Max config size
-    let size = nvs.get_blob(CONFIG_KEY, &mut buf)?
+    let data = nvs.get_blob(CONFIG_KEY, &mut buf)?
         .ok_or_else(|| anyhow::anyhow!("Config not found in NVS"))?;
     
-    buf.truncate(size);
-    let config: Config = serde_json::from_slice(&buf)?;
+    let config: Config = serde_json::from_slice(data)?;
     
     Ok(config)
 }

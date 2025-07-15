@@ -19,9 +19,8 @@ impl Storage {
         
         let mut buf = vec![0u8; 4096]; // Max size
         match nvs.get_blob(key, &mut buf)? {
-            Some(size) => {
-                buf.truncate(size);
-                let value: T = serde_json::from_slice(&buf)?;
+            Some(data) => {
+                let value: T = serde_json::from_slice(data)?;
                 Ok(Some(value))
             }
             None => Ok(None),
@@ -48,7 +47,7 @@ impl Storage {
 
     pub fn clear_namespace(&self) -> Result<()> {
         let nvs_partition = EspDefaultNvsPartition::take()?;
-        let mut nvs = EspNvs::new(nvs_partition, &self.namespace, false)?;
+        let _nvs = EspNvs::new(nvs_partition, &self.namespace, false)?;
         
         // Note: ESP-IDF NVS doesn't have a direct clear_all method
         // You would need to iterate through keys or use esp_nvs_erase_all

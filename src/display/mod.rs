@@ -10,10 +10,40 @@ use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
-use std::time::Duration;
+use esp_idf_hal::ledc::{LedcDriver, LedcTimerDriver};
+use esp_idf_hal::ledc::config::TimerConfig;
+use esp_idf_hal::prelude::*;
+use std::time::{Duration, Instant};
 
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 170;
+
+// Dirty rectangle tracking
+#[derive(Clone, Copy, Debug)]
+pub struct DirtyRect {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+}
+
+impl DirtyRect {
+    pub fn new(x: u16, y: u16, width: u16, height: u16) -> Self {
+        Self { x, y, width, height }
+    }
+    
+    pub fn contains(&self, x: u16, y: u16) -> bool {
+        x >= self.x && x < self.x + self.width &&
+        y >= self.y && y < self.y + self.height
+    }
+    
+    pub fn intersects(&self, other: &DirtyRect) -> bool {
+        !(self.x >= other.x + other.width ||
+          other.x >= self.x + self.width ||
+          self.y >= other.y + other.height ||
+          other.y >= self.y + self.height)
+    }
+}
 
 // ST7789 Commands
 const CMD_SWRESET: u8 = 0x01;
@@ -27,9 +57,14 @@ const CMD_RAMWR: u8 = 0x2C;
 
 pub struct DisplayManager {
     lcd_bus: LcdBus,
-    backlight: PinDriver<'static, AnyIOPin, Output>,
+    backlight: Option<LedcDriver<'static>>,
     width: u16,
     height: u16,
+    dirty_rects: Vec<DirtyRect>,
+    last_activity: Instant,
+    auto_dim_enabled: bool,
+    brightness: u8,
+    is_dimmed: bool,
 }
 
 impl DisplayManager {
@@ -48,11 +83,20 @@ impl DisplayManager {
         rst: impl Into<AnyIOPin> + 'static,
         backlight: impl Into<AnyIOPin> + 'static,
     ) -> Result<Self> {
+        // For now, use simple GPIO for backlight
+        let mut backlight_pin = PinDriver::output(backlight.into())?;
+        backlight_pin.set_high()?;
+        
         let mut display = Self {
             lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
-            backlight: PinDriver::output(backlight.into())?,
+            backlight: None, // PWM not implemented yet
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
+            dirty_rects: Vec::new(),
+            last_activity: Instant::now(),
+            auto_dim_enabled: true,
+            brightness: 100,
+            is_dimmed: false,
         };
 
         display.init()?;
@@ -85,8 +129,7 @@ impl DisplayManager {
         self.lcd_bus.write_command(CMD_DISPON)?;
         FreeRtos::delay_ms(100);
 
-        // Turn on backlight
-        self.backlight.set_high()?;
+        // Backlight is already on from constructor
 
         // Initialize display memory
         self.clear(0x0000)?; // Black
@@ -198,13 +241,61 @@ impl DisplayManager {
     }
 
     pub fn set_brightness(&mut self, level: u8) -> Result<()> {
-        // For now, just on/off. Could implement PWM later
-        if level > 0 {
-            self.backlight.set_high()?;
-        } else {
-            self.backlight.set_low()?;
+        self.brightness = level;
+        self.last_activity = Instant::now();
+        
+        if let Some(ref mut pwm) = self.backlight {
+            let duty = (pwm.get_max_duty() as u32 * level as u32 / 100) as u32;
+            pwm.set_duty(duty)?;
         }
+        // If no PWM, backlight stays on
         Ok(())
+    }
+    
+    pub fn update_auto_dim(&mut self) -> Result<()> {
+        if !self.auto_dim_enabled {
+            return Ok(());
+        }
+        
+        let elapsed = self.last_activity.elapsed();
+        const DIM_TIMEOUT: Duration = Duration::from_secs(30);
+        const DIM_BRIGHTNESS: u8 = 20;
+        
+        if !self.is_dimmed && elapsed > DIM_TIMEOUT {
+            // Dim the display
+            self.is_dimmed = true;
+            self.set_brightness(DIM_BRIGHTNESS)?;
+            log::info!("Display dimmed after {} seconds", elapsed.as_secs());
+        } else if self.is_dimmed && elapsed <= DIM_TIMEOUT {
+            // Restore brightness
+            self.is_dimmed = false;
+            self.set_brightness(self.brightness)?;
+            log::info!("Display brightness restored");
+        }
+        
+        Ok(())
+    }
+    
+    pub fn mark_dirty(&mut self, rect: DirtyRect) {
+        // Check if this rect overlaps with existing ones
+        for existing in &mut self.dirty_rects {
+            if existing.intersects(&rect) {
+                // Merge rectangles
+                let x1 = existing.x.min(rect.x);
+                let y1 = existing.y.min(rect.y);
+                let x2 = (existing.x + existing.width).max(rect.x + rect.width);
+                let y2 = (existing.y + existing.height).max(rect.y + rect.height);
+                *existing = DirtyRect::new(x1, y1, x2 - x1, y2 - y1);
+                return;
+            }
+        }
+        
+        // Add new rect
+        self.dirty_rects.push(rect);
+    }
+    
+    pub fn clear_dirty_rects(&mut self) {
+        self.dirty_rects.clear();
     }
 
     pub fn flush(&mut self) -> Result<()> {

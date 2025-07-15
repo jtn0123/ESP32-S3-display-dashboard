@@ -24,10 +24,10 @@ impl NetworkManager {
     pub fn new(
         modem: Modem,
         sys_loop: EspSystemEventLoop,
-        timer_service: EspTaskTimerService,
+        _timer_service: EspTaskTimerService,
         ssid: String,
         password: String,
-        config: Arc<Mutex<Config>>,
+        _config: Arc<Mutex<Config>>,
     ) -> Result<Self> {
         let wifi = WifiManager::new(modem, sys_loop, ssid, password)?;
         let ota = OtaManager::new()?;

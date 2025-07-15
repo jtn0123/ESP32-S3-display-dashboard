@@ -26,10 +26,26 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard starting...");
+    info!("ESP32-S3 Dashboard v4.0 - Performance Optimized");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
+    
+    // Configure power management for dynamic frequency scaling
+    unsafe {
+        use esp_idf_sys::*;
+        let pm_config = esp_pm_config_esp32s3_t {
+            max_freq_mhz: 240,  // Maximum frequency
+            min_freq_mhz: 80,   // Minimum frequency when idle
+            light_sleep_enable: false, // Keep false for responsiveness
+        };
+        let result = esp_pm_configure(&pm_config as *const esp_pm_config_esp32s3_t as *const core::ffi::c_void);
+        if result == ESP_OK {
+            info!("Power management configured: 80-240MHz DFS");
+        } else {
+            log::warn!("Failed to configure power management: {:?}", result);
+        }
+    }
 
     // Take peripherals and system event loop
     let peripherals = Peripherals::take()?;
@@ -132,7 +148,7 @@ fn run_app(
     mut sensor_manager: sensors::SensorManager,
     mut button_manager: system::ButtonManager,
     mut _network_manager: NetworkManager,
-    config: Arc<Mutex<config::Config>>,
+    _config: Arc<Mutex<config::Config>>,
     _web_server: Option<network::web_server::WebConfigServer>,
 ) -> Result<()> {
     use std::thread;
@@ -141,10 +157,16 @@ fn run_app(
     // Note: OTA checker would run in the main loop instead of a separate thread
     // due to thread safety constraints with ESP-IDF HTTP server
 
-    // Main UI loop
+    // Main UI loop with performance telemetry
     let target_frame_time = Duration::from_millis(33); // ~30 FPS
     let mut last_sensor_update = Instant::now();
     let sensor_update_interval = Duration::from_secs(5);
+    
+    // Performance tracking
+    let mut frame_count = 0u32;
+    let mut last_fps_report = Instant::now();
+    let mut total_frame_time = Duration::ZERO;
+    let mut max_frame_time = Duration::ZERO;
 
     loop {
         let frame_start = Instant::now();
@@ -164,14 +186,40 @@ fn run_app(
         // Update and render UI
         ui_manager.update()?;
         ui_manager.render(&mut display_manager)?;
+        
+        // Update auto-dim
+        display_manager.update_auto_dim()?;
+        
         display_manager.flush()?;
 
-        // Frame rate limiting
+        // Frame timing and telemetry
         let frame_time = frame_start.elapsed();
+        frame_count += 1;
+        total_frame_time += frame_time;
+        max_frame_time = max_frame_time.max(frame_time);
+        
+        // Report FPS every second
+        if last_fps_report.elapsed() >= Duration::from_secs(1) {
+            let avg_frame_time = total_frame_time / frame_count;
+            let fps = (frame_count as f32) / last_fps_report.elapsed().as_secs_f32();
+            
+            log::info!("[PERF] FPS: {:.1} | Avg frame: {:?} | Max frame: {:?} | Heap free: {} KB",
+                fps,
+                avg_frame_time,
+                max_frame_time,
+                unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024
+            );
+            
+            // Reset counters
+            frame_count = 0;
+            total_frame_time = Duration::ZERO;
+            max_frame_time = Duration::ZERO;
+            last_fps_report = Instant::now();
+        }
+        
+        // Frame rate limiting
         if frame_time < target_frame_time {
             thread::sleep(target_frame_time - frame_time);
-        } else {
-            log::warn!("Frame took {:?} (target: {:?})", frame_time, target_frame_time);
         }
     }
 }

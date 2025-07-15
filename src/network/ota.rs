@@ -78,7 +78,7 @@ impl OtaManager {
         log::info!("Starting OTA update...");
         
         // Start OTA update
-        let ota = EspOta::new()?;
+        let mut ota = EspOta::new()?;
         let mut ota_update = ota.initiate_update()?;
         
         // Download and write firmware
@@ -126,18 +126,19 @@ impl OtaManager {
 
     pub fn get_running_partition(&self) -> Result<String> {
         let ota = EspOta::new()?;
-        let partition = ota.get_running_partition()?;
-        Ok(format!("{:?}", partition.label()))
+        let partition = ota.get_running_slot()?;
+        Ok(format!("{:?}", partition))
     }
 
     pub fn rollback(&mut self) -> Result<()> {
         log::warn!("Rolling back to previous firmware...");
-        let ota = EspOta::new()?;
-        ota.rollback()?;
         
-        // Restart
+        // Use esp_ota_mark_app_invalid_rollback_and_reboot from ESP-IDF
         unsafe {
-            esp_idf_sys::esp_restart();
+            esp_idf_sys::esp_ota_mark_app_invalid_rollback_and_reboot();
         }
+        
+        // This line won't be reached due to reboot
+        Ok(())
     }
 }

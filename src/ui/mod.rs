@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::display::{DisplayManager, colors::*};
 use crate::sensors::SensorData;
 use crate::system::ButtonEvent;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub struct UiManager {
     current_screen: usize,
@@ -12,7 +12,7 @@ pub struct UiManager {
 }
 
 impl UiManager {
-    pub fn new(display: &mut DisplayManager) -> Result<Self> {
+    pub fn new(_display: &mut DisplayManager) -> Result<Self> {
         Ok(Self {
             current_screen: 0,
             sensor_data: SensorData::default(),

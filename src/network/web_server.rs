@@ -1,6 +1,6 @@
 use anyhow::Result;
 use esp_idf_svc::http::server::{Configuration, EspHttpServer};
-use esp_idf_svc::io::{Read, Write};
+use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
 use crate::config::Config;
 
@@ -24,13 +24,13 @@ impl WebConfigServer {
     pub fn new(config: Arc<Mutex<Config>>) -> Result<Self> {
         let mut server = EspHttpServer::new(&Configuration::default())?;
         
-        let config_clone = config.clone();
+        let _config_clone = config.clone();
         
         // Home page
         server.fn_handler("/", esp_idf_svc::http::Method::Get, move |req| {
             let mut response = req.into_ok_response()?;
             response.write_all(HOME_PAGE.as_bytes())?;
-            Ok(())
+            Ok(()) as Result<(), Box<dyn std::error::Error>> as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // Get current configuration
@@ -41,7 +41,7 @@ impl WebConfigServer {
             
             let mut response = req.into_ok_response()?;
             response.write_all(json.as_bytes())?;
-            Ok(())
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // Update configuration
@@ -77,8 +77,8 @@ impl WebConfigServer {
                 config.save()?;
             }
             
-            let response = req.into_ok_response()?;
-            Ok(())
+            let _response = req.into_ok_response()?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>> as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // System info endpoint
@@ -86,13 +86,13 @@ impl WebConfigServer {
             let info = SystemInfo {
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 free_heap: unsafe { esp_idf_sys::esp_get_free_heap_size() },
-                uptime_ms: unsafe { esp_idf_sys::esp_timer_get_time() / 1000 },
+                uptime_ms: unsafe { (esp_idf_sys::esp_timer_get_time() / 1000) as u64 },
             };
             
             let json = serde_json::to_string(&info)?;
             let mut response = req.into_ok_response()?;
             response.write_all(json.as_bytes())?;
-            Ok(())
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
         Ok(Self { server, config })

@@ -6,9 +6,12 @@ edition = "2021"
 resolver = "2"
 
 [profile.release]
-opt-level = "s"
-lto = "fat"
-strip = true
+opt-level = "s"        # Optimize for size (less aggressive than "z")
+lto = "fat"           # Full LTO (use "fat" instead of true for compatibility)
+codegen-units = 16    # Default codegen units to avoid register pressure
+strip = true          # Strip debug info
+panic = "abort"       # Remove unwinding tables
+overflow-checks = false  # Disable overflow checks in release
 
 [profile.dev]
 opt-level = 1
