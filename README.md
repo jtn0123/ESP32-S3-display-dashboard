@@ -1,5 +1,8 @@
 # ESP32-S3 Display Dashboard
 
+[![Rust CI](https://github.com/jtn0123/ESP32-S3-Display-Dashboard/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/jtn0123/ESP32-S3-Display-Dashboard/actions/workflows/rust-ci.yml)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://jtn0123.github.io/ESP32-S3-Display-Dashboard/)
+
 A modern, high-performance dashboard implementation for the LilyGo T-Display-S3, written in Rust using ESP-IDF.
 
 ## 🚀 Quick Start
