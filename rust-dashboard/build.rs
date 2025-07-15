@@ -1,3 +1,5 @@
-fn main() {
-    // Build script is only needed for std features
+fn main() -> anyhow::Result<()> {
+    // Necessary for ESP-IDF
+    embuild::espidf::sysenv::output();
+    Ok(())
 }

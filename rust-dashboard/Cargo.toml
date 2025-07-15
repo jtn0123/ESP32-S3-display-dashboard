@@ -1,13 +1,48 @@
 [package]
 name = "esp32-s3-dashboard"
 version = "0.1.0"
+authors = ["Justin"]
 edition = "2021"
+resolver = "2"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+strip = true
+
+[profile.dev]
+opt-level = 1
 
 [dependencies]
-# Just use core dependencies to test compilation
-heapless = "0.8"
-libm = "0.2"
+# ESP-IDF Support (with std)
+esp-idf-sys = { version = "0.35", features = ["binstart"] }
+esp-idf-svc = { version = "0.49", default-features = false, features = ["experimental"] }
+esp-idf-hal = { version = "0.44" }
 
-[lib]
-name = "rust_dashboard"
-path = "src/lib.rs"
+# Async runtime
+embassy-executor = { version = "0.6", features = ["task-arena-size-65536"] }
+embassy-time = { version = "0.3" }
+embassy-sync = { version = "0.6" }
+
+# Error handling and logging
+anyhow = "1.0"
+log = "0.4"
+
+# Serialization for configuration
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = "1.0"
+
+# Embedded graphics
+embedded-graphics = "0.8"
+embedded-graphics-core = "0.4"
+
+# HTTP Server for configuration
+embedded-svc = "0.28"
+
+# Utilities
+heapless = "0.8"  # Still useful for fixed-size collections
+static_cell = "2.1"
+
+[build-dependencies]
+embuild = "0.32"
+anyhow = "1.0"

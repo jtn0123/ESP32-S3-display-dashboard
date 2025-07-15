@@ -1,151 +1,230 @@
-// Display module - main interface for LCD operations
+pub mod colors;
+pub mod font5x7;
 
-pub mod font;
+use anyhow::Result;
+use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
+use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
+use esp_idf_hal::delay::FreeRtos;
+use std::time::Duration;
 
-use esp_hal::{
-    gpio::{AnyPin, Input, Output, PinDriver},
-    peripherals::LCD_CAM,
-    dma::Channel0,
-};
-use esp_println::println;
+const DISPLAY_WIDTH: u16 = 320;
+const DISPLAY_HEIGHT: u16 = 170;
 
-pub use font::{Font5x7, FontRenderer};
+// ST7789 Commands
+const CMD_SWRESET: u8 = 0x01;
+const CMD_SLPOUT: u8 = 0x11;
+const CMD_MADCTL: u8 = 0x36;
+const CMD_COLMOD: u8 = 0x3A;
+const CMD_DISPON: u8 = 0x29;
+const CMD_CASET: u8 = 0x2A;
+const CMD_RASET: u8 = 0x2B;
+const CMD_RAMWR: u8 = 0x2C;
 
-pub struct DisplayPins {
-    pub d0: AnyPin,
-    pub d1: AnyPin,
-    pub d2: AnyPin,
-    pub d3: AnyPin,
-    pub d4: AnyPin,
-    pub d5: AnyPin,
-    pub d6: AnyPin,
-    pub d7: AnyPin,
-    pub wr: AnyPin,
+pub struct DisplayManager {
+    data_pins: [PinDriver<'static, AnyIOPin, Output>; 8],
+    wr: PinDriver<'static, AnyIOPin, Output>,
+    dc: PinDriver<'static, AnyIOPin, Output>,
+    cs: PinDriver<'static, AnyIOPin, Output>,
+    rst: PinDriver<'static, AnyIOPin, Output>,
+    backlight: PinDriver<'static, AnyIOPin, Output>,
+    width: u16,
+    height: u16,
 }
 
-// Color constants (BGR565 format)
-#[derive(Debug, Clone, Copy)]
-pub struct Color(pub u16);
-
-impl Color {
-    pub const BLACK: Color = Color(0xFFFF);
-    pub const WHITE: Color = Color(0x0000);
-    pub const RED: Color = Color(0x07FF);
-    pub const GREEN: Color = Color(0xF81F);
-    pub const BLUE: Color = Color(0xF8E0);
-    pub const YELLOW: Color = Color(0x001F);
-    pub const CYAN: Color = Color(0xF800);
-    pub const MAGENTA: Color = Color(0x07E0);
-    pub const PRIMARY_BLUE: Color = Color(0x2589);
-}
-
-pub struct Display {
-    framebuffer: &'static mut [u16; 320 * 170],
-    initialized: bool,
-}
-
-impl Display {
+impl DisplayManager {
     pub fn new(
-        lcd_cam: LCD_CAM,
-        dma_channel: Channel0,
-        pins: DisplayPins,
-        mut dc_pin: PinDriver<'static, AnyPin, Output>,
-        mut cs_pin: PinDriver<'static, AnyPin, Output>,
-        mut rst_pin: PinDriver<'static, AnyPin, Output>,
-        mut backlight_pin: PinDriver<'static, AnyPin, Output>,
-    ) -> Result<Self, &'static str> {
+        d0: impl Into<AnyIOPin> + 'static,
+        d1: impl Into<AnyIOPin> + 'static,
+        d2: impl Into<AnyIOPin> + 'static,
+        d3: impl Into<AnyIOPin> + 'static,
+        d4: impl Into<AnyIOPin> + 'static,
+        d5: impl Into<AnyIOPin> + 'static,
+        d6: impl Into<AnyIOPin> + 'static,
+        d7: impl Into<AnyIOPin> + 'static,
+        wr: impl Into<AnyIOPin> + 'static,
+        dc: impl Into<AnyIOPin> + 'static,
+        cs: impl Into<AnyIOPin> + 'static,
+        rst: impl Into<AnyIOPin> + 'static,
+        backlight: impl Into<AnyIOPin> + 'static,
+    ) -> Result<Self> {
+        let mut display = Self {
+            data_pins: [
+                PinDriver::output(d0.into())?,
+                PinDriver::output(d1.into())?,
+                PinDriver::output(d2.into())?,
+                PinDriver::output(d3.into())?,
+                PinDriver::output(d4.into())?,
+                PinDriver::output(d5.into())?,
+                PinDriver::output(d6.into())?,
+                PinDriver::output(d7.into())?,
+            ],
+            wr: PinDriver::output(wr.into())?,
+            dc: PinDriver::output(dc.into())?,
+            cs: PinDriver::output(cs.into())?,
+            rst: PinDriver::output(rst.into())?,
+            backlight: PinDriver::output(backlight.into())?,
+            width: DISPLAY_WIDTH,
+            height: DISPLAY_HEIGHT,
+        };
+
+        display.init()?;
+        Ok(display)
+    }
+
+    fn init(&mut self) -> Result<()> {
+        log::info!("Initializing ST7789 display...");
+
+        // Initial pin states
+        self.cs.set_high()?;
+        self.wr.set_high()?;
+        self.dc.set_high()?;
+        
+        // Hardware reset
+        self.rst.set_high()?;
+        FreeRtos::delay_ms(10);
+        self.rst.set_low()?;
+        FreeRtos::delay_ms(10);
+        self.rst.set_high()?;
+        FreeRtos::delay_ms(120);
+
+        // Software reset
+        self.write_command(CMD_SWRESET)?;
+        FreeRtos::delay_ms(120);
+
+        // Sleep out
+        self.write_command(CMD_SLPOUT)?;
+        FreeRtos::delay_ms(120);
+
+        // Memory access control (rotation)
+        self.write_command(CMD_MADCTL)?;
+        self.write_data(0x60)?; // Landscape mode
+
+        // Pixel format
+        self.write_command(CMD_COLMOD)?;
+        self.write_data(0x55)?; // 16-bit RGB565
+
+        // Display on
+        self.write_command(CMD_DISPON)?;
+        FreeRtos::delay_ms(100);
+
         // Turn on backlight
-        backlight_pin.set_high().ok();
-        
-        // Reset display
-        rst_pin.set_high().ok();
-        esp_hal::delay::Delay::new_default().delay_millis(10);
-        rst_pin.set_low().ok();
-        esp_hal::delay::Delay::new_default().delay_millis(10);
-        rst_pin.set_high().ok();
-        esp_hal::delay::Delay::new_default().delay_millis(120);
-        
-        // TODO: Initialize LCD_CAM with esp-hal
-        // For now, create a simple framebuffer display
-        
-        // Allocate framebuffer statically
-        static mut FRAMEBUFFER: [u16; 320 * 170] = [0; 320 * 170];
-        let framebuffer = unsafe { &mut FRAMEBUFFER };
-        
-        println!("Display initialized");
-        
-        Ok(Display {
-            framebuffer,
-            initialized: true,
-        })
+        self.backlight.set_high()?;
+
+        // Initialize display memory
+        self.clear(0x0000)?; // Black
+
+        log::info!("Display initialized successfully");
+        Ok(())
     }
-    
-    pub fn clear(&mut self, color: Color) {
-        for pixel in self.framebuffer.iter_mut() {
-            *pixel = color.0;
-        }
-    }
-    
-    pub fn set_pixel(&mut self, x: u16, y: u16, color: Color) {
-        if x < 320 && y < 170 {
-            self.framebuffer[(y as usize * 320) + x as usize] = color.0;
-        }
-    }
-    
-    pub fn fill_rect(&mut self, x: u16, y: u16, w: u16, h: u16, color: Color) {
-        for dy in 0..h {
-            for dx in 0..w {
-                self.set_pixel(x + dx, y + dy, color);
+
+    fn write_byte(&mut self, data: u8) -> Result<()> {
+        // Set data pins
+        for i in 0..8 {
+            if (data >> i) & 1 == 1 {
+                self.data_pins[i].set_high()?;
+            } else {
+                self.data_pins[i].set_low()?;
             }
         }
+
+        // Toggle write pin
+        self.wr.set_low()?;
+        // Small delay for signal stability
+        FreeRtos::delay_us(1);
+        self.wr.set_high()?;
+        FreeRtos::delay_us(1);
+
+        Ok(())
     }
-    
-    pub fn draw_rect(&mut self, x: u16, y: u16, w: u16, h: u16, color: Color) {
-        // Top and bottom
-        self.fill_rect(x, y, w, 1, color);
-        self.fill_rect(x, y + h - 1, w, 1, color);
-        // Left and right
-        self.fill_rect(x, y, 1, h, color);
-        self.fill_rect(x + w - 1, y, 1, h, color);
+
+    fn write_command(&mut self, cmd: u8) -> Result<()> {
+        self.cs.set_low()?;
+        self.dc.set_low()?; // Command mode
+        self.write_byte(cmd)?;
+        self.cs.set_high()?;
+        Ok(())
     }
-    
-    // Legacy text drawing (replaced by FontRenderer trait)
-    pub fn draw_text(&mut self, x: u16, y: u16, text: &str, color: Color) {
-        // Use the new font system
-        self.draw_text_5x7(x, y, text, color);
+
+    fn write_data(&mut self, data: u8) -> Result<()> {
+        self.cs.set_low()?;
+        self.dc.set_high()?; // Data mode
+        self.write_byte(data)?;
+        self.cs.set_high()?;
+        Ok(())
     }
-    
-    pub fn draw_number(&mut self, x: u16, y: u16, num: u32, color: Color) {
-        // Convert number to string and draw
-        let mut buffer = [0u8; 10];
-        let text = num_to_str(num, &mut buffer);
-        self.draw_text(x, y, text, color);
+
+    fn write_data_16(&mut self, data: u16) -> Result<()> {
+        self.write_data((data >> 8) as u8)?;
+        self.write_data((data & 0xFF) as u8)?;
+        Ok(())
     }
-    
-    pub fn draw_card(&mut self, x: u16, y: u16, w: u16, h: u16, title: &str, border_color: Color) {
-        // Shadow
-        self.fill_rect(x + 2, y + 2, w, h, Color(0x2104));
+
+    fn set_window(&mut self, x0: u16, y0: u16, x1: u16, y1: u16) -> Result<()> {
+        // Column address set
+        self.write_command(CMD_CASET)?;
+        self.write_data_16(x0)?;
+        self.write_data_16(x1)?;
+
+        // Row address set
+        self.write_command(CMD_RASET)?;
+        self.write_data_16(y0)?;
+        self.write_data_16(y1)?;
+
+        // Memory write
+        self.write_command(CMD_RAMWR)?;
+        Ok(())
+    }
+
+    pub fn clear(&mut self, color: u16) -> Result<()> {
+        self.set_window(0, 0, self.width - 1, self.height - 1)?;
         
-        // Main card
-        self.fill_rect(x, y, w, h, Color::BLACK);
+        self.cs.set_low()?;
+        self.dc.set_high()?;
         
-        // Border
-        self.draw_rect(x, y, w, h, border_color);
-        
-        // Title
-        if !title.is_empty() {
-            self.draw_text(x + 5, y + 2, title, Color::WHITE);
+        let total_pixels = self.width as u32 * self.height as u32;
+        for _ in 0..total_pixels {
+            self.write_byte((color >> 8) as u8)?;
+            self.write_byte((color & 0xFF) as u8)?;
         }
+        
+        self.cs.set_high()?;
+        Ok(())
     }
-    
-    pub async fn flush(&mut self) {
-        // TODO: Implement DMA transfer
-        // For now, this is a no-op
+
+    pub fn draw_pixel(&mut self, x: u16, y: u16, color: u16) -> Result<()> {
+        if x >= self.width || y >= self.height {
+            return Ok(());
+        }
+
+        self.set_window(x, y, x, y)?;
+        self.write_data_16(color)?;
+        Ok(())
     }
-    
-    // Graphics primitives
-    pub fn draw_line(&mut self, x0: u16, y0: u16, x1: u16, y1: u16, color: Color) {
-        // Bresenham's line algorithm
+
+    pub fn fill_rect(&mut self, x: u16, y: u16, w: u16, h: u16, color: u16) -> Result<()> {
+        if x >= self.width || y >= self.height {
+            return Ok(());
+        }
+
+        let x1 = (x + w - 1).min(self.width - 1);
+        let y1 = (y + h - 1).min(self.height - 1);
+
+        self.set_window(x, y, x1, y1)?;
+        
+        self.cs.set_low()?;
+        self.dc.set_high()?;
+        
+        let total_pixels = (x1 - x + 1) as u32 * (y1 - y + 1) as u32;
+        for _ in 0..total_pixels {
+            self.write_byte((color >> 8) as u8)?;
+            self.write_byte((color & 0xFF) as u8)?;
+        }
+        
+        self.cs.set_high()?;
+        Ok(())
+    }
+
+    pub fn draw_line(&mut self, x0: u16, y0: u16, x1: u16, y1: u16, color: u16) -> Result<()> {
         let dx = (x1 as i32 - x0 as i32).abs();
         let dy = (y1 as i32 - y0 as i32).abs();
         let sx = if x0 < x1 { 1 } else { -1 };
@@ -153,14 +232,14 @@ impl Display {
         let mut err = dx - dy;
         let mut x = x0 as i32;
         let mut y = y0 as i32;
-        
+
         loop {
-            self.set_pixel(x as u16, y as u16, color);
-            
+            self.draw_pixel(x as u16, y as u16, color)?;
+
             if x == x1 as i32 && y == y1 as i32 {
                 break;
             }
-            
+
             let e2 = 2 * err;
             if e2 > -dy {
                 err -= dy;
@@ -171,52 +250,146 @@ impl Display {
                 y += sy;
             }
         }
+
+        Ok(())
     }
-    
-    pub fn draw_circle(&mut self, cx: u16, cy: u16, radius: u16, color: Color) {
-        // Midpoint circle algorithm
-        let mut x = radius as i32;
+
+    pub fn draw_rect(&mut self, x: u16, y: u16, w: u16, h: u16, color: u16) -> Result<()> {
+        self.draw_line(x, y, x + w - 1, y, color)?;
+        self.draw_line(x, y + h - 1, x + w - 1, y + h - 1, color)?;
+        self.draw_line(x, y, x, y + h - 1, color)?;
+        self.draw_line(x + w - 1, y, x + w - 1, y + h - 1, color)?;
+        Ok(())
+    }
+
+    pub fn set_brightness(&mut self, level: u8) -> Result<()> {
+        // For now, just on/off. Could implement PWM later
+        if level > 0 {
+            self.backlight.set_high()?;
+        } else {
+            self.backlight.set_low()?;
+        }
+        Ok(())
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        // For direct GPIO control, no flush needed
+        Ok(())
+    }
+
+    pub fn draw_char(&mut self, x: u16, y: u16, c: char, color: u16, bg_color: Option<u16>, scale: u8) -> Result<()> {
+        let char_data = get_char_data(c);
+        
+        for col in 0..FONT_WIDTH {
+            for row in 0..FONT_HEIGHT {
+                if (char_data[col as usize] >> row) & 1 == 1 {
+                    // Draw pixel(s) for the character
+                    for sx in 0..scale {
+                        for sy in 0..scale {
+                            self.draw_pixel(
+                                x + (col * scale + sx) as u16,
+                                y + (row * scale + sy) as u16,
+                                color
+                            )?;
+                        }
+                    }
+                } else if let Some(bg) = bg_color {
+                    // Draw background pixel(s)
+                    for sx in 0..scale {
+                        for sy in 0..scale {
+                            self.draw_pixel(
+                                x + (col * scale + sx) as u16,
+                                y + (row * scale + sy) as u16,
+                                bg
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    pub fn draw_text(&mut self, x: u16, y: u16, text: &str, color: u16, bg_color: Option<u16>, scale: u8) -> Result<()> {
+        let mut cursor_x = x;
+        let char_width = (FONT_WIDTH * scale + 1) as u16; // +1 for spacing
+        
+        for c in text.chars() {
+            if cursor_x + char_width as u16 > self.width {
+                break; // Don't draw beyond screen
+            }
+            
+            self.draw_char(cursor_x, y, c, color, bg_color, scale)?;
+            cursor_x += char_width;
+        }
+        
+        Ok(())
+    }
+
+    pub fn draw_text_centered(&mut self, y: u16, text: &str, color: u16, bg_color: Option<u16>, scale: u8) -> Result<()> {
+        let char_width = (FONT_WIDTH * scale + 1) as u16;
+        let text_width = text.len() as u16 * char_width;
+        let x = (self.width - text_width) / 2;
+        
+        self.draw_text(x, y, text, color, bg_color, scale)
+    }
+
+    pub fn draw_circle(&mut self, cx: u16, cy: u16, r: u16, color: u16) -> Result<()> {
+        let mut x = r as i32;
         let mut y = 0i32;
         let mut err = 0i32;
-        
+
         while x >= y {
-            self.set_pixel((cx as i32 + x) as u16, (cy as i32 + y) as u16, color);
-            self.set_pixel((cx as i32 + y) as u16, (cy as i32 + x) as u16, color);
-            self.set_pixel((cx as i32 - y) as u16, (cy as i32 + x) as u16, color);
-            self.set_pixel((cx as i32 - x) as u16, (cy as i32 + y) as u16, color);
-            self.set_pixel((cx as i32 - x) as u16, (cy as i32 - y) as u16, color);
-            self.set_pixel((cx as i32 - y) as u16, (cy as i32 - x) as u16, color);
-            self.set_pixel((cx as i32 + y) as u16, (cy as i32 - x) as u16, color);
-            self.set_pixel((cx as i32 + x) as u16, (cy as i32 - y) as u16, color);
-            
+            self.draw_pixel((cx as i32 + x) as u16, (cy as i32 + y) as u16, color)?;
+            self.draw_pixel((cx as i32 + y) as u16, (cy as i32 + x) as u16, color)?;
+            self.draw_pixel((cx as i32 - y) as u16, (cy as i32 + x) as u16, color)?;
+            self.draw_pixel((cx as i32 - x) as u16, (cy as i32 + y) as u16, color)?;
+            self.draw_pixel((cx as i32 - x) as u16, (cy as i32 - y) as u16, color)?;
+            self.draw_pixel((cx as i32 - y) as u16, (cy as i32 - x) as u16, color)?;
+            self.draw_pixel((cx as i32 + y) as u16, (cy as i32 - x) as u16, color)?;
+            self.draw_pixel((cx as i32 + x) as u16, (cy as i32 - y) as u16, color)?;
+
             if err <= 0 {
                 y += 1;
                 err += 2 * y + 1;
             }
-            
             if err > 0 {
                 x -= 1;
                 err -= 2 * x + 1;
             }
         }
-    }
-}
 
-// Helper function to convert number to string
-fn num_to_str(mut num: u32, buffer: &mut [u8]) -> &str {
-    if num == 0 {
-        buffer[0] = b'0';
-        return unsafe { core::str::from_utf8_unchecked(&buffer[..1]) };
+        Ok(())
     }
-    
-    let mut i = 0;
-    while num > 0 && i < buffer.len() {
-        buffer[i] = b'0' + (num % 10) as u8;
-        num /= 10;
-        i += 1;
+
+    pub fn fill_circle(&mut self, cx: u16, cy: u16, r: u16, color: u16) -> Result<()> {
+        for y in 0..=r {
+            for x in 0..=r {
+                if x * x + y * y <= r * r {
+                    self.draw_pixel(cx + x, cy + y, color)?;
+                    self.draw_pixel(cx - x, cy + y, color)?;
+                    self.draw_pixel(cx + x, cy - y, color)?;
+                    self.draw_pixel(cx - x, cy - y, color)?;
+                }
+            }
+        }
+        Ok(())
     }
-    
-    // Reverse the digits
-    buffer[..i].reverse();
-    unsafe { core::str::from_utf8_unchecked(&buffer[..i]) }
+
+    pub fn draw_progress_bar(&mut self, x: u16, y: u16, w: u16, h: u16, progress: u8, fg_color: u16, bg_color: u16, border_color: u16) -> Result<()> {
+        // Draw border
+        self.draw_rect(x, y, w, h, border_color)?;
+        
+        // Fill background
+        self.fill_rect(x + 1, y + 1, w - 2, h - 2, bg_color)?;
+        
+        // Fill progress
+        let progress_width = ((w - 2) as u32 * progress as u32 / 100) as u16;
+        if progress_width > 0 {
+            self.fill_rect(x + 1, y + 1, progress_width, h - 2, fg_color)?;
+        }
+        
+        Ok(())
+    }
 }
