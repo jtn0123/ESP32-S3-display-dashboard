@@ -29,7 +29,7 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard v4.0 - Performance Optimized");
+    info!("ESP32-S3 Dashboard v4.2 - Backlight Persistence Fixed");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
@@ -62,15 +62,21 @@ fn main() -> Result<()> {
     // Initialize display
     info!("Initializing display...");
     
-    // Turn on LCD power first (GPIO 15)
+    // Initialize display pins and power sequence
     use esp_idf_hal::gpio::PinDriver;
+    
+    // Set RD pin high (we never read from display)
+    let mut _rd_pin = PinDriver::output(peripherals.pins.gpio9)?;
+    _rd_pin.set_high()?;
+    
+    // Turn on LCD power (GPIO 15)
     let mut lcd_power = PinDriver::output(peripherals.pins.gpio15)?;
     lcd_power.set_high()?;
     info!("LCD power enabled on GPIO 15");
     
-    // Small delay to ensure LCD power is stable
+    // CRITICAL: Wait for LCD power to stabilize
     use esp_idf_hal::delay::Ets;
-    Ets::delay_ms(10);
+    Ets::delay_ms(200);  // Longer delay for power stability
     
     let mut display_manager = DisplayManager::new(
         peripherals.pins.gpio39, // D0
@@ -88,6 +94,10 @@ fn main() -> Result<()> {
         peripherals.pins.gpio38, // Backlight
     )?;
     info!("Display initialized");
+    
+    // Draw test pattern to verify display is working
+    display_manager.test_pattern()?;
+    info!("Test pattern displayed");
 
     // Initialize UI
     let mut ui_manager = UiManager::new(&mut display_manager)?;

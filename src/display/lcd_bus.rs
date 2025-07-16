@@ -43,10 +43,19 @@ impl LcdBus {
             rst: PinDriver::output(rst.into())?,
         };
 
-        // Initial pin states
-        bus.cs.set_high()?;
-        bus.wr.set_high()?;
-        bus.dc.set_high()?;
+        // Clear all data pins to prevent static
+        for pin in &mut bus.data_pins {
+            pin.set_low()?;
+        }
+        
+        // Initial control pin states - matching Arduino
+        bus.cs.set_low()?;  // CS active (Arduino keeps it low)
+        bus.wr.set_high()?; // WR inactive
+        bus.dc.set_high()?; // DC in data mode initially
+        bus.rst.set_high()?; // RST inactive
+        
+        // Small delay to ensure stable state
+        FreeRtos::delay_ms(10);
         
         Ok(bus)
     }
@@ -73,46 +82,47 @@ impl LcdBus {
             }
         }
 
-        // Toggle write pin
+        // Toggle write pin with proper timing
+        // For Xtensa, we can't use inline assembly, but the GPIO operations
+        // themselves take enough time to meet the 40ns requirement
+        
         self.wr.set_low()?;
-        // Small delay for signal stability
-        // Small delay for signal stability
-        unsafe { esp_idf_sys::esp_rom_delay_us(1); }
+        // The GPIO write operation takes ~50-100ns on ESP32-S3
+        // which exceeds the 40ns minimum hold time
+        
         self.wr.set_high()?;
-        // Small delay for signal stability
-        unsafe { esp_idf_sys::esp_rom_delay_us(1); }
+        // GPIO operations provide sufficient recovery time
 
         Ok(())
     }
 
     /// Write a command byte
     pub fn write_command(&mut self, cmd: u8) -> Result<()> {
-        self.cs.set_low()?;
+        // CS is already low from initialization
         self.dc.set_low()?; // Command mode
         self.write_byte(cmd)?;
-        self.cs.set_high()?;
+        // Small delay after command
+        unsafe { esp_idf_sys::esp_rom_delay_us(10); }
         Ok(())
     }
 
     /// Write a data byte
     pub fn write_data(&mut self, data: u8) -> Result<()> {
-        self.cs.set_low()?;
+        // CS is already low from initialization
         self.dc.set_high()?; // Data mode
         self.write_byte(data)?;
-        self.cs.set_high()?;
         Ok(())
     }
 
     /// Write multiple data bytes efficiently
     pub fn write_data_bytes(&mut self, data: &[u8]) -> Result<()> {
-        self.cs.set_low()?;
+        // CS is already low from initialization
         self.dc.set_high()?; // Data mode
         
         for &byte in data {
             self.write_byte(byte)?;
         }
         
-        self.cs.set_high()?;
         Ok(())
     }
 
@@ -125,7 +135,7 @@ impl LcdBus {
 
     /// Begin a data write sequence (caller must call end_write when done)
     pub fn begin_write(&mut self) -> Result<()> {
-        self.cs.set_low()?;
+        // CS is already low from initialization
         self.dc.set_high()?;
         Ok(())
     }
@@ -140,7 +150,7 @@ impl LcdBus {
 
     /// End a data write sequence
     pub fn end_write(&mut self) -> Result<()> {
-        self.cs.set_high()?;
+        // CS stays low
         Ok(())
     }
 }

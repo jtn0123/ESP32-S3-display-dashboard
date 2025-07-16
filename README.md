@@ -126,6 +126,37 @@ This build includes several performance enhancements:
 ./flash.sh --debug
 ```
 
+#### Important: espflash Version Compatibility
+
+This project requires **espflash v3.3.0** due to compatibility issues with v4.x:
+
+```bash
+# Check your espflash version
+espflash --version
+
+# If you have v4.x, downgrade to v3.3.0:
+cargo install espflash@3.3.0 --force
+cargo install cargo-espflash@3.3.0 --force
+```
+
+#### Flash Size Configuration
+
+The ESP32-S3 T-Display has 16MB flash. If you encounter flash size errors during boot:
+
+```bash
+# Method 1: Use espflash with explicit flash size
+espflash flash --port /dev/tty.usbmodem101 --flash-size 16mb target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard
+
+# Method 2: Use esptool.py directly
+.embuild/espressif/python_env/idf5.1_py3.13_env/bin/esptool.py \
+  --chip esp32s3 --port /dev/tty.usbmodem101 --baud 921600 \
+  --before default_reset --after hard_reset write_flash \
+  --flash_mode dio --flash_freq 40m --flash_size 16MB \
+  0x0 target/xtensa-esp32s3-espidf/release/bootloader.bin \
+  0x8000 target/xtensa-esp32s3-espidf/release/partition-table.bin \
+  0x10000 target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard
+```
+
 ### Other Commands
 
 ```bash
@@ -205,6 +236,20 @@ ls /dev/tty.usb* /dev/cu.usb*
 # Flash with specific port
 ./flash.sh --port /dev/tty.usbmodem14201
 ```
+
+**"ESP-IDF App Descriptor missing" Error (espflash 4.x)**
+
+This error occurs with espflash v4.x due to a section name mismatch. Solutions:
+1. Downgrade to espflash 3.3.0 (recommended)
+2. Use `--check-app-descriptor=false` flag with v4.x
+3. Use esptool.py directly (see Flash Size Configuration above)
+
+**"SPI Flash Size : 4MB" Boot Error**
+
+If the bootloader reports 4MB instead of 16MB:
+1. Clean build: `cargo clean`
+2. Rebuild: `./compile.sh --release`
+3. Flash with explicit size: `espflash flash --flash-size 16mb ...`
 
 ## 🤝 Contributing
 
