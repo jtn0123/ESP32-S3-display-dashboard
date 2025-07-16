@@ -50,8 +50,6 @@ pub struct DisplayManager {
     width: u16,
     height: u16,
     last_activity: Instant,
-    auto_dim_enabled: bool,
-    is_dimmed: bool,
 }
 
 impl DisplayManager {
@@ -86,8 +84,6 @@ impl DisplayManager {
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
             last_activity: Instant::now(),
-            auto_dim_enabled: false, // Disabled - no PWM implementation
-            is_dimmed: false,
         };
 
         // Set up LCD power pin (GPIO 15) - CRITICAL: Must keep alive!
@@ -218,13 +214,15 @@ impl DisplayManager {
         self.lcd_bus.write_data_16(y0_offset)?;
         self.lcd_bus.write_data_16(y1_offset)?;
 
-        // Memory write
-        self.lcd_bus.write_command(CMD_RAMWR)?;
+        // Note: RAMWR command removed from here - must be sent before each pixel write
         Ok(())
     }
 
     pub fn clear(&mut self, color: u16) -> Result<()> {
         self.set_window(0, 0, self.width - 1, self.height - 1)?;
+        
+        // CRITICAL: Must send RAMWR before pixel data
+        self.lcd_bus.write_command(CMD_RAMWR)?;
         
         self.lcd_bus.begin_write()?;
         
@@ -249,6 +247,7 @@ impl DisplayManager {
         self.lcd_bus.write_data_16(0)?;
         self.lcd_bus.write_data_16(319)?;  // 320 - 1
         
+        // CRITICAL: Must send RAMWR before pixel data
         self.lcd_bus.write_command(CMD_RAMWR)?;
         
         self.lcd_bus.begin_write()?;
@@ -272,6 +271,8 @@ impl DisplayManager {
         }
 
         self.set_window(x, y, x, y)?;
+        // CRITICAL: Must send RAMWR before pixel data
+        self.lcd_bus.write_command(CMD_RAMWR)?;
         self.lcd_bus.write_data_16(color)?;
         Ok(())
     }
@@ -285,6 +286,9 @@ impl DisplayManager {
         let y1 = (y + h - 1).min(self.height - 1);
 
         self.set_window(x, y, x1, y1)?;
+        
+        // CRITICAL: Must send RAMWR before pixel data
+        self.lcd_bus.write_command(CMD_RAMWR)?;
         
         self.lcd_bus.begin_write()?;
         
@@ -484,40 +488,4 @@ impl DisplayManager {
         Ok(())
     }
 
-    /// Draw a test pattern to verify display is working
-    pub fn test_pattern(&mut self) -> Result<()> {
-        log::info!("Drawing test pattern...");
-        log::info!("Display dimensions: {}x{}", self.width, self.height);
-        
-        // First, fill entire screen with red to see if anything shows
-        log::info!("Filling screen with red...");
-        self.clear(0xF800)?;  // Red
-        FreeRtos::delay_ms(500);
-        
-        // Then try green
-        log::info!("Filling screen with green...");
-        self.clear(0x07E0)?;  // Green
-        FreeRtos::delay_ms(500);
-        
-        // Then blue
-        log::info!("Filling screen with blue...");
-        self.clear(0x001F)?;  // Blue
-        FreeRtos::delay_ms(500);
-        
-        // Now try drawing rectangles at known positions
-        log::info!("Drawing test rectangles...");
-        self.clear(0x0000)?;  // Black background
-        
-        // Draw small rectangles in corners (300x168 display)
-        self.fill_rect(0, 0, 50, 50, 0xF800)?;  // Red top-left
-        self.fill_rect(250, 0, 50, 50, 0x07E0)?;  // Green top-right
-        self.fill_rect(0, 118, 50, 50, 0x001F)?;  // Blue bottom-left
-        self.fill_rect(250, 118, 50, 50, 0xFFFF)?;  // White bottom-right
-        
-        // Draw center rectangle
-        self.fill_rect(125, 59, 50, 50, 0xF81F)?;  // Magenta center
-        
-        log::info!("Test pattern complete");
-        Ok(())
-    }
 }

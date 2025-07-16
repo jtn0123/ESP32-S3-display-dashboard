@@ -48,8 +48,8 @@ impl LcdBus {
             pin.set_low()?;
         }
         
-        // Initial control pin states - matching Arduino
-        bus.cs.set_low()?;  // CS active (Arduino keeps it low)
+        // Initial control pin states
+        bus.cs.set_high()?; // CS inactive (will pulse per transaction)
         bus.wr.set_high()?; // WR inactive
         bus.dc.set_high()?; // DC in data mode initially
         bus.rst.set_high()?; // RST inactive
@@ -98,9 +98,10 @@ impl LcdBus {
 
     /// Write a command byte
     pub fn write_command(&mut self, cmd: u8) -> Result<()> {
-        // CS is already low from initialization
+        self.cs.set_low()?; // Assert CS
         self.dc.set_low()?; // Command mode
         self.write_byte(cmd)?;
+        self.cs.set_high()?; // Release CS - critical for some panels
         // Small delay after command
         unsafe { esp_idf_sys::esp_rom_delay_us(10); }
         Ok(())
@@ -108,21 +109,23 @@ impl LcdBus {
 
     /// Write a data byte
     pub fn write_data(&mut self, data: u8) -> Result<()> {
-        // CS is already low from initialization
+        self.cs.set_low()?; // Assert CS
         self.dc.set_high()?; // Data mode
         self.write_byte(data)?;
+        self.cs.set_high()?; // Release CS
         Ok(())
     }
 
     /// Write multiple data bytes efficiently
     pub fn write_data_bytes(&mut self, data: &[u8]) -> Result<()> {
-        // CS is already low from initialization
+        self.cs.set_low()?; // Assert CS
         self.dc.set_high()?; // Data mode
         
         for &byte in data {
             self.write_byte(byte)?;
         }
         
+        self.cs.set_high()?; // Release CS
         Ok(())
     }
 
@@ -135,7 +138,7 @@ impl LcdBus {
 
     /// Begin a data write sequence (caller must call end_write when done)
     pub fn begin_write(&mut self) -> Result<()> {
-        // CS is already low from initialization
+        self.cs.set_low()?; // Assert CS for bulk write
         self.dc.set_high()?;
         Ok(())
     }
@@ -150,7 +153,7 @@ impl LcdBus {
 
     /// End a data write sequence
     pub fn end_write(&mut self) -> Result<()> {
-        // CS stays low
+        self.cs.set_high()?; // Release CS after bulk write
         Ok(())
     }
 }

@@ -35,7 +35,7 @@ impl UiManager {
         display.draw_progress_bar(60, 120, 200, 20, 50, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
         
         // Version info
-        display.draw_text_centered(160, "v4.7", TEXT_SECONDARY, None, 1)?;
+        display.draw_text_centered(160, "v4.8", TEXT_SECONDARY, None, 1)?;
         
         Ok(())
     }

@@ -33,7 +33,7 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard v4.7 - Display Sleep Fix");
+    info!("ESP32-S3 Dashboard v4.8 - RAMWR Fix");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
