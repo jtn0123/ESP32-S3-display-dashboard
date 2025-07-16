@@ -24,7 +24,7 @@ mod sensors;
 mod system;
 mod ui;
 
-use crate::display::DisplayManager;
+use crate::display::{DisplayManager, colors};
 use crate::network::NetworkManager;
 use crate::ui::UiManager;
 
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard v4.3 - Display & Script Updates");
+    info!("ESP32-S3 Dashboard v4.7 - Display Sleep Fix");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
@@ -67,18 +67,9 @@ fn main() -> Result<()> {
     info!("Initializing display...");
     
     // Initialize display pins and power sequence
-    use esp_idf_hal::gpio::PinDriver;
+    info!("Initializing display with proper pin management...");
     
-    // Set RD pin high (we never read from display)
-    let mut _rd_pin = PinDriver::output(peripherals.pins.gpio9)?;
-    _rd_pin.set_high()?;
-    
-    // Turn on LCD power (GPIO 15)
-    let mut lcd_power = PinDriver::output(peripherals.pins.gpio15)?;
-    lcd_power.set_high()?;
-    info!("LCD power enabled on GPIO 15");
-    
-    // CRITICAL: Wait for LCD power to stabilize
+    // CRITICAL: Wait for power to stabilize before initializing display
     use esp_idf_hal::delay::Ets;
     Ets::delay_ms(200);  // Longer delay for power stability
     
@@ -96,22 +87,19 @@ fn main() -> Result<()> {
         peripherals.pins.gpio6,  // CS
         peripherals.pins.gpio5,  // RST
         peripherals.pins.gpio38, // Backlight
+        peripherals.pins.gpio15, // LCD Power - CRITICAL!
+        peripherals.pins.gpio9,  // RD pin
     )?;
-    info!("Display initialized");
-    
-    // Draw test pattern to verify display is working
-    display_manager.test_pattern()?;
-    info!("Test pattern displayed");
-    
-    // Add delay to see test pattern
-    Ets::delay_ms(2000);
+    info!("Display initialized - LCD power and backlight pins kept alive");
 
     // Initialize UI
     let mut ui_manager = UiManager::new(&mut display_manager)?;
     ui_manager.show_boot_screen(&mut display_manager)?;
+    display_manager.flush()?;
+    info!("Boot screen displayed");
     
     // Keep boot screen visible for a moment
-    Ets::delay_ms(2000);
+    Ets::delay_ms(1000);
 
     // Initialize sensors
     let battery_pin = peripherals.pins.gpio4;
@@ -151,7 +139,19 @@ fn main() -> Result<()> {
     };
 
     // Start main application loop
-    info!("Starting main loop");
+    info!("Starting main loop - UI should now be visible");
+    
+    // Ensure backlight is on before entering main loop
+    display_manager.update_auto_dim()?;
+    
+    // Clear screen and prepare for main UI
+    display_manager.clear(colors::BLACK)?;
+    display_manager.flush()?;
+    info!("Screen cleared, entering main loop");
+    
+    // Small delay to ensure display is ready
+    Ets::delay_ms(100);
+    
     run_app(
         ui_manager,
         display_manager,
@@ -190,9 +190,16 @@ fn run_app(
     let mut last_fps_report = Instant::now();
     let mut total_frame_time = Duration::ZERO;
     let mut max_frame_time = Duration::ZERO;
+    
+    log::info!("Main render loop started");
 
     loop {
         let frame_start = Instant::now();
+        
+        // Log first few frames to debug
+        if frame_count < 5 {
+            log::info!("Rendering frame {}", frame_count);
+        }
 
         // Handle button input
         if let Some(event) = button_manager.poll() {

@@ -9,7 +9,7 @@ use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 // Display boundaries from Arduino verified testing
 const DISPLAY_X_START: u16 = 10;   // Left boundary 
@@ -45,6 +45,8 @@ const CMD_PWRCTRL1: u8 = 0xD0;
 pub struct DisplayManager {
     lcd_bus: LcdBus,
     backlight_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep backlight alive
+    lcd_power_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep LCD power alive
+    rd_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep RD pin high
     width: u16,
     height: u16,
     last_activity: Instant,
@@ -67,6 +69,8 @@ impl DisplayManager {
         cs: impl Into<AnyIOPin> + 'static,
         rst: impl Into<AnyIOPin> + 'static,
         backlight: impl Into<AnyIOPin> + 'static,
+        lcd_power: impl Into<AnyIOPin> + 'static,
+        rd: impl Into<AnyIOPin> + 'static,
     ) -> Result<Self> {
         // For now, use simple GPIO for backlight
         use esp_idf_hal::gpio::PinDriver;
@@ -77,15 +81,29 @@ impl DisplayManager {
         let mut display = Self {
             lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
             backlight_pin: None, // Will be set after struct creation
+            lcd_power_pin: None, // Will be set after struct creation
+            rd_pin: None, // Will be set after struct creation
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
             last_activity: Instant::now(),
-            auto_dim_enabled: true,
+            auto_dim_enabled: false, // Disabled - no PWM implementation
             is_dimmed: false,
         };
 
-        // Store backlight pin to keep it alive
+        // Set up LCD power pin (GPIO 15) - CRITICAL: Must keep alive!
+        let mut lcd_power_pin = PinDriver::output(lcd_power.into())?;
+        lcd_power_pin.set_high()?;
+        log::info!("LCD power enabled and will be kept alive");
+        
+        // Set up RD pin (GPIO 9) - Must be kept high
+        let mut rd_pin = PinDriver::output(rd.into())?;
+        rd_pin.set_high()?;
+        log::info!("RD pin set high and will be kept alive");
+        
+        // Store all pins to keep them alive for the lifetime of the display
         display.backlight_pin = Some(backlight_pin);
+        display.lcd_power_pin = Some(lcd_power_pin);
+        display.rd_pin = Some(rd_pin);
         
         display.init()?;
         Ok(display)
@@ -174,15 +192,9 @@ impl DisplayManager {
         // Additional delay after clear
         FreeRtos::delay_ms(50);
         
-        // Test: Fill visible area with white to verify display works
-        log::info!("Testing display with white fill...");
-        self.set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1)?;
-        self.lcd_bus.begin_write()?;
-        for _ in 0..(DISPLAY_WIDTH as u32 * DISPLAY_HEIGHT as u32) {
-            self.lcd_bus.write_raw(&[0xFF, 0xFF])?;  // White pixels
-        }
-        self.lcd_bus.end_write()?;
-        FreeRtos::delay_ms(1000);  // Show for 1 second
+        // Clear visible area to black instead of white test
+        log::info!("Clearing visible area to black...");
+        self.clear(colors::BLACK)?;
 
         log::info!("Display initialized successfully");
         Ok(())
@@ -331,26 +343,11 @@ impl DisplayManager {
     }
     
     pub fn update_auto_dim(&mut self) -> Result<()> {
-        if !self.auto_dim_enabled {
-            return Ok(());
+        // Auto-dim disabled - no PWM implementation yet
+        // Just ensure backlight stays on
+        if let Some(ref mut pin) = self.backlight_pin {
+            pin.set_high()?;
         }
-        
-        let elapsed = self.last_activity.elapsed();
-        const DIM_TIMEOUT: Duration = Duration::from_secs(30);
-        
-        if !self.is_dimmed && elapsed > DIM_TIMEOUT {
-            // Dim the display
-            self.is_dimmed = true;
-            // For now, don't actually dim since we don't have PWM
-            // self.set_brightness(DIM_BRIGHTNESS)?;
-            log::info!("Display would dim after {} seconds (disabled for now)", elapsed.as_secs());
-        } else if self.is_dimmed && elapsed <= DIM_TIMEOUT {
-            // Restore brightness
-            self.is_dimmed = false;
-            // self.set_brightness(self.brightness)?;
-            log::info!("Display brightness would be restored (disabled for now)");
-        }
-        
         Ok(())
     }
     
@@ -358,6 +355,16 @@ impl DisplayManager {
 
     pub fn flush(&mut self) -> Result<()> {
         // For direct GPIO control, no flush needed
+        // But ensure display stays on
+        self.ensure_display_on()?;
+        Ok(())
+    }
+    
+    pub fn ensure_display_on(&mut self) -> Result<()> {
+        // Send SLPOUT and DISPON to ensure display doesn't sleep
+        self.lcd_bus.write_command(CMD_SLPOUT)?;
+        FreeRtos::delay_ms(5);
+        self.lcd_bus.write_command(CMD_DISPON)?;
         Ok(())
     }
 
