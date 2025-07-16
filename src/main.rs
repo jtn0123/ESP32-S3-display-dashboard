@@ -10,6 +10,9 @@ use std::sync::{Arc, Mutex};
 
 use log::info;
 
+// Generate ESP-IDF app descriptor
+esp_idf_sys::esp_app_desc!();
+
 mod config;
 mod display;
 mod network;
