@@ -141,21 +141,23 @@ cargo install cargo-espflash@3.3.0 --force
 
 #### Flash Size Configuration
 
-The ESP32-S3 T-Display has 16MB flash. If you encounter flash size errors during boot:
+The ESP32-S3 T-Display has 16MB flash, but the bootloader may incorrectly detect only 4MB due to a known issue with esp-idf-sys. This doesn't affect functionality but requires manual flash size specification:
 
 ```bash
-# Method 1: Use espflash with explicit flash size
-espflash flash --port /dev/tty.usbmodem101 --flash-size 16mb target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard
+# Method 1: Use espflash with explicit flash size (recommended)
+espflash flash --flash-size 16mb --port /dev/cu.usbmodem101 target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard
 
-# Method 2: Use esptool.py directly
-.embuild/espressif/python_env/idf5.1_py3.13_env/bin/esptool.py \
-  --chip esp32s3 --port /dev/tty.usbmodem101 --baud 921600 \
+# Method 2: Use esptool.py directly for full control
+.embuild/espressif/python_env/idf5.3_py3.13_env/bin/esptool.py \
+  --chip esp32s3 --port /dev/cu.usbmodem101 --baud 921600 \
   --before default_reset --after hard_reset write_flash \
   --flash_mode dio --flash_freq 40m --flash_size 16MB \
   0x0 target/xtensa-esp32s3-espidf/release/bootloader.bin \
   0x8000 target/xtensa-esp32s3-espidf/release/partition-table.bin \
   0x10000 target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard
 ```
+
+**Note**: The bootloader will still report "SPI Flash Size : 4MB" during boot, but the application has access to the full 16MB when flashed with these methods.
 
 ### Other Commands
 
