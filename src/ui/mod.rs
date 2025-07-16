@@ -83,8 +83,8 @@ impl UiManager {
         // Clear screen
         display.clear(BLACK)?;
         
-        // Header
-        display.fill_rect(0, 0, 320, 30, PRIMARY_BLUE)?;
+        // Header (using actual display width)
+        display.fill_rect(0, 0, 300, 30, PRIMARY_BLUE)?;
         display.draw_text_centered(8, "System Status", WHITE, None, 2)?;
         
         // System info

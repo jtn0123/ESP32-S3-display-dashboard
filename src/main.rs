@@ -29,7 +29,7 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard v4.2 - Backlight Persistence Fixed");
+    info!("ESP32-S3 Dashboard v4.3 - Display & Script Updates");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
@@ -98,10 +98,16 @@ fn main() -> Result<()> {
     // Draw test pattern to verify display is working
     display_manager.test_pattern()?;
     info!("Test pattern displayed");
+    
+    // Add delay to see test pattern
+    Ets::delay_ms(2000);
 
     // Initialize UI
     let mut ui_manager = UiManager::new(&mut display_manager)?;
     ui_manager.show_boot_screen(&mut display_manager)?;
+    
+    // Keep boot screen visible for a moment
+    Ets::delay_ms(2000);
 
     // Initialize sensors
     let battery_pin = peripherals.pins.gpio4;
@@ -187,6 +193,8 @@ fn run_app(
         // Handle button input
         if let Some(event) = button_manager.poll() {
             ui_manager.handle_button_event(event)?;
+            // Reset activity timer on button press
+            display_manager.reset_activity_timer();
         }
 
         // Update sensors periodically

@@ -162,17 +162,31 @@ fi
 export ESP_IDF_VERSION="v5.3.3"
 echo -e "${BLUE}ESP-IDF Version: v5.3.3 LTS${NC}"
 
-# Build first (using compile.sh logic)
-echo -e "${GREEN}Building project...${NC}"
-cargo build $BUILD_MODE $VERBOSE
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}✗ Build failed!${NC}"
-    exit 1
+# Determine binary path
+if [ -n "$BUILD_MODE" ]; then
+    BINARY_PATH="target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard"
+else
+    BINARY_PATH="target/xtensa-esp32s3-espidf/debug/esp32-s3-dashboard"
 fi
 
-echo ""
-echo -e "${GREEN}✓ Build successful!${NC}"
+# Check if binary exists
+if [ -f "$BINARY_PATH" ]; then
+    echo -e "${BLUE}Binary found at: $BINARY_PATH${NC}"
+    echo -e "${YELLOW}Skipping build - using existing binary${NC}"
+    echo -e "${YELLOW}Run './compile.sh' or use --clean to rebuild${NC}"
+else
+    # Build if binary doesn't exist
+    echo -e "${GREEN}Building project...${NC}"
+    cargo build $BUILD_MODE $VERBOSE
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Build failed!${NC}"
+        exit 1
+    fi
+
+    echo ""
+    echo -e "${GREEN}✓ Build successful!${NC}"
+fi
 
 # Flash to device
 echo ""
@@ -194,9 +208,9 @@ if [ $FLASH_RESULT -ne 0 ]; then
         BINARY_PATH="target/xtensa-esp32s3-espidf/debug/esp32-s3-dashboard"
     fi
     
-    # Try espflash directly
+    # Try espflash directly with 16MB flash size
     if command -v espflash &> /dev/null; then
-        espflash flash "$BINARY_PATH" $PORT $MONITOR
+        espflash flash --flash-size 16mb "$BINARY_PATH" $PORT $MONITOR
         FLASH_RESULT=$?
     else
         echo -e "${RED}espflash not found. Please install it:${NC}"

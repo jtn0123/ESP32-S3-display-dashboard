@@ -369,9 +369,19 @@ impl DisplayManager {
         if let Some(ref mut pwm) = self.backlight {
             let duty = (pwm.get_max_duty() as u32 * level as u32 / 100) as u32;
             pwm.set_duty(duty)?;
+        } else if let Some(ref mut pin) = self.backlight_pin {
+            // Without PWM, just ensure backlight is on for any non-zero brightness
+            if level > 0 {
+                pin.set_high()?;
+            } else {
+                pin.set_low()?;
+            }
         }
-        // If no PWM, backlight stays on
         Ok(())
+    }
+    
+    pub fn reset_activity_timer(&mut self) {
+        self.last_activity = Instant::now();
     }
     
     pub fn update_auto_dim(&mut self) -> Result<()> {
@@ -386,13 +396,14 @@ impl DisplayManager {
         if !self.is_dimmed && elapsed > DIM_TIMEOUT {
             // Dim the display
             self.is_dimmed = true;
-            self.set_brightness(DIM_BRIGHTNESS)?;
-            log::info!("Display dimmed after {} seconds", elapsed.as_secs());
+            // For now, don't actually dim since we don't have PWM
+            // self.set_brightness(DIM_BRIGHTNESS)?;
+            log::info!("Display would dim after {} seconds (disabled for now)", elapsed.as_secs());
         } else if self.is_dimmed && elapsed <= DIM_TIMEOUT {
             // Restore brightness
             self.is_dimmed = false;
-            self.set_brightness(self.brightness)?;
-            log::info!("Display brightness restored");
+            // self.set_brightness(self.brightness)?;
+            log::info!("Display brightness would be restored (disabled for now)");
         }
         
         Ok(())
