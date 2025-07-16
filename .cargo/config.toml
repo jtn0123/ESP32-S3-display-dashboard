@@ -2,8 +2,8 @@
 runner = "espflash flash --monitor"
 linker = "/Users/justin/Documents/Github/ESP32-S3-Display-Dashboard/gcc-wrapper.sh"
 rustflags = [
-    # Optimize for size and performance
-    "-C", "link-arg=-Wl,--gc-sections",
+    # Temporarily disable gc-sections to preserve app descriptor
+    # "-C", "link-arg=-Wl,--gc-sections",
     # Enable frame pointers for better debugging in release
     "-C", "force-frame-pointers=yes",
 ]
