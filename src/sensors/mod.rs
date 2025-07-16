@@ -112,8 +112,8 @@ impl<T: Clone + Default, const N: usize> SensorFusion<T, N> {
     }
     
     pub fn add_sensor(&mut self, sensor: Box<dyn Sensor<Reading = T>>) -> Result<(), ()> {
-        self.sensors.push(sensor);
-        self.last_readings.push(None);
+        let _ = self.sensors.push(sensor);
+        let _ = self.last_readings.push(None);
         Ok(())
     }
     

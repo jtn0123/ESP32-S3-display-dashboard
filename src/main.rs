@@ -11,7 +11,11 @@ use std::sync::{Arc, Mutex};
 use log::info;
 
 // Generate ESP-IDF app descriptor
-esp_idf_sys::esp_app_desc!();
+// Note: This macro generates warnings about cfg conditions but they're harmless
+#[allow(unexpected_cfgs)]
+mod app_desc {
+    esp_idf_sys::esp_app_desc!();
+}
 
 mod config;
 mod display;
