@@ -18,9 +18,9 @@ opt-level = 1
 
 [dependencies]
 # ESP-IDF Support (with std)
-esp-idf-sys = { version = "=0.36.1", features = ["binstart", "native"] }
-esp-idf-svc = { version = "=0.51.0", default-features = false, features = ["experimental", "alloc"] }
-esp-idf-hal = { version = "=0.45.2" }
+esp-idf-sys = { version = "0.36.1", features = ["binstart", "native"] }
+esp-idf-svc = { version = "0.51.0", default-features = false, features = ["experimental", "alloc"] }
+esp-idf-hal = { version = "0.45.2" }
 
 # Async runtime
 embassy-executor = { version = "=0.7.0", features = ["task-arena-size-65536"] }

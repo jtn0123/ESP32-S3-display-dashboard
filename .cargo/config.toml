@@ -14,7 +14,8 @@ target = "xtensa-esp32s3-espidf"
 [env]
 # Reduce logging in release builds
 ESP_LOGLEVEL = { value = "WARN", force = false }
-ESP_IDF_VERSION = "v5.3"
+ESP_IDF_VERSION = "v5.3.3"
+IDF_PATH = "/Users/justin/.espressif/esp-idf/v5.3"
 # Set Rust log level based on profile
 RUST_LOG = { value = "warn", force = false }
 

@@ -158,6 +158,10 @@ if [ "$CLEAN" = true ]; then
     echo ""
 fi
 
+# Set ESP-IDF version to 5.3.3 LTS
+export ESP_IDF_VERSION="v5.3.3"
+echo -e "${BLUE}ESP-IDF Version: v5.3.3 LTS${NC}"
+
 # Build first (using compile.sh logic)
 echo -e "${GREEN}Building project...${NC}"
 cargo build $BUILD_MODE $VERBOSE
