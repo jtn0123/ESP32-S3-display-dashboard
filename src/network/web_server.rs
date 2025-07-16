@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::Config;
 
 pub struct WebConfigServer {
-    server: EspHttpServer<'static>,
-    config: Arc<Mutex<Config>>,
+    _server: EspHttpServer<'static>,
 }
 
 #[derive(serde::Deserialize)]
@@ -16,7 +15,6 @@ struct WebConfig {
     brightness: u8,
     auto_dim: bool,
     update_interval: u32,
-    ota_url: String,
     auto_update: bool,
 }
 
@@ -95,7 +93,7 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        Ok(Self { server, config })
+        Ok(Self { _server: server })
     }
 }
 

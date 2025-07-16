@@ -2,18 +2,13 @@ pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
 
-// Re-export Color type from embedded_graphics
-pub use embedded_graphics::pixelcolor::Rgb565 as Color;
+// Color type not used - colors are defined as u16 constants
 
 use anyhow::Result;
 use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
-use esp_idf_hal::ledc::{LedcDriver, LedcTimerDriver, Resolution};
-use esp_idf_hal::ledc::config::TimerConfig;
-use esp_idf_hal::peripheral::Peripheral;
-use esp_idf_hal::prelude::*;
 use std::time::{Duration, Instant};
 
 // Display boundaries from Arduino verified testing
@@ -22,36 +17,9 @@ const DISPLAY_Y_START: u16 = 36;   // Top boundary
 const DISPLAY_WIDTH: u16 = 300;    // Maximum visible width
 const DISPLAY_HEIGHT: u16 = 168;   // Maximum visible height
 
-// Full controller dimensions
-const CONTROLLER_WIDTH: u16 = 480;
-const CONTROLLER_HEIGHT: u16 = 320;
+// Controller dimensions removed - not used
 
-// Dirty rectangle tracking
-#[derive(Clone, Copy, Debug)]
-pub struct DirtyRect {
-    x: u16,
-    y: u16,
-    width: u16,
-    height: u16,
-}
-
-impl DirtyRect {
-    pub fn new(x: u16, y: u16, width: u16, height: u16) -> Self {
-        Self { x, y, width, height }
-    }
-    
-    pub fn contains(&self, x: u16, y: u16) -> bool {
-        x >= self.x && x < self.x + self.width &&
-        y >= self.y && y < self.y + self.height
-    }
-    
-    pub fn intersects(&self, other: &DirtyRect) -> bool {
-        !(self.x >= other.x + other.width ||
-          other.x >= self.x + self.width ||
-          self.y >= other.y + other.height ||
-          other.y >= self.y + self.height)
-    }
-}
+// Dirty rectangle tracking removed - not implemented
 
 // ST7789 Commands
 const CMD_NOP: u8 = 0x00;
@@ -76,14 +44,11 @@ const CMD_PWRCTRL1: u8 = 0xD0;
 
 pub struct DisplayManager {
     lcd_bus: LcdBus,
-    backlight: Option<LedcDriver<'static>>,
     backlight_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep backlight alive
     width: u16,
     height: u16,
-    dirty_rects: Vec<DirtyRect>,
     last_activity: Instant,
     auto_dim_enabled: bool,
-    brightness: u8,
     is_dimmed: bool,
 }
 
@@ -111,14 +76,11 @@ impl DisplayManager {
         
         let mut display = Self {
             lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
-            backlight: None, // PWM not implemented yet
             backlight_pin: None, // Will be set after struct creation
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
-            dirty_rects: Vec::new(),
             last_activity: Instant::now(),
             auto_dim_enabled: true,
-            brightness: 100,
             is_dimmed: false,
         };
 
@@ -362,23 +324,7 @@ impl DisplayManager {
         Ok(())
     }
 
-    pub fn set_brightness(&mut self, level: u8) -> Result<()> {
-        self.brightness = level;
-        self.last_activity = Instant::now();
-        
-        if let Some(ref mut pwm) = self.backlight {
-            let duty = (pwm.get_max_duty() as u32 * level as u32 / 100) as u32;
-            pwm.set_duty(duty)?;
-        } else if let Some(ref mut pin) = self.backlight_pin {
-            // Without PWM, just ensure backlight is on for any non-zero brightness
-            if level > 0 {
-                pin.set_high()?;
-            } else {
-                pin.set_low()?;
-            }
-        }
-        Ok(())
-    }
+    // set_brightness removed - PWM not implemented yet
     
     pub fn reset_activity_timer(&mut self) {
         self.last_activity = Instant::now();
@@ -391,7 +337,6 @@ impl DisplayManager {
         
         let elapsed = self.last_activity.elapsed();
         const DIM_TIMEOUT: Duration = Duration::from_secs(30);
-        const DIM_BRIGHTNESS: u8 = 20;
         
         if !self.is_dimmed && elapsed > DIM_TIMEOUT {
             // Dim the display
@@ -409,27 +354,7 @@ impl DisplayManager {
         Ok(())
     }
     
-    pub fn mark_dirty(&mut self, rect: DirtyRect) {
-        // Check if this rect overlaps with existing ones
-        for existing in &mut self.dirty_rects {
-            if existing.intersects(&rect) {
-                // Merge rectangles
-                let x1 = existing.x.min(rect.x);
-                let y1 = existing.y.min(rect.y);
-                let x2 = (existing.x + existing.width).max(rect.x + rect.width);
-                let y2 = (existing.y + existing.height).max(rect.y + rect.height);
-                *existing = DirtyRect::new(x1, y1, x2 - x1, y2 - y1);
-                return;
-            }
-        }
-        
-        // Add new rect
-        self.dirty_rects.push(rect);
-    }
-    
-    pub fn clear_dirty_rects(&mut self) {
-        self.dirty_rects.clear();
-    }
+    // mark_dirty and clear_dirty_rects removed - dirty rect tracking not implemented
 
     pub fn flush(&mut self) -> Result<()> {
         // For direct GPIO control, no flush needed

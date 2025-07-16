@@ -1,5 +1,4 @@
 pub mod wifi;
-pub mod ota;
 pub mod web_server;
 
 use anyhow::Result;
@@ -11,13 +10,10 @@ use esp_idf_svc::{
 use std::sync::{Arc, Mutex};
 
 use self::wifi::WifiManager;
-use self::ota::OtaManager;
-use self::web_server::WebConfigServer;
 use crate::config::Config;
 
 pub struct NetworkManager {
     wifi: WifiManager,
-    ota: OtaManager,
 }
 
 impl NetworkManager {
@@ -30,11 +26,9 @@ impl NetworkManager {
         _config: Arc<Mutex<Config>>,
     ) -> Result<Self> {
         let wifi = WifiManager::new(modem, sys_loop, ssid, password)?;
-        let ota = OtaManager::new()?;
 
         Ok(Self {
             wifi,
-            ota,
         })
     }
 
@@ -44,22 +38,5 @@ impl NetworkManager {
         Ok(())
     }
 
-    pub fn run_ota_checker(&mut self) -> Result<()> {
-        // Start OTA update checker
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(3600)); // Check hourly
-            
-            if let Err(e) = self.ota.check_for_updates() {
-                log::error!("OTA check failed: {:?}", e);
-            }
-        }
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.wifi.is_connected()
-    }
-
-    pub fn get_ip(&self) -> Option<String> {
-        self.wifi.get_ip()
-    }
+    // run_ota_checker, is_connected, get_ip removed - not used
 }

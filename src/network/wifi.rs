@@ -8,13 +8,10 @@ use esp_idf_svc::{
     },
     nvs::EspDefaultNvsPartition,
 };
-use embedded_svc::wifi::AccessPointInfo;
-use std::time::Duration;
 
 pub struct WifiManager {
     wifi: BlockingWifi<EspWifi<'static>>,
     ssid: String,
-    password: String,
 }
 
 impl WifiManager {
@@ -48,7 +45,6 @@ impl WifiManager {
         Ok(Self {
             wifi,
             ssid,
-            password,
         })
     }
 
@@ -94,29 +90,10 @@ impl WifiManager {
         Ok(())
     }
 
-    pub fn disconnect(&mut self) -> Result<()> {
-        self.wifi.disconnect()?;
-        self.wifi.stop()?;
-        Ok(())
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.wifi.is_connected().unwrap_or(false)
-    }
+    // disconnect and is_connected removed - not used
 
     pub fn get_ip(&self) -> Option<String> {
         self.wifi.wifi().sta_netif().get_ip_info().ok()
             .map(|ip_info| format!("{}", ip_info.ip))
-    }
-
-    pub fn reconnect(&mut self) -> Result<()> {
-        log::info!("Attempting to reconnect WiFi...");
-        
-        if self.is_connected() {
-            self.disconnect()?;
-        }
-
-        std::thread::sleep(Duration::from_secs(2));
-        self.connect()
     }
 }
