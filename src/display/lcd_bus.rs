@@ -49,7 +49,7 @@ impl LcdBus {
         }
         
         // Initial control pin states
-        bus.cs.set_high()?; // CS inactive (will pulse per transaction)
+        bus.cs.set_low()?; // CS active (keep low like Arduino)
         bus.wr.set_high()?; // WR inactive
         bus.dc.set_high()?; // DC in data mode initially
         bus.rst.set_high()?; // RST inactive
@@ -83,49 +83,50 @@ impl LcdBus {
         }
 
         // Toggle write pin with proper timing
-        // For Xtensa, we can't use inline assembly, but the GPIO operations
-        // themselves take enough time to meet the 40ns requirement
+        // Add small delay for data setup time
+        unsafe { esp_idf_sys::esp_rom_delay_us(1); }
         
         self.wr.set_low()?;
-        // The GPIO write operation takes ~50-100ns on ESP32-S3
-        // which exceeds the 40ns minimum hold time
+        // Hold time delay
+        unsafe { esp_idf_sys::esp_rom_delay_us(1); }
         
         self.wr.set_high()?;
-        // GPIO operations provide sufficient recovery time
+        // Recovery time delay
+        unsafe { esp_idf_sys::esp_rom_delay_us(1); }
 
         Ok(())
     }
 
     /// Write a command byte
     pub fn write_command(&mut self, cmd: u8) -> Result<()> {
-        self.cs.set_low()?; // Assert CS
+        // CS already low from init
         self.dc.set_low()?; // Command mode
         self.write_byte(cmd)?;
-        self.cs.set_high()?; // Release CS - critical for some panels
-        // Small delay after command
-        unsafe { esp_idf_sys::esp_rom_delay_us(10); }
+        // Keep CS low (matching Arduino behavior)
+        // Increased delay after command for stability
+        unsafe { esp_idf_sys::esp_rom_delay_us(50); }
         Ok(())
     }
 
     /// Write a data byte
     pub fn write_data(&mut self, data: u8) -> Result<()> {
-        self.cs.set_low()?; // Assert CS
+        // CS already low from init
         self.dc.set_high()?; // Data mode
         self.write_byte(data)?;
-        self.cs.set_high()?; // Release CS
+        // Keep CS low
         Ok(())
     }
 
     /// Write multiple data bytes efficiently
     pub fn write_data_bytes(&mut self, data: &[u8]) -> Result<()> {
-        self.cs.set_low()?; // Assert CS
+        // CS already low from init
         self.dc.set_high()?; // Data mode
         
         for &byte in data {
             self.write_byte(byte)?;
         }
         
-        self.cs.set_high()?; // Release CS
+        // Keep CS low
         Ok(())
     }
 
@@ -138,7 +139,7 @@ impl LcdBus {
 
     /// Begin a data write sequence (caller must call end_write when done)
     pub fn begin_write(&mut self) -> Result<()> {
-        self.cs.set_low()?; // Assert CS for bulk write
+        // CS already low from init
         self.dc.set_high()?;
         Ok(())
     }
@@ -153,7 +154,7 @@ impl LcdBus {
 
     /// End a data write sequence
     pub fn end_write(&mut self) -> Result<()> {
-        self.cs.set_high()?; // Release CS after bulk write
+        // Keep CS low (matching Arduino behavior)
         Ok(())
     }
 }

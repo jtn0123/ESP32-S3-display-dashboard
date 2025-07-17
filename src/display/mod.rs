@@ -11,11 +11,11 @@ use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::Instant;
 
-// Display boundaries from Arduino verified testing
-const DISPLAY_X_START: u16 = 10;   // Left boundary 
-const DISPLAY_Y_START: u16 = 36;   // Top boundary
-const DISPLAY_WIDTH: u16 = 300;    // Maximum visible width
-const DISPLAY_HEIGHT: u16 = 168;   // Maximum visible height
+// Display boundaries - try 0,0 for T-Display-S3
+const DISPLAY_X_START: u16 = 0;    // Left boundary 
+const DISPLAY_Y_START: u16 = 0;    // Top boundary
+const DISPLAY_WIDTH: u16 = 320;    // Full width
+const DISPLAY_HEIGHT: u16 = 170;   // Full height
 
 // Controller dimensions removed - not used
 
@@ -181,16 +181,15 @@ impl DisplayManager {
         self.lcd_bus.write_command(CMD_DISPON)?;
         FreeRtos::delay_ms(20);
 
-        // Clear full controller memory to remove factory patterns
-        log::info!("Clearing controller memory...");
-        self.clear_controller_memory()?;
+        // Skip clearing controller memory - it might corrupt the display state
+        // The visible area clear below is sufficient
         
-        // Additional delay after clear
-        FreeRtos::delay_ms(50);
-        
-        // Clear visible area to black instead of white test
+        // Clear visible area to black
         log::info!("Clearing visible area to black...");
         self.clear(colors::BLACK)?;
+        
+        // Skip test pattern - it's confusing the boot sequence
+        log::info!("Display initialization complete (no test pattern)");
 
         log::info!("Display initialized successfully");
         Ok(())
@@ -224,15 +223,13 @@ impl DisplayManager {
         // CRITICAL: Must send RAMWR before pixel data
         self.lcd_bus.write_command(CMD_RAMWR)?;
         
-        self.lcd_bus.begin_write()?;
-        
+        // Write pixels directly without begin_write/end_write
         let total_pixels = self.width as u32 * self.height as u32;
-        let color_bytes = [(color >> 8) as u8, (color & 0xFF) as u8];
         for _ in 0..total_pixels {
-            self.lcd_bus.write_raw(&color_bytes)?;
+            self.lcd_bus.write_data((color >> 8) as u8)?;
+            self.lcd_bus.write_data((color & 0xFF) as u8)?;
         }
         
-        self.lcd_bus.end_write()?;
         Ok(())
     }
     
@@ -250,18 +247,14 @@ impl DisplayManager {
         // CRITICAL: Must send RAMWR before pixel data
         self.lcd_bus.write_command(CMD_RAMWR)?;
         
-        self.lcd_bus.begin_write()?;
-        
         // Clear all 480x320 = 153,600 pixels
         let total_pixels = 480u32 * 320u32;
-        let black = [0x00u8, 0x00u8]; // Black color
         
-        // Write in chunks for better performance
+        // Write pixels directly
         for _ in 0..total_pixels {
-            self.lcd_bus.write_raw(&black)?;
+            self.lcd_bus.write_data(0)?;  // Black high byte
+            self.lcd_bus.write_data(0)?;  // Black low byte
         }
-        
-        self.lcd_bus.end_write()?;
         Ok(())
     }
 
@@ -290,15 +283,13 @@ impl DisplayManager {
         // CRITICAL: Must send RAMWR before pixel data
         self.lcd_bus.write_command(CMD_RAMWR)?;
         
-        self.lcd_bus.begin_write()?;
-        
+        // Write pixels directly without begin_write/end_write
         let total_pixels = (x1 - x + 1) as u32 * (y1 - y + 1) as u32;
-        let color_bytes = [(color >> 8) as u8, (color & 0xFF) as u8];
         for _ in 0..total_pixels {
-            self.lcd_bus.write_raw(&color_bytes)?;
+            self.lcd_bus.write_data((color >> 8) as u8)?;
+            self.lcd_bus.write_data((color & 0xFF) as u8)?;
         }
         
-        self.lcd_bus.end_write()?;
         Ok(())
     }
 
@@ -352,6 +343,14 @@ impl DisplayManager {
         if let Some(ref mut pin) = self.backlight_pin {
             pin.set_high()?;
         }
+        
+        // Also ensure LCD power stays on
+        if let Some(ref mut pin) = self.lcd_power_pin {
+            pin.set_high()?;
+        }
+        
+        // Display stays on automatically - no need for periodic commands
+        
         Ok(())
     }
     
@@ -359,8 +358,8 @@ impl DisplayManager {
 
     pub fn flush(&mut self) -> Result<()> {
         // For direct GPIO control, no flush needed
-        // But ensure display stays on
-        self.ensure_display_on()?;
+        // Removed ensure_display_on() - was causing display issues
+        // Display should stay on from initialization
         Ok(())
     }
     

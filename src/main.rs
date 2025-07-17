@@ -92,6 +92,12 @@ fn main() -> Result<()> {
     )?;
     info!("Display initialized - LCD power and backlight pins kept alive");
 
+    // Test display is working with a simple color fill first
+    info!("Testing display with color fill...");
+    display_manager.clear(colors::PRIMARY_RED)?;
+    display_manager.flush()?;
+    Ets::delay_ms(500);
+    
     // Initialize UI
     let mut ui_manager = UiManager::new(&mut display_manager)?;
     ui_manager.show_boot_screen(&mut display_manager)?;
@@ -99,7 +105,9 @@ fn main() -> Result<()> {
     info!("Boot screen displayed");
     
     // Keep boot screen visible for a moment
+    log::info!("Boot screen complete, waiting 1 second before continuing...");
     Ets::delay_ms(1000);
+    log::info!("Continuing with initialization...");
 
     // Initialize sensors
     let battery_pin = peripherals.pins.gpio4;
@@ -144,13 +152,17 @@ fn main() -> Result<()> {
     // Ensure backlight is on before entering main loop
     display_manager.update_auto_dim()?;
     
-    // Clear screen and prepare for main UI
-    display_manager.clear(colors::BLACK)?;
-    display_manager.flush()?;
-    info!("Screen cleared, entering main loop");
+    // Display is already initialized and on - no need for additional commands
     
-    // Small delay to ensure display is ready
+    // Small delay before main loop
     Ets::delay_ms(100);
+    
+    // Draw a test marker before entering main loop
+    info!("Drawing pre-loop test marker at (160, 85)");
+    display_manager.fill_rect(160, 85, 10, 10, colors::YELLOW)?;
+    display_manager.flush()?;
+    
+    info!("Entering run_app function now...");
     
     run_app(
         ui_manager,
@@ -191,7 +203,26 @@ fn run_app(
     let mut total_frame_time = Duration::ZERO;
     let mut max_frame_time = Duration::ZERO;
     
-    log::info!("Main render loop started");
+    log::info!("Main render loop started - entering infinite loop");
+    
+    // Simple test: Just fill the screen with a color
+    log::info!("Attempting to fill screen with blue...");
+    display_manager.clear(colors::PRIMARY_BLUE)?;
+    display_manager.flush()?;
+    log::info!("Screen should be blue now");
+    
+    // Wait 2 seconds
+    thread::sleep(Duration::from_secs(2));
+    
+    // Try drawing a simple rectangle
+    log::info!("Drawing white rectangle...");
+    display_manager.fill_rect(50, 50, 220, 70, colors::WHITE)?;
+    display_manager.flush()?;
+    log::info!("White rectangle should be visible");
+    
+    // Wait before starting normal loop
+    thread::sleep(Duration::from_secs(2));
+    log::info!("Starting normal UI rendering now...");
 
     loop {
         let frame_start = Instant::now();
@@ -215,14 +246,36 @@ fn run_app(
             last_sensor_update = Instant::now();
         }
 
-        // Update and render UI
-        ui_manager.update()?;
-        ui_manager.render(&mut display_manager)?;
+        // TEMPORARY: Skip complex UI rendering
+        // Just draw a simple counter to verify loop is running
+        if frame_count % 30 == 0 {  // Update every 30 frames (~1 second)
+            display_manager.clear(colors::BLACK)?;
+            let counter_text = format!("Frame: {}", frame_count / 30);
+            display_manager.draw_text_centered(85, &counter_text, colors::WHITE, None, 2)?;
+            log::info!("Drew frame counter: {}", counter_text);
+        }
+        
+        // // Update and render UI
+        // ui_manager.update()?;
+        // if frame_count < 5 {
+        //     log::info!("Main loop: About to render frame {}", frame_count);
+        // }
+        // ui_manager.render(&mut display_manager)?;
+        // if frame_count < 5 {
+        //     log::info!("Main loop: Render complete for frame {}", frame_count);
+        // }
+        
+        // TEMPORARY: Draw a moving square to show animation
+        let x = (10 + (frame_count % 100) * 3) as u16;
+        display_manager.fill_rect(x, 120, 30, 30, colors::PRIMARY_GREEN)?;
         
         // Update auto-dim
         display_manager.update_auto_dim()?;
         
         display_manager.flush()?;
+        if frame_count < 5 {
+            log::info!("Main loop: Flush complete for frame {}", frame_count);
+        }
 
         // Frame timing and telemetry
         let frame_time = frame_start.elapsed();

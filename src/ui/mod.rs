@@ -35,7 +35,7 @@ impl UiManager {
         display.draw_progress_bar(60, 120, 200, 20, 50, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
         
         // Version info
-        display.draw_text_centered(160, "v4.8", TEXT_SECONDARY, None, 1)?;
+        display.draw_text_centered(160, "v4.22", TEXT_SECONDARY, None, 1)?;
         
         Ok(())
     }
@@ -70,6 +70,7 @@ impl UiManager {
     }
 
     pub fn render(&mut self, display: &mut DisplayManager) -> Result<()> {
+        log::info!("Rendering screen {}", self.current_screen);
         match self.current_screen {
             0 => self.render_system_screen(display),
             1 => self.render_network_screen(display),
@@ -80,11 +81,13 @@ impl UiManager {
     }
 
     fn render_system_screen(&mut self, display: &mut DisplayManager) -> Result<()> {
+        log::info!("render_system_screen: Starting render");
         // Clear screen
         display.clear(BLACK)?;
+        log::info!("render_system_screen: Screen cleared");
         
         // Header (using actual display width)
-        display.fill_rect(0, 0, 300, 30, PRIMARY_BLUE)?;
+        display.fill_rect(0, 0, 320, 30, PRIMARY_BLUE)?;
         display.draw_text_centered(8, "System Status", WHITE, None, 2)?;
         
         // System info
@@ -107,7 +110,7 @@ impl UiManager {
         
         // Progress indicator
         let progress = (self.animation_progress * 100.0) as u8;
-        display.draw_progress_bar(10, 140, 300, 15, progress, PRIMARY_GREEN, SURFACE_LIGHT, BORDER_COLOR)?;
+        display.draw_progress_bar(10, 140, 280, 15, progress, PRIMARY_GREEN, SURFACE_LIGHT, BORDER_COLOR)?;
         
         // Button hints
         display.draw_text(10, 160, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
