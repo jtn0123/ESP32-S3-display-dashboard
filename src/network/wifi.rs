@@ -11,7 +11,7 @@ use esp_idf_svc::{
 
 pub struct WifiManager {
     wifi: BlockingWifi<EspWifi<'static>>,
-    ssid: String,
+    pub ssid: String,
 }
 
 impl WifiManager {

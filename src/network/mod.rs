@@ -37,6 +37,16 @@ impl NetworkManager {
         log::info!("WiFi connected, IP: {:?}", self.wifi.get_ip());
         Ok(())
     }
-
-    // run_ota_checker, is_connected, get_ip removed - not used
+    
+    pub fn is_connected(&self) -> bool {
+        self.wifi.get_ip().is_some()
+    }
+    
+    pub fn get_ip(&self) -> Option<String> {
+        self.wifi.get_ip()
+    }
+    
+    pub fn get_ssid(&self) -> &str {
+        &self.wifi.ssid
+    }
 }

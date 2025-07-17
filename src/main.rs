@@ -17,6 +17,11 @@ mod app_desc {
     esp_idf_sys::esp_app_desc!();
 }
 
+// For better crash diagnostics
+// extern "C" {
+//     fn esp_backtrace_print_app_description();
+// }
+
 mod config;
 mod display;
 mod network;
@@ -33,10 +38,29 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard v4.8 - RAMWR Fix");
+    info!("ESP32-S3 Dashboard v4.11 - UI Rendering Enabled");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
+    
+    // Reconfigure watchdog timeout to 5 seconds
+    unsafe {
+        // First deinit if already initialized
+        let _ = esp_idf_sys::esp_task_wdt_deinit();
+        
+        // Then init with new config
+        let wdt_config = esp_idf_sys::esp_task_wdt_config_t {
+            timeout_ms: 5000,
+            idle_core_mask: 0,
+            trigger_panic: false,
+        };
+        let result = esp_idf_sys::esp_task_wdt_init(&wdt_config as *const _);
+        if result == esp_idf_sys::ESP_OK {
+            info!("Watchdog timeout set to 5 seconds");
+        } else {
+            log::warn!("Watchdog reconfiguration failed: {:?}", result);
+        }
+    }
     
     // Configure power management for dynamic frequency scaling
     unsafe {
@@ -71,7 +95,7 @@ fn main() -> Result<()> {
     
     // CRITICAL: Wait for power to stabilize before initializing display
     use esp_idf_hal::delay::Ets;
-    Ets::delay_ms(200);  // Longer delay for power stability
+    Ets::delay_ms(500);  // Longer delay for power stability
     
     let mut display_manager = DisplayManager::new(
         peripherals.pins.gpio39, // D0
@@ -97,6 +121,20 @@ fn main() -> Result<()> {
     display_manager.clear(colors::PRIMARY_RED)?;
     display_manager.flush()?;
     Ets::delay_ms(500);
+    
+    // TEMPORARY: Color toggle test to isolate display vs UI issues
+    let color_toggle_test = false; // Set to true to enable test mode
+    if color_toggle_test {
+        info!("Starting color toggle test loop...");
+        let mut color = 0xF800u16; // Start with red
+        loop {
+            display_manager.clear(color)?;
+            display_manager.flush()?;
+            color ^= 0xFFFF; // Toggle between red and cyan
+            esp_idf_hal::delay::FreeRtos::delay_ms(100);
+            info!("Color toggled to: 0x{:04X}", color);
+        }
+    }
     
     // Initialize UI
     let mut ui_manager = UiManager::new(&mut display_manager)?;
@@ -131,8 +169,14 @@ fn main() -> Result<()> {
     )?;
     drop(network_config);
 
-    // Connect to WiFi
-    network_manager.connect()?;
+    // Try to connect to WiFi but don't fail if it doesn't work
+    match network_manager.connect() {
+        Ok(_) => info!("WiFi connected successfully"),
+        Err(e) => {
+            log::warn!("WiFi connection failed: {:?}", e);
+            log::warn!("Continuing without network connectivity");
+        }
+    }
 
     // Start web server (needs to be in main thread due to raw pointers)
     let web_server = match network::web_server::WebConfigServer::new(config.clone()) {
@@ -164,7 +208,8 @@ fn main() -> Result<()> {
     
     info!("Entering run_app function now...");
     
-    run_app(
+    // Run the main app with crash recovery
+    match run_app(
         ui_manager,
         display_manager,
         sensor_manager,
@@ -172,7 +217,16 @@ fn main() -> Result<()> {
         network_manager,
         config,
         web_server,
-    )?;
+    ) {
+        Ok(_) => {
+            log::warn!("UI loop exited normally (shouldn't happen)");
+        }
+        Err(e) => {
+            log::error!("UI loop crashed: {:?}", e);
+            log::error!("Restarting system to recover...");
+            unsafe { esp_idf_sys::esp_restart(); }
+        }
+    }
 
     Ok(())
 }
@@ -182,7 +236,7 @@ fn run_app(
     mut display_manager: DisplayManager,
     mut sensor_manager: sensors::SensorManager,
     mut button_manager: system::ButtonManager,
-    mut _network_manager: NetworkManager,
+    network_manager: NetworkManager,
     _config: Arc<Mutex<config::Config>>,
     _web_server: Option<network::web_server::WebConfigServer>,
 ) -> Result<()> {
@@ -204,25 +258,6 @@ fn run_app(
     let mut max_frame_time = Duration::ZERO;
     
     log::info!("Main render loop started - entering infinite loop");
-    
-    // Simple test: Just fill the screen with a color
-    log::info!("Attempting to fill screen with blue...");
-    display_manager.clear(colors::PRIMARY_BLUE)?;
-    display_manager.flush()?;
-    log::info!("Screen should be blue now");
-    
-    // Wait 2 seconds
-    thread::sleep(Duration::from_secs(2));
-    
-    // Try drawing a simple rectangle
-    log::info!("Drawing white rectangle...");
-    display_manager.fill_rect(50, 50, 220, 70, colors::WHITE)?;
-    display_manager.flush()?;
-    log::info!("White rectangle should be visible");
-    
-    // Wait before starting normal loop
-    thread::sleep(Duration::from_secs(2));
-    log::info!("Starting normal UI rendering now...");
 
     loop {
         let frame_start = Instant::now();
@@ -243,31 +278,26 @@ fn run_app(
         if last_sensor_update.elapsed() >= sensor_update_interval {
             let sensor_data = sensor_manager.sample()?;
             ui_manager.update_sensor_data(sensor_data);
+            
+            // Update network status
+            ui_manager.update_network_status(
+                network_manager.is_connected(),
+                network_manager.get_ip(),
+                network_manager.get_ssid().to_string()
+            );
+            
             last_sensor_update = Instant::now();
         }
 
-        // TEMPORARY: Skip complex UI rendering
-        // Just draw a simple counter to verify loop is running
-        if frame_count % 30 == 0 {  // Update every 30 frames (~1 second)
-            display_manager.clear(colors::BLACK)?;
-            let counter_text = format!("Frame: {}", frame_count / 30);
-            display_manager.draw_text_centered(85, &counter_text, colors::WHITE, None, 2)?;
-            log::info!("Drew frame counter: {}", counter_text);
+        // Update and render UI
+        ui_manager.update()?;
+        if frame_count < 5 {
+            log::info!("Main loop: About to render frame {}", frame_count);
         }
-        
-        // // Update and render UI
-        // ui_manager.update()?;
-        // if frame_count < 5 {
-        //     log::info!("Main loop: About to render frame {}", frame_count);
-        // }
-        // ui_manager.render(&mut display_manager)?;
-        // if frame_count < 5 {
-        //     log::info!("Main loop: Render complete for frame {}", frame_count);
-        // }
-        
-        // TEMPORARY: Draw a moving square to show animation
-        let x = (10 + (frame_count % 100) * 3) as u16;
-        display_manager.fill_rect(x, 120, 30, 30, colors::PRIMARY_GREEN)?;
+        ui_manager.render(&mut display_manager)?;
+        if frame_count < 5 {
+            log::info!("Main loop: Render complete for frame {}", frame_count);
+        }
         
         // Update auto-dim
         display_manager.update_auto_dim()?;

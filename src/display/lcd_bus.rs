@@ -137,24 +137,24 @@ impl LcdBus {
         Ok(())
     }
 
-    /// Begin a data write sequence (caller must call end_write when done)
-    pub fn begin_write(&mut self) -> Result<()> {
-        // CS already low from init
-        self.dc.set_high()?;
-        Ok(())
-    }
+    // /// Begin a data write sequence (caller must call end_write when done)
+    // pub fn begin_write(&mut self) -> Result<()> {
+    //     // CS already low from init
+    //     self.dc.set_high()?;
+    //     Ok(())
+    // }
 
-    /// Write raw bytes during a write sequence
-    pub fn write_raw(&mut self, data: &[u8]) -> Result<()> {
-        for &byte in data {
-            self.write_byte(byte)?;
-        }
-        Ok(())
-    }
+    // /// Write raw bytes during a write sequence
+    // pub fn write_raw(&mut self, data: &[u8]) -> Result<()> {
+    //     for &byte in data {
+    //         self.write_byte(byte)?;
+    //     }
+    //     Ok(())
+    // }
 
-    /// End a data write sequence
-    pub fn end_write(&mut self) -> Result<()> {
-        // Keep CS low (matching Arduino behavior)
-        Ok(())
-    }
+    // /// End a data write sequence
+    // pub fn end_write(&mut self) -> Result<()> {
+    //     // Keep CS low (matching Arduino behavior)
+    //     Ok(())
+    // }
 }

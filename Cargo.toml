@@ -14,7 +14,9 @@ panic = "abort"       # Remove unwinding tables
 overflow-checks = false  # Disable overflow checks in release
 
 [profile.dev]
-opt-level = 1
+opt-level = "s"  # Optimize for size in debug too
+lto = false
+debug = true     # Keep debug info for better crash diagnostics
 
 [dependencies]
 # ESP-IDF Support (with std)

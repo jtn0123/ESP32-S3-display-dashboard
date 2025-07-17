@@ -72,21 +72,8 @@ impl DisplayManager {
     ) -> Result<Self> {
         // For now, use simple GPIO for backlight
         use esp_idf_hal::gpio::PinDriver;
-        let mut backlight_pin = PinDriver::output(backlight.into())?;
-        backlight_pin.set_high()?;
-        log::info!("Backlight enabled (GPIO high)");
         
-        let mut display = Self {
-            lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
-            backlight_pin: None, // Will be set after struct creation
-            lcd_power_pin: None, // Will be set after struct creation
-            rd_pin: None, // Will be set after struct creation
-            width: DISPLAY_WIDTH,
-            height: DISPLAY_HEIGHT,
-            last_activity: Instant::now(),
-        };
-
-        // Set up LCD power pin (GPIO 15) - CRITICAL: Must keep alive!
+        // Set up LCD power pin (GPIO 15) FIRST - CRITICAL: Must keep alive!
         let mut lcd_power_pin = PinDriver::output(lcd_power.into())?;
         lcd_power_pin.set_high()?;
         log::info!("LCD power enabled and will be kept alive");
@@ -96,10 +83,20 @@ impl DisplayManager {
         rd_pin.set_high()?;
         log::info!("RD pin set high and will be kept alive");
         
-        // Store all pins to keep them alive for the lifetime of the display
-        display.backlight_pin = Some(backlight_pin);
-        display.lcd_power_pin = Some(lcd_power_pin);
-        display.rd_pin = Some(rd_pin);
+        // Set up backlight
+        let mut backlight_pin = PinDriver::output(backlight.into())?;
+        backlight_pin.set_high()?;
+        log::info!("Backlight enabled (GPIO high)");
+        
+        let mut display = Self {
+            lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
+            backlight_pin: Some(backlight_pin),
+            lcd_power_pin: Some(lcd_power_pin),
+            rd_pin: Some(rd_pin),
+            width: DISPLAY_WIDTH,
+            height: DISPLAY_HEIGHT,
+            last_activity: Instant::now(),
+        };
         
         display.init()?;
         Ok(display)
@@ -233,30 +230,30 @@ impl DisplayManager {
         Ok(())
     }
     
-    /// Clear the entire controller memory (480x320) - needed once after reset
-    fn clear_controller_memory(&mut self) -> Result<()> {
-        // Set window to full controller RAM size (480x320)
-        self.lcd_bus.write_command(CMD_CASET)?;
-        self.lcd_bus.write_data_16(0)?;
-        self.lcd_bus.write_data_16(479)?;  // 480 - 1
-        
-        self.lcd_bus.write_command(CMD_RASET)?;
-        self.lcd_bus.write_data_16(0)?;
-        self.lcd_bus.write_data_16(319)?;  // 320 - 1
-        
-        // CRITICAL: Must send RAMWR before pixel data
-        self.lcd_bus.write_command(CMD_RAMWR)?;
-        
-        // Clear all 480x320 = 153,600 pixels
-        let total_pixels = 480u32 * 320u32;
-        
-        // Write pixels directly
-        for _ in 0..total_pixels {
-            self.lcd_bus.write_data(0)?;  // Black high byte
-            self.lcd_bus.write_data(0)?;  // Black low byte
-        }
-        Ok(())
-    }
+    // /// Clear the entire controller memory (480x320) - needed once after reset
+    // fn clear_controller_memory(&mut self) -> Result<()> {
+    //     // Set window to full controller RAM size (480x320)
+    //     self.lcd_bus.write_command(CMD_CASET)?;
+    //     self.lcd_bus.write_data_16(0)?;
+    //     self.lcd_bus.write_data_16(479)?;  // 480 - 1
+    //     
+    //     self.lcd_bus.write_command(CMD_RASET)?;
+    //     self.lcd_bus.write_data_16(0)?;
+    //     self.lcd_bus.write_data_16(319)?;  // 320 - 1
+    //     
+    //     // CRITICAL: Must send RAMWR before pixel data
+    //     self.lcd_bus.write_command(CMD_RAMWR)?;
+    //     
+    //     // Clear all 480x320 = 153,600 pixels
+    //     let total_pixels = 480u32 * 320u32;
+    //     
+    //     // Write pixels directly
+    //     for _ in 0..total_pixels {
+    //         self.lcd_bus.write_data(0)?;  // Black high byte
+    //         self.lcd_bus.write_data(0)?;  // Black low byte
+    //     }
+    //     Ok(())
+    // }
 
     pub fn draw_pixel(&mut self, x: u16, y: u16, color: u16) -> Result<()> {
         if x >= self.width || y >= self.height {
@@ -363,13 +360,13 @@ impl DisplayManager {
         Ok(())
     }
     
-    pub fn ensure_display_on(&mut self) -> Result<()> {
-        // Send SLPOUT and DISPON to ensure display doesn't sleep
-        self.lcd_bus.write_command(CMD_SLPOUT)?;
-        FreeRtos::delay_ms(5);
-        self.lcd_bus.write_command(CMD_DISPON)?;
-        Ok(())
-    }
+    // pub fn ensure_display_on(&mut self) -> Result<()> {
+    //     // Send SLPOUT and DISPON to ensure display doesn't sleep
+    //     self.lcd_bus.write_command(CMD_SLPOUT)?;
+    //     FreeRtos::delay_ms(5);
+    //     self.lcd_bus.write_command(CMD_DISPON)?;
+    //     Ok(())
+    // }
 
     pub fn draw_char(&mut self, x: u16, y: u16, c: char, color: u16, bg_color: Option<u16>, scale: u8) -> Result<()> {
         let char_data = get_char_data(c);
