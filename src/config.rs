@@ -38,8 +38,8 @@ pub enum Theme {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            wifi_ssid: String::new(),
-            wifi_password: String::new(),
+            wifi_ssid: env!("WIFI_SSID").to_string(),
+            wifi_password: env!("WIFI_PASSWORD").to_string(),
             brightness: 80,
             auto_brightness: true,
             dim_timeout_secs: 30,

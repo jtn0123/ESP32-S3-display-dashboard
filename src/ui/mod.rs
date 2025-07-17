@@ -2,6 +2,7 @@ use anyhow::Result;
 use crate::display::{DisplayManager, colors::*};
 use crate::sensors::SensorData;
 use crate::system::{ButtonEvent, SystemInfo};
+use crate::ota::OtaStatus;
 use std::time::Instant;
 
 pub struct UiManager {
@@ -14,9 +15,11 @@ pub struct UiManager {
     network_connected: bool,
     network_ip: Option<String>,
     network_ssid: String,
+    ota_status: OtaStatus,
 }
 
 impl UiManager {
+    #[allow(dead_code)]
     fn draw_header(&self, display: &mut DisplayManager, title: &str, bg_color: u16) -> Result<()> {
         // Header background
         display.fill_rect(0, 0, 320, 30, bg_color)?;
@@ -50,6 +53,7 @@ impl UiManager {
             network_connected: false,
             network_ip: None,
             network_ssid: String::from("Not connected"),
+            ota_status: OtaStatus::Idle,
         })
     }
 
@@ -67,7 +71,7 @@ impl UiManager {
         display.draw_progress_bar(60, 120, 200, 20, 50, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
         
         // Version info
-        display.draw_text_centered(160, "v4.11", TEXT_SECONDARY, None, 1)?;
+        display.draw_text_centered(160, "v4.12", TEXT_SECONDARY, None, 1)?;
         
         Ok(())
     }
@@ -103,6 +107,10 @@ impl UiManager {
         self.network_connected = connected;
         self.network_ip = ip;
         self.network_ssid = ssid;
+    }
+    
+    pub fn update_ota_status(&mut self, status: OtaStatus) {
+        self.ota_status = status;
     }
 
     pub fn update(&mut self) -> Result<()> {
@@ -259,9 +267,30 @@ impl UiManager {
         
         // Signal strength indicator
         let signal_strength = 75;
-        display.draw_text(10, 130, "Signal:", TEXT_PRIMARY, None, 1)?;
-        display.draw_progress_bar(80, 130, 100, 10, signal_strength, PRIMARY_GREEN, SURFACE_LIGHT, BORDER_COLOR)?;
-        display.draw_text(190, 130, &format!("{}%", signal_strength), TEXT_PRIMARY, None, 1)?;
+        display.draw_text(10, 110, "Signal:", TEXT_PRIMARY, None, 1)?;
+        display.draw_progress_bar(80, 110, 100, 10, signal_strength, PRIMARY_GREEN, SURFACE_LIGHT, BORDER_COLOR)?;
+        display.draw_text(190, 110, &format!("{}%", signal_strength), TEXT_PRIMARY, None, 1)?;
+        
+        // OTA Status
+        display.draw_text(10, 130, "OTA Status:", TEXT_PRIMARY, None, 1)?;
+        let (ota_text, ota_color) = match self.ota_status {
+            OtaStatus::Idle => ("Ready", TEXT_SECONDARY),
+            OtaStatus::Downloading { progress } => {
+                display.draw_progress_bar(120, 145, 180, 10, progress, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
+                ("Downloading", PRIMARY_BLUE)
+            },
+            OtaStatus::Verifying => ("Verifying", YELLOW),
+            OtaStatus::Ready => ("Update Ready", PRIMARY_GREEN),
+            OtaStatus::Failed => ("Failed", PRIMARY_RED),
+        };
+        display.fill_rect(120, 130, 180, 20, BLACK)?;
+        display.draw_text(120, 130, ota_text, ota_color, None, 1)?;
+        
+        // Web URLs
+        if self.network_connected {
+            display.draw_text_centered(95, &format!("Config: http://{}", self.network_ip.as_deref().unwrap_or("?.?.?.?")), TEXT_SECONDARY, None, 1)?;
+            display.draw_text_centered(105, &format!("OTA: http://{}:8080/ota", self.network_ip.as_deref().unwrap_or("?.?.?.?")), TEXT_SECONDARY, None, 1)?;
+        }
         
         // Button hints
         display.draw_text(10, 160, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
@@ -341,7 +370,7 @@ impl UiManager {
         
         // Version
         display.draw_text(10, y_start + line_height * 3, "Version:", TEXT_PRIMARY, None, 1)?;
-        display.draw_text(120, y_start + line_height * 3, "1.0.0-rust", TEXT_SECONDARY, None, 1)?;
+        display.draw_text(120, y_start + line_height * 3, "v4.13-rust", TEXT_SECONDARY, None, 1)?;
         
         // Button hints
         display.draw_text(10, 160, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;

@@ -4,8 +4,9 @@ use core::ffi::c_void;
 use esp_idf_sys::{
     esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition,
     esp_ota_handle_t, esp_ota_set_boot_partition, esp_ota_write,
-    esp_partition_t, esp_restart, EspError, ESP_ERR_OTA_VALIDATE_FAILED,
+    esp_partition_t, esp_restart, ESP_ERR_OTA_VALIDATE_FAILED,
 };
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OtaStatus {
@@ -26,6 +27,21 @@ pub enum OtaError {
     InvalidSize,
 }
 
+impl fmt::Display for OtaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OtaError::NoUpdatePartition => write!(f, "No update partition available"),
+            OtaError::BeginFailed => write!(f, "Failed to begin OTA update"),
+            OtaError::WriteFailed => write!(f, "Failed to write OTA data"),
+            OtaError::ValidationFailed => write!(f, "OTA validation failed"),
+            OtaError::BootPartitionFailed => write!(f, "Failed to set boot partition"),
+            OtaError::InvalidSize => write!(f, "Invalid firmware size"),
+        }
+    }
+}
+
+impl std::error::Error for OtaError {}
+
 pub struct OtaManager {
     update_partition: *const esp_partition_t,
     ota_handle: Option<esp_ota_handle_t>,
@@ -33,6 +49,11 @@ pub struct OtaManager {
     bytes_written: usize,
     status: OtaStatus,
 }
+
+// SAFETY: OtaManager only contains a pointer to the partition structure which is
+// statically allocated by ESP-IDF and is safe to share between threads
+unsafe impl Send for OtaManager {}
+unsafe impl Sync for OtaManager {}
 
 impl OtaManager {
     pub fn new() -> Result<Self, OtaError> {
@@ -58,7 +79,7 @@ impl OtaManager {
             return Err(OtaError::InvalidSize);
         }
         
-        let mut handle: esp_ota_handle_t = core::ptr::null_mut();
+        let mut handle: esp_ota_handle_t = 0;
         
         let result = unsafe {
             esp_ota_begin(
@@ -135,9 +156,11 @@ impl OtaManager {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn restart(&self) {
         // Give some time for final operations
-        esp_hal::delay::Delay::new_default().delay_millis(1000);
+        use esp_idf_hal::delay::Ets;
+        Ets::delay_ms(1000);
         
         // Restart the system
         unsafe { esp_restart(); }
@@ -155,6 +178,7 @@ impl OtaManager {
         }
     }
     
+    #[allow(dead_code)]
     pub fn cancel(&mut self) {
         if let Some(handle) = self.ota_handle.take() {
             unsafe { esp_ota_end(handle); }

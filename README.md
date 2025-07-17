@@ -12,9 +12,15 @@ A modern, high-performance dashboard implementation for the LilyGo T-Display-S3,
 ./setup-toolchain.sh            # Install complete toolchain
 source ~/esp-env.sh             # Load environment
 
+# Configure WiFi (required for OTA and web features)
+cp wifi_config.h.example wifi_config.h
+# Edit wifi_config.h with your WiFi credentials
+
 # Build and flash
 ./flash.sh                      # Compile and flash with monitor
 ./compile.sh                    # Compile only
+
+# See FLASHING_GUIDE.md for detailed flashing instructions
 ```
 
 ## 📋 Prerequisites
@@ -77,10 +83,11 @@ source ~/export-esp.sh
 - **ST7789 Display Driver** - 8-bit parallel interface with optimized drawing
 - **Dirty Rectangle Tracking** - Only update changed screen regions
 - **Dynamic Frequency Scaling** - CPU scales 80-240MHz based on load
-- **Web Configuration** - Change settings via web browser
-- **OTA Updates** - Update firmware over WiFi
+- **Web Configuration** - Change settings via web browser at `http://<device-ip>/`
+- **OTA Updates** - Update firmware over WiFi at `http://<device-ip>:8080/ota`
 - **Power Management** - Auto-dim, sleep modes, WiFi power save
 - **Performance Monitoring** - Built-in telemetry in main loop
+- **Compile-time WiFi Config** - Credentials compiled into firmware for easy deployment
 
 ## 📊 Performance Optimizations
 

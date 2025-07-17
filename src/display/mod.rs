@@ -9,7 +9,7 @@ use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 
 // Display boundaries - try 0,0 for T-Display-S3
 const DISPLAY_X_START: u16 = 0;    // Left boundary 
@@ -46,7 +46,7 @@ pub struct DisplayManager {
     lcd_bus: LcdBus,
     backlight_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep backlight alive
     lcd_power_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep LCD power alive
-    rd_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep RD pin high
+    _rd_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep RD pin high
     width: u16,
     height: u16,
     last_activity: Instant,
@@ -92,7 +92,7 @@ impl DisplayManager {
             lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
             backlight_pin: Some(backlight_pin),
             lcd_power_pin: Some(lcd_power_pin),
-            rd_pin: Some(rd_pin),
+            _rd_pin: Some(rd_pin),
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
             last_activity: Instant::now(),
@@ -346,7 +346,13 @@ impl DisplayManager {
             pin.set_high()?;
         }
         
-        // Display stays on automatically - no need for periodic commands
+        // Periodically ensure display stays awake
+        let elapsed = self.last_activity.elapsed();
+        if elapsed > Duration::from_secs(5) {
+            self.ensure_display_on()?;
+            self.last_activity = Instant::now();
+            log::info!("Display refresh after {} seconds", elapsed.as_secs());
+        }
         
         Ok(())
     }
@@ -360,13 +366,14 @@ impl DisplayManager {
         Ok(())
     }
     
-    // pub fn ensure_display_on(&mut self) -> Result<()> {
-    //     // Send SLPOUT and DISPON to ensure display doesn't sleep
-    //     self.lcd_bus.write_command(CMD_SLPOUT)?;
-    //     FreeRtos::delay_ms(5);
-    //     self.lcd_bus.write_command(CMD_DISPON)?;
-    //     Ok(())
-    // }
+    pub fn ensure_display_on(&mut self) -> Result<()> {
+        // Send SLPOUT and DISPON to ensure display doesn't sleep
+        self.lcd_bus.write_command(CMD_SLPOUT)?;
+        FreeRtos::delay_ms(5);
+        self.lcd_bus.write_command(CMD_DISPON)?;
+        log::debug!("Display wakeup commands sent");
+        Ok(())
+    }
 
     pub fn draw_char(&mut self, x: u16, y: u16, c: char, color: u16, bg_color: Option<u16>, scale: u8) -> Result<()> {
         let char_data = get_char_data(c);

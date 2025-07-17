@@ -57,7 +57,7 @@ impl SensorManager {
             use esp_idf_sys::*;
             
             // Initialize temperature sensor
-            let mut tsens_config = temperature_sensor_config_t {
+            let tsens_config = temperature_sensor_config_t {
                 range_min: -10,
                 range_max: 80,
                 clk_src: soc_periph_temperature_sensor_clk_src_t_TEMPERATURE_SENSOR_CLK_SRC_DEFAULT,

@@ -11,7 +11,6 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}ESP32-S3 Dashboard - Flash Tool${NC}"
 echo "==============================="
-echo ""
 
 # Function to show usage
 usage() {
@@ -92,8 +91,8 @@ echo -e "${BLUE}Architecture: ${ARCH}${NC}"
 if [ -f "$HOME/.cargo/env" ]; then
     source "$HOME/.cargo/env"
 else
-    echo -e "${RED}Error: Rust environment not found!${NC}"
-    echo "Please install Rust first: https://rustup.rs/"
+    echo -e "${RED}✗ Error: Rust environment not found!${NC}"
+    echo -e "${YELLOW}Please install Rust first:${NC} https://rustup.rs/"
     exit 1
 fi
 
@@ -103,20 +102,21 @@ if [ -f "$HOME/export-esp.sh" ]; then
 elif [ -f ~/esp-env.sh ]; then
     source ~/esp-env.sh
 else
-    echo -e "${RED}Error: ESP environment not found!${NC}"
-    echo "Run ./setup-toolchain.sh first to install ESP toolchain"
+    echo -e "${RED}✗ Error: ESP environment not found!${NC}"
+    echo -e "${YELLOW}Run ./setup-toolchain.sh first to install ESP toolchain${NC}"
     exit 1
 fi
 
 # Verify tools are available
 if ! command -v cargo &> /dev/null; then
-    echo -e "${RED}Error: cargo not found!${NC}"
+    echo -e "${RED}✗ Error: cargo not found!${NC}"
     exit 1
 fi
 
 # Check for cargo-espflash
 if ! command -v cargo-espflash &> /dev/null; then
-    echo -e "${YELLOW}cargo-espflash not found. Installing...${NC}"
+    echo -e "${YELLOW}cargo-espflash not found${NC}"
+    echo -e "${BLUE}Installing cargo-espflash...${NC}"
     cargo install cargo-espflash
 fi
 
@@ -126,14 +126,13 @@ if [ -z "$PORT" ]; then
     USB_DEVICES=$(ls /dev/tty.usb* /dev/cu.usb* 2>/dev/null | head -1)
     if [ -n "$USB_DEVICES" ]; then
         PORT="--port $USB_DEVICES"
-        echo -e "  Found: $USB_DEVICES"
+        echo -e "${GREEN}  Found: $USB_DEVICES${NC}"
     else
-        echo -e "${YELLOW}No USB device found. Will try default port.${NC}"
+        echo -e "${YELLOW}  No USB device found. Will try default port.${NC}"
     fi
 fi
 
 # Show configuration
-echo ""
 echo -e "${BLUE}Flash Configuration:${NC}"
 if [ -n "$BUILD_MODE" ]; then
     echo "  Mode: Release (optimized)"
@@ -149,13 +148,11 @@ if [ -n "$MONITOR" ]; then
 else
     echo "  Monitor: No"
 fi
-echo ""
 
 # Clean if requested
 if [ "$CLEAN" = true ]; then
     echo -e "${YELLOW}Cleaning previous build...${NC}"
     cargo clean
-    echo ""
 fi
 
 # Set ESP-IDF version to 5.3.3 LTS
@@ -171,67 +168,72 @@ fi
 
 # Check if binary exists
 if [ -f "$BINARY_PATH" ]; then
-    echo -e "${BLUE}Binary found at: $BINARY_PATH${NC}"
+    echo -e "${GREEN}Binary found:${NC}"
+    SIZE=$(ls -lh "$BINARY_PATH" | awk '{print $5}')
+    echo -e "  Path: $BINARY_PATH"
+    echo -e "  Size: $SIZE"
     echo -e "${YELLOW}Skipping build - using existing binary${NC}"
-    echo -e "${YELLOW}Run './compile.sh' or use --clean to rebuild${NC}"
+    echo -e "${BLUE}Tip: Run './compile.sh' or use --clean to rebuild${NC}"
 else
     # Build if binary doesn't exist
     echo -e "${GREEN}Building project...${NC}"
+    
+    # Start timer
+    BUILD_START=$(date +%s)
+    
     cargo build $BUILD_MODE $VERBOSE
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}✗ Build failed!${NC}"
         exit 1
     fi
+    
+    # Calculate build time
+    BUILD_END=$(date +%s)
+    BUILD_TIME=$((BUILD_END - BUILD_START))
 
-    echo ""
     echo -e "${GREEN}✓ Build successful!${NC}"
+    echo -e "  Time: ${BUILD_TIME}s"
+    # Show binary info
+    SIZE=$(ls -lh "$BINARY_PATH" | awk '{print $5}')
+    echo -e "  Binary: $BINARY_PATH"
+    echo -e "  Size: $SIZE"
 fi
 
 # Flash to device
 echo ""
-echo -e "${GREEN}Flashing to device...${NC}"
+echo -e "${GREEN}Starting flash process...${NC}"
 
-# Try cargo espflash first (recommended method)
-cargo espflash flash $CARGO_ARGS $PORT $MONITOR $VERBOSE
-
-FLASH_RESULT=$?
-
-if [ $FLASH_RESULT -ne 0 ]; then
-    echo ""
-    echo -e "${YELLOW}Trying alternative flash method...${NC}"
-    
-    # Determine binary path
-    if [ -n "$BUILD_MODE" ]; then
-        BINARY_PATH="target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard"
-    else
-        BINARY_PATH="target/xtensa-esp32s3-espidf/debug/esp32-s3-dashboard"
-    fi
-    
-    # Try espflash directly with 16MB flash size
-    if command -v espflash &> /dev/null; then
-        espflash flash --flash-size 16mb "$BINARY_PATH" $PORT $MONITOR
-        FLASH_RESULT=$?
-    else
-        echo -e "${RED}espflash not found. Please install it:${NC}"
-        echo "  cargo install espflash"
-        exit 1
-    fi
+# ALWAYS use espflash directly with 16MB flash size
+# This avoids all the partition table confusion
+if [ -f "$HOME/.cargo/bin/espflash" ]; then
+    ESPFLASH="$HOME/.cargo/bin/espflash"
+elif command -v espflash &> /dev/null; then
+    ESPFLASH="espflash"
+else
+    echo -e "${RED}✗ espflash not found${NC}"
+    echo -e "${YELLOW}Installing espflash v3.3.0...${NC}"
+    cargo install espflash@3.3.0 --force
+    ESPFLASH="$HOME/.cargo/bin/espflash"
 fi
 
+# Check espflash version
+ESPFLASH_VERSION=$($ESPFLASH --version | awk '{print $2}')
+echo -e "${BLUE}Using espflash version: $ESPFLASH_VERSION${NC}"
+
+# Flash with explicit 16MB size
+$ESPFLASH flash --flash-size 16mb "$BINARY_PATH" $PORT $MONITOR
+FLASH_RESULT=$?
+
 if [ $FLASH_RESULT -eq 0 ]; then
-    echo ""
     echo -e "${GREEN}✓ Flash successful!${NC}"
     if [ -z "$MONITOR" ]; then
-        echo ""
-        echo "To monitor serial output, run:"
+        echo -e "${BLUE}To monitor serial output, run:${NC}"
         echo "  espflash monitor $PORT"
     fi
 else
-    echo ""
     echo -e "${RED}✗ Flash failed!${NC}"
-    echo ""
-    echo "Troubleshooting tips:"
+    echo -e "${YELLOW}Troubleshooting tips:${NC}"
     echo "  1. Check that your ESP32-S3 is connected"
     echo "  2. Verify the correct port with: ls /dev/tty.usb*"
     echo "  3. Try specifying port: $0 --port /dev/tty.usbmodem14201"

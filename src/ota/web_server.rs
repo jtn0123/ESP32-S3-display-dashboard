@@ -1,14 +1,12 @@
 // Web server for OTA updates - provides HTTP interface for firmware upload
 
 use esp_idf_svc::{
-    http::server::{Configuration, EspHttpServer, Handler, Request, Response},
+    http::server::{Configuration, EspHttpServer},
     io::Write,
 };
-use esp_println::println;
 
-use super::manager::{OtaManager, OtaStatus};
 
-const OTA_HTML: &str = r#"
+pub const OTA_HTML: &str = r#"
 <!DOCTYPE html>
 <html>
 <head>
@@ -96,7 +94,7 @@ const OTA_HTML: &str = r#"
         <h1>ESP32-S3 Dashboard OTA Update</h1>
         
         <div class="info">
-            <p><strong>Current Version:</strong> 0.1.0-rust</p>
+            <p><strong>Current Version:</strong> v4.13-rust</p>
             <p><strong>Device:</strong> ESP32-S3 T-Display</p>
         </div>
         
@@ -139,7 +137,7 @@ const OTA_HTML: &str = r#"
             status.textContent = 'Uploading...';
             
             try {
-                const response = await fetch('/update', {
+                const response = await fetch('/ota/update', {
                     method: 'POST',
                     body: file,
                     headers: {
@@ -173,11 +171,13 @@ const OTA_HTML: &str = r#"
 </html>
 "#;
 
-pub struct OtaWebServer {
-    server: EspHttpServer,
+#[allow(dead_code)]
+pub struct OtaWebServer<'a> {
+    pub server: EspHttpServer<'a>,
 }
 
-impl OtaWebServer {
+impl<'a> OtaWebServer<'a> {
+    #[allow(dead_code)]
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let mut server = EspHttpServer::new(&Configuration::default())?;
         
@@ -185,67 +185,11 @@ impl OtaWebServer {
         server.fn_handler("/", esp_idf_svc::http::Method::Get, |req| {
             let mut response = req.into_ok_response()?;
             response.write_all(OTA_HTML.as_bytes())?;
-            Ok(())
+            Ok::<(), anyhow::Error>(())
         })?;
         
         Ok(Self { server })
     }
     
-    pub fn set_update_handler<F>(&mut self, handler: F) -> Result<(), Box<dyn std::error::Error>>
-    where
-        F: Fn(&mut Request<&mut EspHttpConnection>) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
-    {
-        self.server.fn_handler("/update", esp_idf_svc::http::Method::Post, handler)?;
-        Ok(())
-    }
 }
 
-// Helper function to handle OTA update via HTTP
-pub fn handle_ota_update(
-    request: &mut Request<&mut EspHttpConnection>,
-    ota_manager: &mut OtaManager,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let content_length = request
-        .header("Content-Length")
-        .and_then(|v| v.parse::<usize>().ok())
-        .ok_or("Missing Content-Length")?;
-    
-    println!("OTA Update started, size: {} bytes", content_length);
-    
-    // Begin OTA update
-    ota_manager.begin_update(content_length)?;
-    
-    // Read and write firmware in chunks
-    let mut buffer = vec![0u8; 4096];
-    let mut total_read = 0;
-    
-    loop {
-        let bytes_read = request.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-        
-        ota_manager.write_chunk(&buffer[..bytes_read])?;
-        total_read += bytes_read;
-        
-        // Log progress
-        let progress = ota_manager.get_progress();
-        if progress % 10 == 0 {
-            println!("OTA Progress: {}%", progress);
-        }
-    }
-    
-    // Finish update
-    ota_manager.finish_update()?;
-    
-    println!("OTA Update complete, restarting...");
-    
-    // Send success response
-    let response = request.into_ok_response()?;
-    response.write_all(b"Update successful")?;
-    
-    // Restart after a short delay
-    ota_manager.restart();
-    
-    Ok(())
-}
