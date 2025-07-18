@@ -35,6 +35,7 @@ impl NetworkManager {
         })
     }
 
+    #[allow(dead_code)]
     pub fn connect(&mut self) -> Result<()> {
         self.wifi.connect()?;
         log::info!("WiFi connected, IP: {:?}", self.wifi.get_ip());
@@ -48,6 +49,7 @@ impl NetworkManager {
         Ok(())
     }
     
+    #[allow(dead_code)]
     fn start_mdns(&mut self) -> Result<()> {
         let mut mdns = EspMdns::take()?;
         mdns.set_hostname("esp32-dashboard")?;

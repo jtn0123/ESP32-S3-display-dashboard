@@ -11,11 +11,15 @@ use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::{Instant, Duration};
 
-// Display boundaries - try 0,0 for T-Display-S3
-const DISPLAY_X_START: u16 = 0;    // Left boundary 
-const DISPLAY_Y_START: u16 = 0;    // Top boundary
-const DISPLAY_WIDTH: u16 = 320;    // Full width
-const DISPLAY_HEIGHT: u16 = 170;   // Full height
+// Display boundaries - Discovered values from Arduino testing
+const DISPLAY_X_START: u16 = 10;   // Left boundary offset
+const DISPLAY_Y_START: u16 = 36;   // Top boundary offset
+const DISPLAY_WIDTH: u16 = 300;    // Actual visible width
+const DISPLAY_HEIGHT: u16 = 168;   // Actual visible height
+
+// Controller dimensions - ST7789 expects these
+const CONTROLLER_WIDTH: u16 = 480;
+const CONTROLLER_HEIGHT: u16 = 320;
 
 // Controller dimensions removed - not used
 
@@ -178,17 +182,56 @@ impl DisplayManager {
         self.lcd_bus.write_command(CMD_DISPON)?;
         FreeRtos::delay_ms(20);
 
-        // Skip clearing controller memory - it might corrupt the display state
-        // The visible area clear below is sufficient
+        // Initialize the full controller memory
+        // The ST7789 controller expects 480x320 pixels to be initialized
+        log::info!("Performing comprehensive memory initialization...");
+        self.comprehensive_memory_init()?;
         
         // Clear visible area to black
         log::info!("Clearing visible area to black...");
         self.clear(colors::BLACK)?;
-        
-        // Skip test pattern - it's confusing the boot sequence
-        log::info!("Display initialization complete (no test pattern)");
 
         log::info!("Display initialized successfully");
+        Ok(())
+    }
+
+    fn comprehensive_memory_init(&mut self) -> Result<()> {
+        // Initialize the full controller memory (480x320)
+        // This fixes display cutoff issues on T-Display-S3
+        self.lcd_bus.write_command(CMD_CASET)?;
+        self.lcd_bus.write_data_16(0)?;
+        self.lcd_bus.write_data_16(CONTROLLER_WIDTH - 1)?;
+        
+        self.lcd_bus.write_command(CMD_RASET)?;
+        self.lcd_bus.write_data_16(0)?;
+        self.lcd_bus.write_data_16(CONTROLLER_HEIGHT - 1)?;
+        
+        self.lcd_bus.write_command(CMD_RAMWR)?;
+        
+        // Write black to entire controller memory - OPTIMIZED
+        let total_pixels = CONTROLLER_WIDTH as u32 * CONTROLLER_HEIGHT as u32;
+        let pixels_per_chunk = 8192u32; // Increased chunk size for faster writes
+        
+        // Pre-allocate buffer once
+        let chunk_data = vec![0x00u8; (pixels_per_chunk * 2) as usize];
+        let chunks = total_pixels / pixels_per_chunk;
+        
+        for chunk in 0..chunks {
+            self.lcd_bus.write_data_bytes(&chunk_data)?;
+            
+            // Feed watchdog less frequently
+            if chunk % 5 == 0 {
+                unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+            }
+        }
+        
+        // Handle remaining pixels
+        let remaining = (total_pixels % pixels_per_chunk) as usize;
+        if remaining > 0 {
+            self.lcd_bus.write_data_bytes(&chunk_data[..remaining * 2])?;
+        }
+        
+        log::info!("Memory initialization complete");
         Ok(())
     }
 
@@ -220,12 +263,9 @@ impl DisplayManager {
         // CRITICAL: Must send RAMWR before pixel data
         self.lcd_bus.write_command(CMD_RAMWR)?;
         
-        // Write pixels directly without begin_write/end_write
+        // Write pixels using optimized bulk write
         let total_pixels = self.width as u32 * self.height as u32;
-        for _ in 0..total_pixels {
-            self.lcd_bus.write_data((color >> 8) as u8)?;
-            self.lcd_bus.write_data((color & 0xFF) as u8)?;
-        }
+        self.lcd_bus.write_pixels(color, total_pixels)?;
         
         Ok(())
     }
@@ -280,12 +320,9 @@ impl DisplayManager {
         // CRITICAL: Must send RAMWR before pixel data
         self.lcd_bus.write_command(CMD_RAMWR)?;
         
-        // Write pixels directly without begin_write/end_write
+        // Write pixels using optimized bulk write
         let total_pixels = (x1 - x + 1) as u32 * (y1 - y + 1) as u32;
-        for _ in 0..total_pixels {
-            self.lcd_bus.write_data((color >> 8) as u8)?;
-            self.lcd_bus.write_data((color & 0xFF) as u8)?;
-        }
+        self.lcd_bus.write_pixels(color, total_pixels)?;
         
         Ok(())
     }
@@ -346,9 +383,10 @@ impl DisplayManager {
             pin.set_high()?;
         }
         
-        // Periodically ensure display stays awake
+        // Periodically ensure display stays awake - reduced frequency
         let elapsed = self.last_activity.elapsed();
-        if elapsed > Duration::from_secs(5) {
+        if elapsed > Duration::from_secs(30) {
+            // Only send wake commands if display has been idle for 30 seconds
             self.ensure_display_on()?;
             self.last_activity = Instant::now();
             log::info!("Display refresh after {} seconds", elapsed.as_secs());
@@ -378,31 +416,47 @@ impl DisplayManager {
     pub fn draw_char(&mut self, x: u16, y: u16, c: char, color: u16, bg_color: Option<u16>, scale: u8) -> Result<()> {
         let char_data = get_char_data(c);
         
-        for col in 0..FONT_WIDTH {
-            for row in 0..FONT_HEIGHT {
-                if (char_data[col as usize] >> row) & 1 == 1 {
-                    // Draw pixel(s) for the character
-                    for sx in 0..scale {
-                        for sy in 0..scale {
-                            self.draw_pixel(
-                                x + (col * scale + sx) as u16,
-                                y + (row * scale + sy) as u16,
-                                color
-                            )?;
-                        }
+        // Calculate character dimensions
+        let char_width = FONT_WIDTH * scale;
+        let char_height = FONT_HEIGHT * scale;
+        
+        // If we have a background color, fill the entire character area first
+        if let Some(bg) = bg_color {
+            self.fill_rect(x, y, char_width as u16, char_height as u16, bg)?;
+        }
+        
+        // Now draw the character pixels in batches
+        // Group pixels by row for more efficient drawing
+        for row in 0..FONT_HEIGHT {
+            let mut col_start = None;
+            let mut col_count = 0;
+            
+            for col in 0..FONT_WIDTH {
+                let pixel_on = (char_data[col as usize] >> row) & 1 == 1;
+                
+                if pixel_on {
+                    if col_start.is_none() {
+                        col_start = Some(col);
+                        col_count = 1;
+                    } else {
+                        col_count += 1;
                     }
-                } else if let Some(bg) = bg_color {
-                    // Draw background pixel(s)
-                    for sx in 0..scale {
-                        for sy in 0..scale {
-                            self.draw_pixel(
-                                x + (col * scale + sx) as u16,
-                                y + (row * scale + sy) as u16,
-                                bg
-                            )?;
-                        }
-                    }
+                } else if let Some(start_col) = col_start {
+                    // Draw the accumulated horizontal line
+                    let rect_x = x + (start_col * scale) as u16;
+                    let rect_y = y + (row * scale) as u16;
+                    self.fill_rect(rect_x, rect_y, (col_count * scale) as u16, scale as u16, color)?;
+                    
+                    col_start = None;
+                    col_count = 0;
                 }
+            }
+            
+            // Draw any remaining pixels in the row
+            if let Some(start_col) = col_start {
+                let rect_x = x + (start_col * scale) as u16;
+                let rect_y = y + (row * scale) as u16;
+                self.fill_rect(rect_x, rect_y, (col_count * scale) as u16, scale as u16, color)?;
             }
         }
         
@@ -462,13 +516,25 @@ impl DisplayManager {
     }
 
     pub fn fill_circle(&mut self, cx: u16, cy: u16, r: u16, color: u16) -> Result<()> {
-        for y in 0..=r {
-            for x in 0..=r {
-                if x * x + y * y <= r * r {
-                    self.draw_pixel(cx + x, cy + y, color)?;
-                    self.draw_pixel(cx - x, cy + y, color)?;
-                    self.draw_pixel(cx + x, cy - y, color)?;
-                    self.draw_pixel(cx - x, cy - y, color)?;
+        // Use horizontal line drawing for better performance
+        for dy in 0..=r as i32 {
+            // Calculate the horizontal line width at this y offset
+            let dx = ((r as i32 * r as i32 - dy * dy) as f32).sqrt() as i32;
+            
+            if dx > 0 {
+                // Draw horizontal lines instead of individual pixels
+                let x_start = (cx as i32 - dx).max(0) as u16;
+                let x_end = (cx as i32 + dx).min(self.width as i32 - 1) as u16;
+                let width = x_end - x_start + 1;
+                
+                // Draw line above center
+                if cy as i32 - dy >= 0 {
+                    self.fill_rect(x_start, (cy as i32 - dy) as u16, width, 1, color)?;
+                }
+                
+                // Draw line below center (avoid duplicate at dy=0)
+                if dy > 0 && cy as i32 + dy < self.height as i32 {
+                    self.fill_rect(x_start, (cy as i32 + dy) as u16, width, 1, color)?;
                 }
             }
         }

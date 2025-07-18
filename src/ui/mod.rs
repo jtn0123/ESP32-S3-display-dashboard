@@ -57,24 +57,6 @@ impl UiManager {
         })
     }
 
-    pub fn show_boot_screen(&mut self, display: &mut DisplayManager) -> Result<()> {
-        log::info!("Showing boot screen");
-        
-        // Clear screen
-        display.clear(BLACK)?;
-        
-        // Draw title
-        display.draw_text_centered(50, "ESP32-S3 Dashboard", WHITE, None, 2)?;
-        display.draw_text_centered(80, "Rust Edition", PRIMARY_BLUE, None, 1)?;
-        
-        // Draw progress bar
-        display.draw_progress_bar(60, 120, 200, 20, 50, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
-        
-        // Version info
-        display.draw_text_centered(160, "v4.12", TEXT_SECONDARY, None, 1)?;
-        
-        Ok(())
-    }
 
     pub fn handle_button_event(&mut self, event: ButtonEvent) -> Result<()> {
         match event {
@@ -146,7 +128,7 @@ impl UiManager {
             
             // Draw static elements that don't change
             // Header (using actual display width)
-            display.fill_rect(0, 0, 320, 30, PRIMARY_BLUE)?;
+            display.fill_rect(0, 0, 300, 30, PRIMARY_BLUE)?;
             display.draw_text_centered(8, "System Status", WHITE, None, 2)?;
             
             // Static labels
@@ -160,7 +142,7 @@ impl UiManager {
             
             // Button hints
             display.draw_text(10, 160, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
-            display.draw_text(230, 160, "[USER] Next", TEXT_SECONDARY, None, 1)?;
+            display.draw_text(200, 160, "[USER] Next", TEXT_SECONDARY, None, 1)?;
         }
         
         // Update time in header (always update, even if screen didn't change)
@@ -225,7 +207,7 @@ impl UiManager {
             display.clear(BLACK)?;
             
             // Header
-            display.fill_rect(0, 0, 320, 30, PRIMARY_PURPLE)?;
+            display.fill_rect(0, 0, 300, 30, PRIMARY_PURPLE)?;
             display.draw_text_centered(8, "Network Status", WHITE, None, 2)?;
             
             // Static labels
@@ -238,7 +220,7 @@ impl UiManager {
             
             // Button hints
             display.draw_text(10, 160, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
-            display.draw_text(230, 160, "[USER] Next", TEXT_SECONDARY, None, 1)?;
+            display.draw_text(200, 160, "[USER] Next", TEXT_SECONDARY, None, 1)?;
         }
         
         // Update time in header
@@ -304,7 +286,7 @@ impl UiManager {
         display.clear(BLACK)?;
         
         // Header
-        display.fill_rect(0, 0, 320, 30, PRIMARY_GREEN)?;
+        display.fill_rect(0, 0, 300, 30, PRIMARY_GREEN)?;
         display.draw_text_centered(8, "Sensor Data", WHITE, None, 2)?;
         
         // Sensor values
@@ -348,7 +330,7 @@ impl UiManager {
         display.clear(BLACK)?;
         
         // Header
-        display.fill_rect(0, 0, 320, 30, ACCENT_ORANGE)?;
+        display.fill_rect(0, 0, 300, 30, ACCENT_ORANGE)?;
         display.draw_text_centered(8, "Settings", WHITE, None, 2)?;
         
         // Settings options
@@ -370,11 +352,11 @@ impl UiManager {
         
         // Version
         display.draw_text(10, y_start + line_height * 3, "Version:", TEXT_PRIMARY, None, 1)?;
-        display.draw_text(120, y_start + line_height * 3, "v4.13-rust", TEXT_SECONDARY, None, 1)?;
+        display.draw_text(120, y_start + line_height * 3, "v4.31-rust", TEXT_SECONDARY, None, 1)?;
         
         // Button hints
         display.draw_text(10, 160, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
-        display.draw_text(230, 160, "[USER] Select", TEXT_SECONDARY, None, 1)?;
+        display.draw_text(200, 160, "[USER] Select", TEXT_SECONDARY, None, 1)?;
         
         Ok(())
     }

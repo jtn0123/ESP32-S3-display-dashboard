@@ -23,6 +23,7 @@ usage() {
     echo "  --monitor    Open serial monitor after flashing (default)"
     echo "  --no-monitor Skip serial monitor"
     echo "  --port PORT  Specify USB port (auto-detect if not specified)"
+    echo "  --erase-flash Erase entire flash before programming"
     echo "  --verbose    Verbose output"
     echo "  --help       Show this help message"
     echo ""
@@ -40,6 +41,7 @@ MONITOR="--monitor"
 PORT=""
 VERBOSE=""
 CARGO_ARGS=""
+ERASE_FLASH=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -71,6 +73,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --verbose)
             VERBOSE="--verbose"
+            shift
+            ;;
+        --erase-flash)
+            ERASE_FLASH=true
             shift
             ;;
         --help|-h)
@@ -221,9 +227,156 @@ fi
 ESPFLASH_VERSION=$($ESPFLASH --version | awk '{print $2}')
 echo -e "${BLUE}Using espflash version: $ESPFLASH_VERSION${NC}"
 
-# Flash with explicit 16MB size
-$ESPFLASH flash --flash-size 16mb "$BINARY_PATH" $PORT $MONITOR
-FLASH_RESULT=$?
+# Erase flash if requested
+if [ "$ERASE_FLASH" = true ]; then
+    echo -e "${YELLOW}Erasing entire flash memory...${NC}"
+    $ESPFLASH erase-flash $PORT
+    ERASE_RESULT=$?
+    if [ $ERASE_RESULT -eq 0 ]; then
+        echo -e "${GREEN}✓ Flash erased successfully${NC}"
+    else
+        echo -e "${RED}✗ Flash erase failed!${NC}"
+        exit 1
+    fi
+fi
+
+# Check if we should use esptool.py for better partition table handling
+USE_ESPTOOL=false
+CUSTOM_PARTITION_TABLE="partitions_ota_1_5mb.csv"
+FALLBACK_PARTITION_TABLE="partitions_16mb_ota.csv"
+DEFAULT_PARTITION_TABLE="$HOME/.espressif/esp-idf/v5.3/components/partition_table/partitions_two_ota.csv"
+
+# Check if custom partition table exists
+if [ -f "$CUSTOM_PARTITION_TABLE" ]; then
+    echo -e "${BLUE}Found custom partition table: $CUSTOM_PARTITION_TABLE${NC}"
+    echo -e "${GREEN}  App partitions: 1.5MB each (factory, ota_0, ota_1)${NC}"
+    USE_ESPTOOL=true
+fi
+
+if [ "$USE_ESPTOOL" = true ]; then
+    # Use esptool.py for precise control over partition table flashing
+    echo -e "${BLUE}Using esptool.py for partition table support...${NC}"
+    
+    # Find esptool.py
+    if [ -f ".embuild/espressif/python_env/idf5.3_py3.13_env/bin/esptool.py" ]; then
+        ESPTOOL=".embuild/espressif/python_env/idf5.3_py3.13_env/bin/esptool.py"
+    elif [ -f "$HOME/.espressif/python_env/idf5.3_py3.13_env/bin/esptool.py" ]; then
+        ESPTOOL="$HOME/.espressif/python_env/idf5.3_py3.13_env/bin/esptool.py"
+    else
+        echo -e "${YELLOW}esptool.py not found, falling back to espflash${NC}"
+        USE_ESPTOOL=false
+    fi
+fi
+
+if [ "$USE_ESPTOOL" = true ]; then
+    # Convert partition table to binary
+    echo -e "${BLUE}Converting partition table to binary...${NC}"
+    python3 "$HOME/.espressif/esp-idf/v5.3/components/partition_table/gen_esp32part.py" \
+        --verify "$CUSTOM_PARTITION_TABLE" partitions_16mb_ota.bin
+    
+    if [ ! -f "partitions_16mb_ota.bin" ]; then
+        echo -e "${RED}Failed to generate partition table binary${NC}"
+        echo -e "${YELLOW}Falling back to espflash...${NC}"
+        USE_ESPTOOL=false
+    fi
+fi
+
+if [ "$USE_ESPTOOL" = true ]; then
+    # Find bootloader
+    BOOTLOADER="target/xtensa-esp32s3-espidf/release/bootloader.bin"
+    if [ ! -f "$BOOTLOADER" ]; then
+        BOOTLOADER=$(find target -name "bootloader.bin" -type f 2>/dev/null | head -1)
+    fi
+    
+    if [ -z "$BOOTLOADER" ] || [ ! -f "$BOOTLOADER" ]; then
+        echo -e "${YELLOW}Bootloader not found, falling back to espflash${NC}"
+        USE_ESPTOOL=false
+    fi
+fi
+
+if [ "$USE_ESPTOOL" = true ]; then
+    # Extract port for esptool
+    PORT_PATH=$(echo $PORT | cut -d' ' -f2)
+    if [ -z "$PORT_PATH" ]; then
+        PORT_PATH=$(ls /dev/cu.usbmodem* /dev/tty.usbmodem* 2>/dev/null | head -1)
+    fi
+    
+    echo -e "${GREEN}Flashing with esptool.py (better partition support)...${NC}"
+    echo -e "  Bootloader: $BOOTLOADER"
+    echo -e "  Partition:  partitions_16mb_ota.bin"
+    echo -e "  App:        $BINARY_PATH"
+    
+    # Flash with esptool.py
+    # First erase the partition table area to force a rewrite
+    echo -e "${BLUE}Erasing partition table area...${NC}"
+    $ESPTOOL \
+        --chip esp32s3 \
+        --port "$PORT_PATH" \
+        --baud 921600 \
+        erase_region 0x8000 0x1000
+    
+    # Now flash everything
+    echo -e "${GREEN}Writing bootloader, partition table, and app...${NC}"
+    $ESPTOOL \
+        --chip esp32s3 \
+        --port "$PORT_PATH" \
+        --baud 921600 \
+        --before default_reset \
+        --after hard_reset \
+        write_flash \
+        --flash_mode dio \
+        --flash_freq 40m \
+        --flash_size 16MB \
+        0x0 "$BOOTLOADER" \
+        0x8000 partitions_16mb_ota.bin \
+        0x10000 "$BINARY_PATH"
+    FLASH_RESULT=$?
+    
+    # Clean up binary partition file
+    rm -f partitions_16mb_ota.bin
+    
+    # Handle monitor if requested
+    if [ $FLASH_RESULT -eq 0 ] && [ -n "$MONITOR" ]; then
+        echo -e "${BLUE}Waiting for device to reset...${NC}"
+        sleep 2  # Give device time to reset after flashing
+        echo -e "${BLUE}Starting monitor...${NC}"
+        espflash monitor --port "$PORT_PATH" --no-stub
+    fi
+else
+    # Fall back to espflash
+    echo -e "${BLUE}Using espflash...${NC}"
+    
+    # If monitor is requested, flash without monitor first then start it separately
+    if [ -n "$MONITOR" ]; then
+        FLASH_MONITOR=""
+    else
+        FLASH_MONITOR="$MONITOR"
+    fi
+    
+    if [ -f "$CUSTOM_PARTITION_TABLE" ]; then
+        $ESPFLASH flash --flash-size 16mb --partition-table "$CUSTOM_PARTITION_TABLE" "$BINARY_PATH" $PORT $FLASH_MONITOR
+    elif [ -f "$DEFAULT_PARTITION_TABLE" ]; then
+        echo -e "${YELLOW}Warning: Using default 1MB partitions - may be too small!${NC}"
+        $ESPFLASH flash --flash-size 16mb --partition-table "$DEFAULT_PARTITION_TABLE" "$BINARY_PATH" $PORT $FLASH_MONITOR
+    else
+        echo -e "${YELLOW}Warning: No partition table found${NC}"
+        $ESPFLASH flash --flash-size 16mb "$BINARY_PATH" $PORT $FLASH_MONITOR
+    fi
+    FLASH_RESULT=$?
+    
+    # Start monitor separately if requested
+    if [ $FLASH_RESULT -eq 0 ] && [ -n "$MONITOR" ]; then
+        echo -e "${BLUE}Waiting for device to reset...${NC}"
+        sleep 2
+        echo -e "${BLUE}Starting monitor...${NC}"
+        # Extract port for monitor
+        PORT_PATH=$(echo $PORT | cut -d' ' -f2)
+        if [ -z "$PORT_PATH" ]; then
+            PORT_PATH=$(ls /dev/cu.usbmodem* /dev/tty.usbmodem* 2>/dev/null | head -1)
+        fi
+        espflash monitor --port "$PORT_PATH" --no-stub
+    fi
+fi
 
 if [ $FLASH_RESULT -eq 0 ]; then
     echo -e "${GREEN}✓ Flash successful!${NC}"

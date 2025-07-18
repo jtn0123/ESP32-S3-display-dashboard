@@ -5,8 +5,11 @@ use esp_idf_sys::{
     esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition,
     esp_ota_handle_t, esp_ota_set_boot_partition, esp_ota_write,
     esp_partition_t, esp_restart, ESP_ERR_OTA_VALIDATE_FAILED,
+    esp_partition_find_first, esp_partition_type_t_ESP_PARTITION_TYPE_APP as ESP_PARTITION_TYPE_APP,
+    esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_APP_OTA_0 as ESP_PARTITION_SUBTYPE_APP_OTA_0,
 };
 use std::fmt;
+use std::ffi::CStr;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OtaStatus {
@@ -57,11 +60,34 @@ unsafe impl Sync for OtaManager {}
 
 impl OtaManager {
     pub fn new() -> Result<Self, OtaError> {
-        // Get the next OTA partition
-        let update_partition = unsafe { esp_ota_get_next_update_partition(core::ptr::null()) };
+        // Try to get the next OTA partition normally
+        let mut update_partition = unsafe { esp_ota_get_next_update_partition(core::ptr::null()) };
         
+        // If that fails (we're on factory), find the first OTA partition manually
         if update_partition.is_null() {
-            return Err(OtaError::NoUpdatePartition);
+            log::info!("Running from factory partition, finding first OTA partition...");
+            
+            // Find first OTA partition (ota_0)
+            update_partition = unsafe {
+                esp_partition_find_first(
+                    ESP_PARTITION_TYPE_APP,
+                    ESP_PARTITION_SUBTYPE_APP_OTA_0,
+                    core::ptr::null()
+                )
+            };
+            
+            if update_partition.is_null() {
+                log::error!("No OTA partition found in partition table");
+                return Err(OtaError::NoUpdatePartition);
+            }
+            
+            // Log partition info
+            unsafe {
+                let partition = &*update_partition;
+                let label = CStr::from_ptr(partition.label.as_ptr());
+                log::info!("Found OTA partition: {:?} at offset 0x{:x}, size: {} bytes", 
+                    label, partition.address, partition.size);
+            }
         }
         
         Ok(Self {

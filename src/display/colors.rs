@@ -17,4 +17,10 @@ pub const TEXT_SECONDARY: u16 = 0xBDF7;
 pub const BORDER_COLOR: u16 = 0x4208;
 pub const ACCENT_ORANGE: u16 = 0xC260;
 
-// Helper functions removed - not used
+// UI Element Colors
+pub const SURFACE_DARK: u16 = 0x10A2;
+
+// Helper function to create RGB565 color from RGB values
+pub fn rgb565(r: u8, g: u8, b: u8) -> u16 {
+    ((r as u16 & 0xF8) << 8) | ((g as u16 & 0xFC) << 3) | ((b as u16 & 0xF8) >> 3)
+}

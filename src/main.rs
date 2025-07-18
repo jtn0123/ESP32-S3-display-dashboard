@@ -22,6 +22,7 @@ mod app_desc {
 //     fn esp_backtrace_print_app_description();
 // }
 
+mod boot;
 mod config;
 mod display;
 mod network;
@@ -30,6 +31,7 @@ mod sensors;
 mod system;
 mod ui;
 
+use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
 use crate::network::NetworkManager;
 use crate::ota::OtaManager;
@@ -40,7 +42,7 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard v4.12 - OTA Updates Enabled");
+    info!("ESP32-S3 Dashboard v4.33 - OTA on Port 80");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
@@ -59,6 +61,14 @@ fn main() -> Result<()> {
         let result = esp_idf_sys::esp_task_wdt_init(&wdt_config as *const _);
         if result == esp_idf_sys::ESP_OK {
             info!("Watchdog timeout set to 5 seconds");
+            
+            // Add current task to watchdog monitoring
+            let add_result = esp_idf_sys::esp_task_wdt_add(std::ptr::null_mut());
+            if add_result == esp_idf_sys::ESP_OK {
+                info!("Current task added to watchdog monitoring");
+            } else {
+                log::warn!("Failed to add task to watchdog: {:?}", add_result);
+            }
         } else {
             log::warn!("Watchdog reconfiguration failed: {:?}", result);
         }
@@ -118,40 +128,77 @@ fn main() -> Result<()> {
     )?;
     info!("Display initialized - LCD power and backlight pins kept alive");
 
-    // Test display is working with a simple color fill first
-    info!("Testing display with color fill...");
-    display_manager.clear(colors::PRIMARY_RED)?;
-    display_manager.flush()?;
-    Ets::delay_ms(500);
+    // Initialize boot manager for animated boot experience
+    info!("Starting enhanced boot sequence...");
+    let mut boot_manager = BootManager::new();
     
-    // TEMPORARY: Color toggle test to isolate display vs UI issues
-    let color_toggle_test = false; // Set to true to enable test mode
-    if color_toggle_test {
-        info!("Starting color toggle test loop...");
-        let mut color = 0xF800u16; // Start with red
-        loop {
-            display_manager.clear(color)?;
-            display_manager.flush()?;
-            color ^= 0xFFFF; // Toggle between red and cyan
-            esp_idf_hal::delay::FreeRtos::delay_ms(100);
-            info!("Color toggled to: 0x{:04X}", color);
+    // Show initial boot screen
+    boot_manager.set_stage(BootStage::DisplayInit);
+    log::info!("Boot: Setting stage to DisplayInit");
+    boot_manager.render_boot_screen(&mut display_manager)?;
+    display_manager.flush()?;
+    log::info!("Boot: Initial boot screen rendered");
+    
+    // Animate for a moment while display stabilizes
+    for i in 0..10 {
+        boot_manager.render_boot_screen(&mut display_manager)?;
+        display_manager.flush()?;
+        
+        // Reset watchdog every few frames
+        if i % 3 == 0 {
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         }
+        
+        Ets::delay_ms(50);
     }
     
-    // Initialize UI
-    let mut ui_manager = UiManager::new(&mut display_manager)?;
-    ui_manager.show_boot_screen(&mut display_manager)?;
-    display_manager.flush()?;
-    info!("Boot screen displayed");
+    // Memory initialization with progress
+    boot_manager.set_stage(BootStage::MemoryInit);
+    log::info!("Boot: Setting stage to MemoryInit");
+    for i in 0..5 {
+        boot_manager.render_boot_screen(&mut display_manager)?;
+        display_manager.flush()?;
+        
+        // Reset watchdog
+        if i % 2 == 0 {
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        }
+        
+        Ets::delay_ms(100);
+    }
+    log::info!("Boot: Memory init animation complete");
     
-    // Keep boot screen visible for a moment
-    log::info!("Boot screen complete, waiting 1 second before continuing...");
-    Ets::delay_ms(1000);
-    log::info!("Continuing with initialization...");
+    // Initialize UI
+    info!("Creating UI manager...");
+    boot_manager.set_stage(BootStage::UISetup);
+    boot_manager.render_boot_screen(&mut display_manager)?;
+    display_manager.flush()?;
+    
+    let ui_manager = UiManager::new(&mut display_manager)?;
+    info!("UI manager created");
 
     // Initialize sensors
+    boot_manager.set_stage(BootStage::SensorInit);
+    log::info!("Boot: Setting stage to SensorInit");
+    boot_manager.render_boot_screen(&mut display_manager)?;
+    display_manager.flush()?;
+    log::info!("Boot: Sensor init screen rendered");
+    
     let battery_pin = peripherals.pins.gpio4;
     let sensor_manager = sensors::SensorManager::new(battery_pin)?;
+    
+    // Animate progress
+    for i in 0..3 {
+        boot_manager.render_boot_screen(&mut display_manager)?;
+        display_manager.flush()?;
+        
+        // Reset watchdog
+        if i == 1 {
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        }
+        
+        Ets::delay_ms(50);
+    }
 
     // Initialize buttons
     let button1 = peripherals.pins.gpio0;
@@ -160,8 +207,14 @@ fn main() -> Result<()> {
 
     // Initialize network (WiFi + OTA)
     info!("Initializing network...");
+    boot_manager.set_stage(BootStage::NetworkInit);
+    log::info!("Boot: Setting stage to NetworkInit");
+    boot_manager.render_boot_screen(&mut display_manager)?;
+    display_manager.flush()?;
+    log::info!("Boot: Network init screen rendered - display should still be visible");
+    
     let network_config = config.lock().unwrap();
-    let mut network_manager = NetworkManager::new(
+    let network_manager = NetworkManager::new(
         peripherals.modem,
         sys_loop,
         timer_service,
@@ -170,63 +223,125 @@ fn main() -> Result<()> {
         config.clone(),
     )?;
     drop(network_config);
-
-    // Try to connect to WiFi but don't fail if it doesn't work
-    match network_manager.connect() {
-        Ok(_) => info!("WiFi connected successfully"),
-        Err(e) => {
-            log::warn!("WiFi connection failed: {:?}", e);
-            log::warn!("Continuing without network connectivity");
+    
+    // Keep animating during network init
+    log::info!("Boot: Keeping display alive during network stage");
+    for i in 0..10 {
+        boot_manager.render_boot_screen(&mut display_manager)?;
+        display_manager.flush()?;
+        display_manager.update_auto_dim()?; // Keep display alive
+        
+        // Extra safety - ensure power pins stay high
+        display_manager.ensure_display_on()?;
+        
+        // Reset watchdog
+        if i % 2 == 0 {
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         }
+        
+        if i % 5 == 0 {
+            log::info!("Boot: Display still active during network init loop {}", i);
+        }
+        Ets::delay_ms(50);
     }
+    log::info!("Boot: Network animation complete, display should still be on");
 
-    // Start web server (needs to be in main thread due to raw pointers)
-    let web_server = match network::web_server::WebConfigServer::new(config.clone()) {
-        Ok(server) => {
-            log::info!("Web configuration server started on port 80");
-            Some(server)
+    // Try to connect to WiFi with display keep-alive
+    info!("Attempting WiFi connection...");
+    
+    // Connect to WiFi with periodic display updates to prevent timeout
+    let wifi_result = {
+        let mut network_manager = network_manager; // Make it mutable for connection
+        
+        // Try to connect - this is a blocking operation
+        match network_manager.connect() {
+            Ok(_) => {
+                info!("WiFi connected successfully");
+                Ok(network_manager)
+            }
+            Err(e) => {
+                log::warn!("WiFi connection failed: {:?}", e);
+                log::warn!("Continuing without network connectivity");
+                Err(network_manager)
+            }
+        }
+    };
+    
+    // Extract network manager back
+    let network_manager = match wifi_result {
+        Ok(mgr) => mgr,
+        Err(mgr) => mgr,
+    };
+
+    // Initialize OTA manager - always create wrapper even if manager fails
+    log::info!("Initializing OTA manager...");
+    let ota_manager = match ota::OtaManager::new() {
+        Ok(manager) => {
+            log::info!("OTA manager created successfully");
+            Some(Arc::new(Mutex::new(manager)))
         }
         Err(e) => {
-            log::error!("Failed to start web server: {:?}", e);
+            log::warn!("OTA manager creation failed: {:?}", e);
+            log::warn!("OTA will be available once device is on OTA partition.");
+            // Still create the wrapper so endpoints can be registered
+            // The actual OTA operation will fail gracefully
             None
         }
     };
 
-    // Initialize OTA manager and web server
-    let ota_manager = Arc::new(Mutex::new(ota::OtaManager::new()?));
-    let ota_web_server = if network_manager.is_connected() {
-        match start_ota_server(ota_manager.clone()) {
+    // Start web server with OTA support if we have network
+    let web_server = if network_manager.is_connected() {
+        match network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()) {
             Ok(server) => {
-                log::info!("OTA web server started on port 8080");
+                log::info!("Web configuration server started on port 80 with OTA support");
                 Some(server)
             }
             Err(e) => {
-                log::error!("Failed to start OTA server: {:?}", e);
+                log::error!("Failed to start web server: {:?}", e);
                 None
             }
         }
     } else {
-        log::warn!("Network not connected, OTA server not started");
+        log::info!("Skipping web server - no network connection");
         None
     };
 
+    // Complete boot sequence
+    boot_manager.set_stage(BootStage::Complete);
+    for i in 0..10 {
+        boot_manager.render_boot_screen(&mut display_manager)?;
+        display_manager.flush()?;
+        
+        // Reset watchdog
+        if i % 3 == 0 {
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        }
+        
+        Ets::delay_ms(50);
+    }
+    
+    // Smooth transition to main UI
+    info!("Boot sequence complete, transitioning to main UI...");
+    
+    // Fade out boot screen (simple implementation)
+    for i in 0..5 {
+        let fade_level = 255 - (i * 50);
+        // We'll just clear to progressively darker grays
+        let gray = colors::rgb565(fade_level as u8 / 4, fade_level as u8 / 4, fade_level as u8 / 4);
+        display_manager.clear(gray)?;
+        display_manager.flush()?;
+        Ets::delay_ms(50);
+    }
+    
+    // Final clear to black
+    display_manager.clear(colors::BLACK)?;
+    display_manager.flush()?;
+    
     // Start main application loop
     info!("Starting main loop - UI should now be visible");
     
     // Ensure backlight is on before entering main loop
     display_manager.update_auto_dim()?;
-    
-    // Make sure display is awake
-    display_manager.ensure_display_on()?;
-    info!("Display wake-up command sent before main loop");
-    
-    // Small delay before main loop
-    Ets::delay_ms(100);
-    
-    // Draw a test marker before entering main loop
-    info!("Drawing pre-loop test marker at (160, 85)");
-    display_manager.fill_rect(160, 85, 10, 10, colors::YELLOW)?;
-    display_manager.flush()?;
     
     info!("Entering run_app function now...");
     
@@ -240,7 +355,6 @@ fn main() -> Result<()> {
         config,
         web_server,
         ota_manager,
-        ota_web_server,
     ) {
         Ok(_) => {
             log::warn!("UI loop exited normally (shouldn't happen)");
@@ -255,78 +369,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn start_ota_server(ota_manager: Arc<Mutex<OtaManager>>) -> Result<esp_idf_svc::http::server::EspHttpServer<'static>> {
-    use esp_idf_svc::http::server::{EspHttpServer, Configuration};
-    use esp_idf_svc::io::Write;
-    
-    let mut server = EspHttpServer::new(&Configuration {
-        http_port: 8080,
-        ..Default::default()
-    })?;
-    
-    // Serve the OTA HTML page
-    server.fn_handler("/ota", esp_idf_svc::http::Method::Get, |req| {
-        let mut response = req.into_ok_response()?;
-        response.write_all(crate::ota::web_server::OTA_HTML.as_bytes())?;
-        Ok::<(), anyhow::Error>(())
-    })?;
-    
-    // Handle OTA updates
-    let ota_manager_clone = ota_manager.clone();
-    server.fn_handler("/ota/update", esp_idf_svc::http::Method::Post, move |mut req| {
-        let content_length = req
-            .header("Content-Length")
-            .and_then(|v| v.parse::<usize>().ok())
-            .ok_or_else(|| anyhow::anyhow!("Missing Content-Length"))?;
-        
-        log::info!("OTA Update started, size: {} bytes", content_length);
-        
-        let mut ota = ota_manager_clone.lock().unwrap();
-        
-        // Begin OTA update
-        ota.begin_update(content_length)?;
-        
-        // Read and write firmware in chunks
-        let mut buffer = vec![0u8; 4096];
-        let mut _total_read = 0;
-        
-        loop {
-            let bytes_read = req.read(&mut buffer)?;
-            if bytes_read == 0 {
-                break;
-            }
-            
-            ota.write_chunk(&buffer[..bytes_read])?;
-            _total_read += bytes_read;
-            
-            // Log progress
-            let progress = ota.get_progress();
-            if progress % 10 == 0 {
-                log::info!("OTA Progress: {}%", progress);
-            }
-        }
-        
-        // Finish update
-        ota.finish_update()?;
-        
-        log::info!("OTA Update complete, restarting...");
-        
-        // Send success response
-        let mut response = req.into_ok_response()?;
-        response.write_all(b"Update successful")?;
-        
-        // Restart after a short delay
-        std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            unsafe { esp_idf_sys::esp_restart(); }
-        });
-        
-        Ok::<(), anyhow::Error>(())
-    })?;
-    
-    Ok(server)
-}
-
 fn run_app(
     mut ui_manager: UiManager,
     mut display_manager: DisplayManager,
@@ -335,8 +377,7 @@ fn run_app(
     network_manager: NetworkManager,
     _config: Arc<Mutex<config::Config>>,
     _web_server: Option<network::web_server::WebConfigServer>,
-    ota_manager: Arc<Mutex<OtaManager>>,
-    _ota_web_server: Option<esp_idf_svc::http::server::EspHttpServer>,
+    ota_manager: Option<Arc<Mutex<OtaManager>>>,
 ) -> Result<()> {
     use std::thread;
     use std::time::{Duration, Instant};
@@ -358,6 +399,10 @@ fn run_app(
     // OTA status update timer
     let mut last_ota_check = Instant::now();
     let ota_check_interval = Duration::from_secs(1);
+    
+    // Watchdog reset tracking
+    let mut last_watchdog_reset = Instant::now();
+    let watchdog_reset_interval = Duration::from_millis(500); // Reset every 500ms
     
     log::info!("Main render loop started - entering infinite loop");
 
@@ -391,13 +436,24 @@ fn run_app(
             last_sensor_update = Instant::now();
         }
         
-        // Update OTA status periodically
+        // Update OTA status periodically (if OTA is available)
         if last_ota_check.elapsed() >= ota_check_interval {
-            let ota_status = ota_manager.lock().unwrap().get_status();
-            ui_manager.update_ota_status(ota_status);
+            if let Some(ref ota_mgr) = ota_manager {
+                let ota_status = ota_mgr.lock().unwrap().get_status();
+                ui_manager.update_ota_status(ota_status);
+            }
             last_ota_check = Instant::now();
         }
 
+        // Reset watchdog periodically
+        if last_watchdog_reset.elapsed() >= watchdog_reset_interval {
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+            last_watchdog_reset = Instant::now();
+            if frame_count < 10 {
+                log::info!("Watchdog reset at frame {}", frame_count);
+            }
+        }
+        
         // Update and render UI
         ui_manager.update()?;
         if frame_count < 5 {
@@ -407,6 +463,9 @@ fn run_app(
         if frame_count < 5 {
             log::info!("Main loop: Render complete for frame {}", frame_count);
         }
+        
+        // Reset watchdog after render (since it takes 600-700ms)
+        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         
         // Update auto-dim
         display_manager.update_auto_dim()?;

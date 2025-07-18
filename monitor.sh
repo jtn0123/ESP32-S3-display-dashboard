@@ -1,12 +1,11 @@
-#!/bin/bash
+#\!/bin/bash
+# Simple monitor script for ESP32-S3
 
-# Simple serial monitor for ESP32
-PORT=${1:-/dev/cu.usbmodem101}
-BAUD=${2:-115200}
-
-echo "Monitoring $PORT at $BAUD baud..."
-echo "Press Ctrl+A then K to exit"
+PORT="${1:-/dev/cu.usbmodem101}"
+echo "Monitoring $PORT at 115200 baud..."
+echo "Press Ctrl+C to exit"
+echo "================================"
 
 # Use cat to read from serial port
-stty -f $PORT $BAUD cs8 -parenb -cstopb
+stty -f $PORT 115200 raw -echo
 cat $PORT

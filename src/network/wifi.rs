@@ -48,12 +48,20 @@ impl WifiManager {
         })
     }
 
+    #[allow(dead_code)]
     pub fn connect(&mut self) -> Result<()> {
         log::info!("Starting WiFi...");
         self.wifi.start()?;
 
         log::info!("Scanning for networks...");
+        
+        // Reset watchdog before scan (scan can take 4+ seconds)
+        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        
         let ap_infos = self.wifi.scan()?;
+        
+        // Reset watchdog after scan
+        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         
         let mut found = false;
         for ap in ap_infos.iter() {
@@ -72,7 +80,14 @@ impl WifiManager {
         self.wifi.connect()?;
 
         log::info!("Waiting for DHCP...");
+        
+        // Reset watchdog before potentially long DHCP wait
+        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        
         self.wifi.wait_netif_up()?;
+        
+        // Reset watchdog after DHCP complete
+        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
 
         log::info!("WiFi connected!");
         
