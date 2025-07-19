@@ -232,6 +232,34 @@ impl WebConfigServer {
                 }
             })?;
             
+            // OTA status endpoint
+            let ota_manager_clone3 = ota_manager.clone();
+            server.fn_handler("/api/ota/status", esp_idf_svc::http::Method::Get, move |req| {
+                let status_json = if let Some(ref ota_mgr) = ota_manager_clone3 {
+                    let ota = ota_mgr.lock().unwrap();
+                    let status = ota.get_status();
+                    match status {
+                        crate::ota::OtaStatus::Idle => r#"{"status":"idle"}"#.to_string(),
+                        crate::ota::OtaStatus::Downloading { progress } => {
+                            format!(r#"{{"status":"downloading","progress":{}}}"#, progress)
+                        },
+                        crate::ota::OtaStatus::Verifying => r#"{"status":"verifying"}"#.to_string(),
+                        crate::ota::OtaStatus::Ready => r#"{"status":"ready"}"#.to_string(),
+                        crate::ota::OtaStatus::Failed => r#"{"status":"failed"}"#.to_string(),
+                    }
+                } else {
+                    r#"{"status":"unavailable","message":"OTA not available on factory partition"}"#.to_string()
+                };
+                
+                let mut response = req.into_response(
+                    200,
+                    Some("OK"),
+                    &[("Content-Type", "application/json")]
+                )?;
+                response.write_all(status_json.as_bytes())?;
+                Ok::<(), anyhow::Error>(())
+            })?;
+            
             log::info!("OTA endpoints registered on main web server");
         }
 

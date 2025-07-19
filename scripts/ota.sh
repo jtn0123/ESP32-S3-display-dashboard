@@ -47,12 +47,59 @@ upload_firmware() {
         return 1
     fi
     
+    # Get device info before update
+    local old_version=$(get_device_info "$ip")
+    local old_uptime=$(curl -s "http://${ip}:${PORT}/api/system" 2>/dev/null | grep -o '"uptime_ms":[0-9]*' | cut -d':' -f2)
+    
+    # Check if it's an ELF file and convert to binary if needed
+    if file "$firmware" | grep -q "ELF"; then
+        print_color "$YELLOW" "🔄 Converting ELF to binary format..."
+        local binary_firmware="${firmware}.bin"
+        
+        # Find esptool.py
+        if [ -f ".embuild/espressif/python_env/idf5.3_py3.13_env/bin/esptool.py" ]; then
+            ESPTOOL=".embuild/espressif/python_env/idf5.3_py3.13_env/bin/esptool.py"
+        elif [ -f "$HOME/.espressif/python_env/idf5.3_py3.13_env/bin/esptool.py" ]; then
+            ESPTOOL="$HOME/.espressif/python_env/idf5.3_py3.13_env/bin/esptool.py"
+        else
+            print_color "$RED" "❌ esptool.py not found for ELF conversion"
+            return 1
+        fi
+        
+        # Convert ELF to binary
+        $ESPTOOL --chip esp32s3 elf2image --flash_mode dio --flash_freq 40m --flash_size 16MB "$firmware" -o "$binary_firmware" >/dev/null 2>&1
+        
+        if [ ! -f "$binary_firmware" ]; then
+            print_color "$RED" "❌ Failed to convert ELF to binary"
+            return 1
+        fi
+        
+        firmware="$binary_firmware"
+        print_color "$GREEN" "✅ Binary conversion successful"
+    fi
+    
     local size=$(stat -f%z "$firmware" 2>/dev/null || stat -c%s "$firmware" 2>/dev/null)
     local size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
     
-    print_color "$BLUE" "📤 Updating device at $ip"
-    echo "   Firmware: $size bytes (${size_mb} MB)"
-    echo -n "   Uploading..."
+    print_color "$BLUE" "\n📡 OTA Update Process"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📍 Target device: $ip"
+    echo "📦 Firmware size: ${size_mb} MB ($size bytes)"
+    echo "🏷️  Current version: ${old_version:-unknown}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Start upload with progress indicator
+    print_color "$YELLOW" "⬆️  Uploading firmware..."
+    
+    # Show progress bar during upload
+    (
+        while true; do
+            echo -n "."
+            sleep 1
+        done
+    ) &
+    PROGRESS_PID=$!
     
     # Upload with curl and capture response
     response=$(curl -X POST \
@@ -60,30 +107,92 @@ upload_firmware() {
         --data-binary "@$firmware" \
         --connect-timeout 5 \
         --max-time 60 \
-        -w "\n|||HTTP_CODE:%{http_code}|||" \
+        -w "\n|||HTTP_CODE:%{http_code}|||TIME:%{time_total}|||" \
         -s \
         "http://${ip}:${PORT}/ota/update" 2>&1)
     
+    # Stop progress indicator
+    kill $PROGRESS_PID 2>/dev/null
+    echo "" # New line after dots
+    
     http_code=$(echo "$response" | grep -o "|||HTTP_CODE:[0-9]*|||" | sed 's/|||HTTP_CODE://g' | sed 's/|||//g')
-    body=$(echo "$response" | sed 's/|||HTTP_CODE:[0-9]*|||//g')
+    upload_time=$(echo "$response" | grep -o "|||TIME:[0-9.]*|||" | sed 's/|||TIME://g' | sed 's/|||//g')
+    body=$(echo "$response" | sed 's/|||HTTP_CODE:[0-9]*|||//g' | sed 's/|||TIME:[0-9.]*|||//g')
+    
+    # Clean up temporary binary if we created one
+    if [[ "$firmware" == *.bin ]] && [[ -f "${firmware%.bin}" ]]; then
+        rm -f "$firmware"
+    fi
     
     if [ "$http_code" = "200" ]; then
-        print_color "$GREEN" "\r   ✅ Upload successful! Device will restart."
+        print_color "$GREEN" "✅ Upload successful! (${upload_time}s)"
+        print_color "$YELLOW" "\n🔄 Device is restarting..."
+        
+        # Wait for device to restart
+        sleep 3
+        
+        # Check if device is back online
+        print_color "$BLUE" "🔍 Verifying update..."
+        local retries=0
+        local max_retries=10
+        local device_online=false
+        
+        while [ $retries -lt $max_retries ]; do
+            if curl -s --connect-timeout 1 "http://${ip}:${PORT}/api/system" >/dev/null 2>&1; then
+                device_online=true
+                break
+            fi
+            ((retries++))
+            echo -n "."
+            sleep 2
+        done
+        echo ""
+        
+        if [ "$device_online" = true ]; then
+            # Get new device info
+            local new_version=$(get_device_info "$ip")
+            local new_uptime=$(curl -s "http://${ip}:${PORT}/api/system" 2>/dev/null | grep -o '"uptime_ms":[0-9]*' | cut -d':' -f2)
+            
+            print_color "$GREEN" "\n✨ OTA Update Complete!"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📍 Device: $ip"
+            echo "🏷️  Version: ${new_version:-unknown}"
+            if [ -n "$new_uptime" ] && [ "$new_uptime" -lt 60000 ]; then
+                print_color "$GREEN" "✅ Device successfully restarted"
+                echo "⏱️  Uptime: $(($new_uptime / 1000))s (fresh boot)"
+            fi
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        else
+            print_color "$YELLOW" "⚠️  Device is still restarting or may need manual check"
+            echo "   Try accessing: http://${ip}/"
+        fi
+        
         return 0
     else
-        print_color "$RED" "\r   ❌ Upload failed! (HTTP $http_code)"
+        print_color "$RED" "\n❌ Upload failed! (HTTP $http_code)"
+        echo ""
         if [ "$http_code" = "503" ]; then
-            echo "   Device is running from factory partition."
-            echo "   Flash one more time via USB to enable OTA updates."
-            echo "   After that, wireless updates will work!"
+            print_color "$YELLOW" "📋 Diagnosis: OTA Not Available"
+            echo "   • Device is running from factory partition"
+            echo "   • Flash one more time via USB to enable OTA"
+            echo "   • After that, wireless updates will work!"
         elif [ "$http_code" = "500" ]; then
-            echo "   Server error: $body"
-            echo "   This often means the firmware is too large for the partition."
-            echo "   Current firmware size: ${size_mb} MB"
+            print_color "$YELLOW" "📋 Diagnosis: Server Error"
+            echo "   • Error: $body"
+            echo "   • Current firmware size: ${size_mb} MB"
+            echo "   • Partition limit: 1.5 MB"
+            if (( $(echo "$size_mb > 1.5" | bc -l) )); then
+                print_color "$RED" "   ⚠️  Firmware exceeds partition size!"
+            fi
         elif [ "$http_code" = "404" ]; then
-            echo "   OTA endpoint not found. Update firmware via USB."
+            print_color "$YELLOW" "📋 Diagnosis: Endpoint Not Found"
+            echo "   • OTA endpoint not available"
+            echo "   • Update firmware via USB"
         elif [ "$http_code" = "" ]; then
-            echo "   Connection failed. Check if device is online."
+            print_color "$YELLOW" "📋 Diagnosis: Connection Failed"
+            echo "   • Could not connect to $ip"
+            echo "   • Check if device is powered on"
+            echo "   • Verify network connectivity"
         fi
         return 1
     fi
@@ -144,10 +253,10 @@ echo "==========================="
 
 case "${1:-help}" in
     find)
-        # Quick find - tries common IPs first
+        # Quick find - tries common IPs first, then mDNS, then limited scan
         print_color "$BLUE" "🔍 Quick scan for ESP32 devices..."
         
-        # Try common device IPs first
+        # Try common device IPs first (very fast)
         for ip in "10.27.27.201" "192.168.1.201" "192.168.0.201" "10.0.0.201"; do
             if check_device "$ip"; then
                 version=$(get_device_info "$ip")
@@ -157,21 +266,63 @@ case "${1:-help}" in
             fi
         done
         
-        # If not found, scan current subnet
-        subnet=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | head -1 | awk '{print $2}' | cut -d. -f1-3)
-        print_color "$YELLOW" "Scanning subnet ${subnet}.0/24..."
+        # Try mDNS discovery (3 second timeout)
+        if command -v dns-sd >/dev/null 2>&1; then
+            print_color "$YELLOW" "Checking mDNS (3 seconds)..."
+            
+            # Run dns-sd in background and kill after 3 seconds
+            dns-sd -B _http._tcp > /tmp/mdns_scan.txt 2>&1 &
+            MDNS_PID=$!
+            sleep 3
+            kill $MDNS_PID 2>/dev/null || true
+            
+            # Check for esp32 devices
+            MDNS_DEVICES=$(grep "esp32-display" /tmp/mdns_scan.txt 2>/dev/null | awk '{print $7}' || true)
+            rm -f /tmp/mdns_scan.txt
+            
+            if [ -n "$MDNS_DEVICES" ]; then
+                for device in $MDNS_DEVICES; do
+                    # Resolve the hostname to IP
+                    IP=$(timeout 1 dscacheutil -q host -a name "${device}.local" 2>/dev/null | grep "ip_address" | awk '{print $2}' | head -1 || true)
+                    if [ -n "$IP" ]; then
+                        version=$(get_device_info "$IP")
+                        print_color "$GREEN" "✓ Found via mDNS: $device at $IP (v${version:-unknown})"
+                        echo "  To update: $0 $IP"
+                        exit 0
+                    fi
+                done
+            fi
+        fi
         
-        for i in {1..254}; do
-            if check_device "${subnet}.${i}"; then
-                version=$(get_device_info "${subnet}.${i}")
-                print_color "$GREEN" "✓ Found device at: ${subnet}.${i} (v${version:-unknown})"
-                echo "  To update: $0 ${subnet}.${i}"
-                exit 0
+        # Limited subnet scan - only scan first 20 IPs and common DHCP ranges
+        subnet=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | head -1 | awk '{print $2}' | cut -d. -f1-3)
+        print_color "$YELLOW" "Quick scan of common IPs on ${subnet}.0/24..."
+        
+        # Only scan .1-20 and .100-120 (common DHCP ranges)
+        scan_count=0
+        for i in {1..20} {100..120}; do
+            if timeout 0.2 bash -c "echo > /dev/tcp/${subnet}.${i}/80" 2>/dev/null; then
+                if check_device "${subnet}.${i}"; then
+                    version=$(get_device_info "${subnet}.${i}")
+                    print_color "$GREEN" "✓ Found device at: ${subnet}.${i} (v${version:-unknown})"
+                    echo "  To update: $0 ${subnet}.${i}"
+                    exit 0
+                fi
+            fi
+            
+            # Show progress dots
+            ((scan_count++))
+            if [ $((scan_count % 10)) -eq 0 ]; then
+                echo -n "."
             fi
         done
+        echo ""
         
-        print_color "$RED" "❌ No ESP32 devices found"
-        echo "Make sure your device is powered on and connected to the same network"
+        print_color "$RED" "❌ No ESP32 devices found in quick scan"
+        echo "Try:"
+        echo "  1. Specify IP directly: $0 192.168.1.x"
+        echo "  2. Full network scan: $0 scan"
+        echo "  3. Check device is powered on and connected to WiFi"
         ;;
         
     scan)

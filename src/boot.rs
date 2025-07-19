@@ -124,7 +124,7 @@ impl BootManager {
         display.draw_text_centered(progress_y + 45, &format!("{}%", stage.progress()), percent_color, None, 1)?;
         
         // Version and build info at bottom
-        display.draw_text_centered(155, "v4.31", TEXT_SECONDARY, None, 1)?;
+        display.draw_text_centered(155, crate::version::DISPLAY_VERSION, TEXT_SECONDARY, None, 1)?;
         
         // Animated dots for "loading" effect
         if stage.progress() < 100 {

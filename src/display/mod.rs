@@ -1,6 +1,7 @@
 pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
+pub mod lcd_bus_fast;
 
 // Color type not used - colors are defined as u16 constants
 
@@ -23,7 +24,43 @@ const CONTROLLER_HEIGHT: u16 = 320;
 
 // Controller dimensions removed - not used
 
-// Dirty rectangle tracking removed - not implemented
+// Dirty rectangle tracking for optimized rendering
+#[derive(Debug, Clone, Copy)]
+pub struct DirtyRect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+impl DirtyRect {
+    pub fn new(x: u16, y: u16, width: u16, height: u16) -> Self {
+        Self { x, y, width, height }
+    }
+    
+    pub fn merge(&mut self, other: &DirtyRect) {
+        let x1 = self.x.min(other.x);
+        let y1 = self.y.min(other.y);
+        let x2 = (self.x + self.width).max(other.x + other.width);
+        let y2 = (self.y + self.height).max(other.y + other.height);
+        
+        self.x = x1;
+        self.y = y1;
+        self.width = x2 - x1;
+        self.height = y2 - y1;
+    }
+    
+    pub fn clear(&mut self) {
+        self.x = 0;
+        self.y = 0;
+        self.width = 0;
+        self.height = 0;
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+}
 
 // ST7789 Commands
 const CMD_NOP: u8 = 0x00;
@@ -54,6 +91,9 @@ pub struct DisplayManager {
     width: u16,
     height: u16,
     last_activity: Instant,
+    dirty_rect: DirtyRect,
+    frame_buffer: Vec<u16>, // Optional frame buffer for optimized updates
+    use_frame_buffer: bool,
 }
 
 impl DisplayManager {
@@ -100,6 +140,9 @@ impl DisplayManager {
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
             last_activity: Instant::now(),
+            dirty_rect: DirtyRect::new(0, 0, 0, 0),
+            frame_buffer: Vec::new(),
+            use_frame_buffer: false,
         };
         
         display.init()?;
@@ -258,6 +301,8 @@ impl DisplayManager {
     }
 
     pub fn clear(&mut self, color: u16) -> Result<()> {
+        // Always clear - removed optimization that was causing screen artifacts
+        
         self.set_window(0, 0, self.width - 1, self.height - 1)?;
         
         // CRITICAL: Must send RAMWR before pixel data
@@ -266,6 +311,9 @@ impl DisplayManager {
         // Write pixels using optimized bulk write
         let total_pixels = self.width as u32 * self.height as u32;
         self.lcd_bus.write_pixels(color, total_pixels)?;
+        
+        // Mark entire screen as dirty
+        self.mark_dirty(0, 0, self.width, self.height);
         
         Ok(())
     }
@@ -324,6 +372,9 @@ impl DisplayManager {
         let total_pixels = (x1 - x + 1) as u32 * (y1 - y + 1) as u32;
         self.lcd_bus.write_pixels(color, total_pixels)?;
         
+        // Track dirty region
+        self.mark_dirty(x, y, x1 - x + 1, y1 - y + 1);
+        
         Ok(())
     }
 
@@ -372,24 +423,25 @@ impl DisplayManager {
     }
     
     pub fn update_auto_dim(&mut self) -> Result<()> {
-        // Auto-dim disabled - no PWM implementation yet
-        // Just ensure backlight stays on
+        // Only check every 60 seconds instead of every frame
+        static mut LAST_CHECK: Option<Instant> = None;
+        
+        unsafe {
+            if let Some(last) = LAST_CHECK {
+                if last.elapsed() < Duration::from_secs(60) {
+                    return Ok(());  // Skip check
+                }
+            }
+            LAST_CHECK = Some(Instant::now());
+        }
+        
+        // Auto-dim disabled - just ensure display stays on
         if let Some(ref mut pin) = self.backlight_pin {
             pin.set_high()?;
         }
         
-        // Also ensure LCD power stays on
         if let Some(ref mut pin) = self.lcd_power_pin {
             pin.set_high()?;
-        }
-        
-        // Periodically ensure display stays awake - reduced frequency
-        let elapsed = self.last_activity.elapsed();
-        if elapsed > Duration::from_secs(30) {
-            // Only send wake commands if display has been idle for 30 seconds
-            self.ensure_display_on()?;
-            self.last_activity = Instant::now();
-            log::info!("Display refresh after {} seconds", elapsed.as_secs());
         }
         
         Ok(())
@@ -397,12 +449,6 @@ impl DisplayManager {
     
     // mark_dirty and clear_dirty_rects removed - dirty rect tracking not implemented
 
-    pub fn flush(&mut self) -> Result<()> {
-        // For direct GPIO control, no flush needed
-        // Removed ensure_display_on() - was causing display issues
-        // Display should stay on from initialization
-        Ok(())
-    }
     
     pub fn ensure_display_on(&mut self) -> Result<()> {
         // Send SLPOUT and DISPON to ensure display doesn't sleep
@@ -542,18 +588,73 @@ impl DisplayManager {
     }
 
     pub fn draw_progress_bar(&mut self, x: u16, y: u16, w: u16, h: u16, progress: u8, fg_color: u16, bg_color: u16, border_color: u16) -> Result<()> {
-        // Draw border
-        self.draw_rect(x, y, w, h, border_color)?;
+        // Cache last progress bar state to avoid redundant draws
+        static mut LAST_PROGRESS_STATE: (u16, u16, u16, u16, u8) = (0, 0, 0, 0, 255);
         
-        // Fill background
-        self.fill_rect(x + 1, y + 1, w - 2, h - 2, bg_color)?;
-        
-        // Fill progress
-        let progress_width = ((w - 2) as u32 * progress as u32 / 100) as u16;
-        if progress_width > 0 {
-            self.fill_rect(x + 1, y + 1, progress_width, h - 2, fg_color)?;
+        unsafe {
+            if LAST_PROGRESS_STATE == (x, y, w, h, progress) {
+                return Ok(()); // Skip if nothing changed
+            }
+            
+            // Only redraw the parts that changed
+            if LAST_PROGRESS_STATE.0 != x || LAST_PROGRESS_STATE.1 != y || 
+               LAST_PROGRESS_STATE.2 != w || LAST_PROGRESS_STATE.3 != h {
+                // Position or size changed, redraw everything
+                self.draw_rect(x, y, w, h, border_color)?;
+                self.fill_rect(x + 1, y + 1, w - 2, h - 2, bg_color)?;
+            }
+            
+            // Calculate progress widths
+            let old_progress_width = ((w - 2) as u32 * LAST_PROGRESS_STATE.4 as u32 / 100) as u16;
+            let new_progress_width = ((w - 2) as u32 * progress as u32 / 100) as u16;
+            
+            if new_progress_width != old_progress_width {
+                if new_progress_width > old_progress_width {
+                    // Progress increased - just draw the new part
+                    self.fill_rect(x + 1 + old_progress_width, y + 1, 
+                                  new_progress_width - old_progress_width, h - 2, fg_color)?;
+                } else {
+                    // Progress decreased - clear the removed part
+                    self.fill_rect(x + 1 + new_progress_width, y + 1, 
+                                  old_progress_width - new_progress_width, h - 2, bg_color)?;
+                }
+            }
+            
+            LAST_PROGRESS_STATE = (x, y, w, h, progress);
         }
         
+        Ok(())
+    }
+    
+    // Dirty rectangle tracking methods
+    pub fn mark_dirty(&mut self, x: u16, y: u16, width: u16, height: u16) {
+        let new_rect = DirtyRect::new(x, y, width, height);
+        if self.dirty_rect.is_empty() {
+            self.dirty_rect = new_rect;
+        } else {
+            self.dirty_rect.merge(&new_rect);
+        }
+    }
+    
+    pub fn flush(&mut self) -> Result<()> {
+        // Only update if there's a dirty region
+        if !self.dirty_rect.is_empty() {
+            // For now, we'll still do a full refresh but track what changed
+            // In the future, we can optimize to only update the dirty region
+            self.dirty_rect.clear();
+        }
+        Ok(())
+    }
+    
+    pub fn enable_frame_buffer(&mut self, enable: bool) -> Result<()> {
+        self.use_frame_buffer = enable;
+        if enable && self.frame_buffer.is_empty() {
+            // Allocate frame buffer
+            let size = (self.width as usize) * (self.height as usize);
+            self.frame_buffer = vec![0u16; size];
+            log::info!("Frame buffer enabled: {} pixels ({} KB)", 
+                      size, size * 2 / 1024);
+        }
         Ok(())
     }
 

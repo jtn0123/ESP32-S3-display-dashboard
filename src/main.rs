@@ -30,6 +30,7 @@ mod ota;
 mod sensors;
 mod system;
 mod ui;
+mod version;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
@@ -42,7 +43,7 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     EspLogger::initialize_default();
 
-    info!("ESP32-S3 Dashboard v4.33 - OTA on Port 80");
+    info!("ESP32-S3 Dashboard {} - OTA on Port 80", crate::version::full_version());
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
@@ -379,7 +380,6 @@ fn run_app(
     _web_server: Option<network::web_server::WebConfigServer>,
     ota_manager: Option<Arc<Mutex<OtaManager>>>,
 ) -> Result<()> {
-    use std::thread;
     use std::time::{Duration, Instant};
 
     // Note: OTA checker would run in the main loop instead of a separate thread
@@ -388,7 +388,7 @@ fn run_app(
     // Main UI loop with performance telemetry
     let target_frame_time = Duration::from_millis(33); // ~30 FPS
     let mut last_sensor_update = Instant::now();
-    let sensor_update_interval = Duration::from_secs(5);
+    let sensor_update_interval = Duration::from_secs(10); // Reduced from 5s to 10s
     
     // Performance tracking
     let mut frame_count = 0u32;
@@ -402,17 +402,14 @@ fn run_app(
     
     // Watchdog reset tracking
     let mut last_watchdog_reset = Instant::now();
-    let watchdog_reset_interval = Duration::from_millis(500); // Reset every 500ms
+    let watchdog_reset_interval = Duration::from_secs(2); // Reduced from 500ms to 2s
     
     log::info!("Main render loop started - entering infinite loop");
 
     loop {
         let frame_start = Instant::now();
         
-        // Log first few frames to debug
-        if frame_count < 5 {
-            log::info!("Rendering frame {}", frame_count);
-        }
+        // Removed debug logging from hot path
 
         // Handle button input
         if let Some(event) = button_manager.poll() {
@@ -449,31 +446,19 @@ fn run_app(
         if last_watchdog_reset.elapsed() >= watchdog_reset_interval {
             unsafe { esp_idf_sys::esp_task_wdt_reset(); }
             last_watchdog_reset = Instant::now();
-            if frame_count < 10 {
-                log::info!("Watchdog reset at frame {}", frame_count);
-            }
+            // Removed debug logging
         }
         
         // Update and render UI
         ui_manager.update()?;
-        if frame_count < 5 {
-            log::info!("Main loop: About to render frame {}", frame_count);
-        }
         ui_manager.render(&mut display_manager)?;
-        if frame_count < 5 {
-            log::info!("Main loop: Render complete for frame {}", frame_count);
-        }
         
-        // Reset watchdog after render (since it takes 600-700ms)
-        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        // Removed redundant watchdog reset
         
         // Update auto-dim
         display_manager.update_auto_dim()?;
         
         display_manager.flush()?;
-        if frame_count < 5 {
-            log::info!("Main loop: Flush complete for frame {}", frame_count);
-        }
 
         // Frame timing and telemetry
         let frame_time = frame_start.elapsed();
@@ -500,9 +485,16 @@ fn run_app(
             last_fps_report = Instant::now();
         }
         
-        // Frame rate limiting
-        if frame_time < target_frame_time {
-            thread::sleep(target_frame_time - frame_time);
+        // Frame rate limiting - cap at 60 FPS to prevent burning cycles
+        let target_60fps = Duration::from_micros(16667); // ~60 FPS
+        if frame_time < target_60fps {
+            // Use busy wait for more precise timing
+            let wait_time = target_60fps - frame_time;
+            if wait_time > Duration::from_millis(1) {
+                esp_idf_hal::delay::FreeRtos::delay_ms((wait_time.as_millis() - 1) as u32);
+            }
+            // Busy wait for the last millisecond for precision
+            while frame_start.elapsed() < target_60fps {}
         }
     }
 }

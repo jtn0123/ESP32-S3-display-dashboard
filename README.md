@@ -17,10 +17,11 @@ cp wifi_config.h.example wifi_config.h
 # Edit wifi_config.h with your WiFi credentials
 
 # Build and flash
-./flash.sh                      # Compile and flash with monitor
-./compile.sh                    # Compile only
+./compile.sh                    # Build firmware
+./scripts/flash.sh              # Flash via USB (always works!)
+./scripts/ota.sh find           # Find devices for OTA update
 
-# See FLASHING_GUIDE.md for detailed flashing instructions
+# See scripts/README.md for detailed instructions
 ```
 
 ## 📋 Prerequisites
@@ -117,21 +118,23 @@ This build includes several performance enhancements:
 ./compile.sh --verbose
 ```
 
-### Flashing
+### Flashing & OTA Updates
 
 ```bash
-# Flash with auto-detected port
-./flash.sh
+# USB Flash (always works, sets up OTA)
+./scripts/flash.sh              # Full flash with erase
+./scripts/flash.sh --no-erase   # Quick flash (preserves WiFi)
 
-# Flash to specific port
-./flash.sh --port /dev/tty.usbmodem14201
+# Wireless OTA Updates  
+./scripts/ota.sh find           # Find devices on network
+./scripts/ota.sh 192.168.1.100  # Update specific device
+./scripts/ota.sh auto           # Update all devices
 
-# Flash without monitor
-./flash.sh --no-monitor
-
-# Flash debug build
-./flash.sh --debug
+# Diagnostics
+./scripts/check-partition.sh    # Check partition status
 ```
+
+See `scripts/README.md` for detailed documentation.
 
 #### Important: espflash Version Compatibility
 

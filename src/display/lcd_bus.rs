@@ -72,6 +72,7 @@ impl LcdBus {
     }
 
     /// Write a single byte to the bus - optimized version
+    #[inline(always)]
     fn write_byte(&mut self, data: u8) -> Result<()> {
         // Set all 8 data pins as fast as possible
         // Unroll the loop for better performance
@@ -131,7 +132,7 @@ impl LcdBus {
         Ok(())
     }
     
-    /// Write multiple pixels efficiently
+    /// Write multiple pixels efficiently with optimized inner loop
     pub fn write_pixels(&mut self, color: u16, count: u32) -> Result<()> {
         // Keep DC high for data
         self.dc.set_high()?;
@@ -139,33 +140,92 @@ impl LcdBus {
         let high_byte = (color >> 8) as u8;
         let low_byte = (color & 0xFF) as u8;
         
-        // Write pixels in an optimized loop
-        for _ in 0..count {
-            // Write high byte
-            if high_byte & 0x01 != 0 { self.data_pins[0].set_high()?; } else { self.data_pins[0].set_low()?; }
-            if high_byte & 0x02 != 0 { self.data_pins[1].set_high()?; } else { self.data_pins[1].set_low()?; }
-            if high_byte & 0x04 != 0 { self.data_pins[2].set_high()?; } else { self.data_pins[2].set_low()?; }
-            if high_byte & 0x08 != 0 { self.data_pins[3].set_high()?; } else { self.data_pins[3].set_low()?; }
-            if high_byte & 0x10 != 0 { self.data_pins[4].set_high()?; } else { self.data_pins[4].set_low()?; }
-            if high_byte & 0x20 != 0 { self.data_pins[5].set_high()?; } else { self.data_pins[5].set_low()?; }
-            if high_byte & 0x40 != 0 { self.data_pins[6].set_high()?; } else { self.data_pins[6].set_low()?; }
-            if high_byte & 0x80 != 0 { self.data_pins[7].set_high()?; } else { self.data_pins[7].set_low()?; }
-            self.wr.set_low()?;
-            self.wr.set_high()?;
+        // For very large fills, use an even more optimized approach
+        if count > 500 {
+            // Pre-set pins for high byte
+            self.set_data_pins_fast(high_byte)?;
             
-            // Write low byte
-            if low_byte & 0x01 != 0 { self.data_pins[0].set_high()?; } else { self.data_pins[0].set_low()?; }
-            if low_byte & 0x02 != 0 { self.data_pins[1].set_high()?; } else { self.data_pins[1].set_low()?; }
-            if low_byte & 0x04 != 0 { self.data_pins[2].set_high()?; } else { self.data_pins[2].set_low()?; }
-            if low_byte & 0x08 != 0 { self.data_pins[3].set_high()?; } else { self.data_pins[3].set_low()?; }
-            if low_byte & 0x10 != 0 { self.data_pins[4].set_high()?; } else { self.data_pins[4].set_low()?; }
-            if low_byte & 0x20 != 0 { self.data_pins[5].set_high()?; } else { self.data_pins[5].set_low()?; }
-            if low_byte & 0x40 != 0 { self.data_pins[6].set_high()?; } else { self.data_pins[6].set_low()?; }
-            if low_byte & 0x80 != 0 { self.data_pins[7].set_high()?; } else { self.data_pins[7].set_low()?; }
-            self.wr.set_low()?;
-            self.wr.set_high()?;
+            // Unroll the inner loop for better performance
+            let mut remaining = count;
+            while remaining >= 16 {
+                // Write 16 pixels worth of high bytes
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                
+                // Set pins for low byte
+                self.set_data_pins_fast(low_byte)?;
+                
+                // Write 16 pixels worth of low bytes
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                self.wr.set_low()?; self.wr.set_high()?;
+                
+                // Back to high byte
+                self.set_data_pins_fast(high_byte)?;
+                
+                remaining -= 16;
+                
+                // Feed watchdog less frequently
+                if remaining % 2048 == 0 {
+                    unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+                }
+            }
+            
+            // Handle remaining pixels
+            for _ in 0..remaining {
+                self.write_byte(high_byte)?;
+                self.write_byte(low_byte)?;
+            }
+        } else {
+            // For smaller fills, use simpler approach
+            for _ in 0..count {
+                self.write_byte(high_byte)?;
+                self.write_byte(low_byte)?;
+            }
         }
         
+        Ok(())
+    }
+    
+    /// Fast method to set all data pins at once
+    #[inline]
+    fn set_data_pins_fast(&mut self, data: u8) -> Result<()> {
+        // Unrolled for performance
+        if data & 0x01 != 0 { self.data_pins[0].set_high()?; } else { self.data_pins[0].set_low()?; }
+        if data & 0x02 != 0 { self.data_pins[1].set_high()?; } else { self.data_pins[1].set_low()?; }
+        if data & 0x04 != 0 { self.data_pins[2].set_high()?; } else { self.data_pins[2].set_low()?; }
+        if data & 0x08 != 0 { self.data_pins[3].set_high()?; } else { self.data_pins[3].set_low()?; }
+        if data & 0x10 != 0 { self.data_pins[4].set_high()?; } else { self.data_pins[4].set_low()?; }
+        if data & 0x20 != 0 { self.data_pins[5].set_high()?; } else { self.data_pins[5].set_low()?; }
+        if data & 0x40 != 0 { self.data_pins[6].set_high()?; } else { self.data_pins[6].set_low()?; }
+        if data & 0x80 != 0 { self.data_pins[7].set_high()?; } else { self.data_pins[7].set_low()?; }
         Ok(())
     }
 
