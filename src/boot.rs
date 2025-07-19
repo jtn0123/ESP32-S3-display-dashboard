@@ -188,7 +188,7 @@ impl BootManager {
     fn draw_circuit_pattern(&self, display: &mut DisplayManager) -> Result<()> {
         // Base color for inactive sparkles (subtle blue)
         let fade_factor = ((self.animation_frame as f32 * 0.03).sin().abs() * 0.3 + 0.2) * 255.0;
-        let line_color = rgb565(0, fade_factor as u8 / 8, fade_factor as u8 / 2);
+        let _line_color = rgb565(0, fade_factor as u8 / 8, fade_factor as u8 / 2);
         
         // Draw sparkle nodes with chaotic twinkling
         for (i, &(x, y)) in self.circuit_points.iter().enumerate() {

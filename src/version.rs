@@ -2,7 +2,7 @@
 
 // Display version - this is what users see on screen
 // Update this when making significant changes
-pub const DISPLAY_VERSION: &str = "v4.79-rust-dma";
+pub const DISPLAY_VERSION: &str = "v5.04-normal";
 
 // Cargo package version from Cargo.toml
 pub const CARGO_VERSION: &str = env!("CARGO_PKG_VERSION");

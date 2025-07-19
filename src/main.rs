@@ -110,6 +110,39 @@ fn main() -> Result<()> {
     let config = Arc::new(Mutex::new(config::load_or_default()?));
     info!("Configuration loaded");
 
+    // Debug flag - set to true to run display tests
+    // Change this to true and recompile to run baseline performance test
+    const RUN_DISPLAY_DEBUG_TEST: bool = false;
+    
+    if RUN_DISPLAY_DEBUG_TEST {
+        log::warn!("Running display debug tests - normal boot disabled");
+        log::warn!("Set RUN_DISPLAY_DEBUG_TEST to false for normal operation");
+        
+        // CRITICAL: Wait for power to stabilize before initializing display
+        use esp_idf_hal::delay::Ets;
+        Ets::delay_ms(500);  // Longer delay for power stability
+        
+        // Test LCD_CAM simple verification
+        log::warn!("Testing LCD_CAM simple verification...");
+        display::lcd_cam_simple_test::lcd_cam_simple_test(
+            peripherals.pins.gpio39, // D0
+            peripherals.pins.gpio40, // D1
+            peripherals.pins.gpio41, // D2
+            peripherals.pins.gpio42, // D3
+            peripherals.pins.gpio45, // D4
+            peripherals.pins.gpio46, // D5
+            peripherals.pins.gpio47, // D6
+            peripherals.pins.gpio48, // D7
+            peripherals.pins.gpio8,  // WR
+            peripherals.pins.gpio7,  // DC
+            peripherals.pins.gpio6,  // CS
+            peripherals.pins.gpio5,  // RST
+        )?;
+        
+        // If we get here, test was interrupted - shouldn't happen
+        return Ok(());
+    }
+    
     // Initialize display
     info!("Initializing display...");
     

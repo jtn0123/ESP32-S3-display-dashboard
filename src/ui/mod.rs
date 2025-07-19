@@ -433,16 +433,15 @@ impl UiManager {
             self.cached_temp = temp_str;
         }
         
-        // PSRAM/DMA status (new addition)
+        // PSRAM status (without DMA check since it's not available in this version)
         let psram_info = crate::psram::PsramAllocator::get_info();
-        let dma_available = display.is_dma_available();
         let psram_str = if psram_info.available {
-            format!("{}MB free, DMA: {}", psram_info.free_size / 1024 / 1024, if dma_available { "ON" } else { "OFF" })
+            format!("{}MB free", psram_info.free_size / 1024 / 1024)
         } else {
             "Not available".to_string()
         };
         display.fill_rect(120, y_start + line_height * 5, 180, 16, BLACK)?;
-        let psram_color = if psram_info.available && dma_available { PRIMARY_GREEN } else { YELLOW };
+        let psram_color = if psram_info.available { PRIMARY_GREEN } else { YELLOW };
         display.draw_text(120, y_start + line_height * 5, &psram_str, psram_color, None, 1)?;
         
         // Progress indicator (only update when progress changes)

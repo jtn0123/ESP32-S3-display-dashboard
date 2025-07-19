@@ -1,7 +1,20 @@
 pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
+pub mod debug_tests;
 // pub mod lcd_cam; // Commented out - needs esp-hal for proper peripheral access
+pub mod lcd_cam_ll; // Low-level LCD_CAM bindings
+pub mod lcd_cam_dma; // DMA support for LCD_CAM
+pub mod lcd_cam_display; // Integrated LCD_CAM display driver
+pub mod lcd_cam_test; // LCD_CAM test functions
+pub mod simple_test; // Simple GPIO test
+pub mod lcd_cam_hal; // Safe LCD_CAM HAL
+pub mod lcd_cam_hal_test; // LCD_CAM HAL test
+pub mod lcd_cam_data_test; // LCD_CAM data transfer test
+pub mod lcd_cam_color_test; // LCD_CAM color drawing test
+pub mod lcd_cam_bulk_test; // LCD_CAM bulk transfer test
+pub mod lcd_cam_simple_test; // LCD_CAM simple verification test
+pub mod lcd_cam_debug_test; // LCD_CAM pin debug test
 
 // Color type not used - colors are defined as u16 constants
 
@@ -660,6 +673,16 @@ impl DisplayManager {
                       size, size * 2 / 1024);
         }
         Ok(())
+    }
+    
+    /// Get display width
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+    
+    /// Get display height
+    pub fn height(&self) -> u16 {
+        self.height
     }
 
 }

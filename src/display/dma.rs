@@ -8,8 +8,8 @@ use log::*;
 use anyhow::Result;
 use crate::psram::PsramAllocator;
 
-const DISPLAY_WIDTH: usize = 320;
-const DISPLAY_HEIGHT: usize = 170; 
+const DISPLAY_WIDTH: usize = 300;  // Must match display/mod.rs
+const DISPLAY_HEIGHT: usize = 168; // Must match display/mod.rs 
 const FRAMEBUFFER_SIZE: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT;
 const BYTES_PER_PIXEL: usize = 2; // RGB565
 
