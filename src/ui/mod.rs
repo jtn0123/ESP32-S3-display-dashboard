@@ -108,7 +108,7 @@ impl UiManager {
             }
             ButtonEvent::Button2Click => {
                 log::info!("Next screen");
-                self.current_screen = (self.current_screen + 1) % 4;
+                self.current_screen = (self.current_screen + 1) % 5;
                 self.animation_progress = 0.0;
             }
             ButtonEvent::Button1LongPress | ButtonEvent::Button2LongPress => {
@@ -197,6 +197,7 @@ impl UiManager {
             1 => self.render_network_screen(display, screen_changed)?,
             2 => self.render_sensor_screen(display, screen_changed)?,
             3 => self.render_settings_screen(display, screen_changed)?,
+            4 => self.render_ota_screen(display, screen_changed)?,
             _ => {}
         }
         
@@ -358,17 +359,17 @@ impl UiManager {
             display.fill_rect(0, 0, 300, 30, PRIMARY_PURPLE)?;
             display.draw_text_centered(8, "Network Status", WHITE, None, 2)?;
             
-            // Static labels
-            let y_start = 50;
-            let line_height = 25;
-            display.draw_text(10, y_start, "WiFi:", TEXT_PRIMARY, None, 1)?;
+            // Static labels - adjusted layout
+            let y_start = 40;
+            let line_height = 18;
+            display.draw_text(10, y_start, "Status:", TEXT_PRIMARY, None, 1)?;
             display.draw_text(10, y_start + line_height, "SSID:", TEXT_PRIMARY, None, 1)?;
             display.draw_text(10, y_start + line_height * 2, "IP:", TEXT_PRIMARY, None, 1)?;
-            display.draw_text(10, 130, "Signal:", TEXT_PRIMARY, None, 1)?;
+            display.draw_text(10, y_start + line_height * 3, "Signal:", TEXT_PRIMARY, None, 1)?;
             
-            // Button hints (moved up to avoid overlap)
-            display.draw_text(10, 150, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
-            display.draw_text(200, 150, "[USER] Next", TEXT_SECONDARY, None, 1)?;
+            // Button hints
+            display.draw_text(10, 155, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
+            display.draw_text(200, 155, "[USER] Next", TEXT_SECONDARY, None, 1)?;
         }
         
         // Update time in header
@@ -376,50 +377,85 @@ impl UiManager {
         let time_str = self.system_info.format_uptime();
         display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
         
-        // Dynamic content
-        let y_start = 50;
-        let line_height = 25;
+        // Dynamic content - adjusted to match new layout
+        let y_start = 40;
+        let line_height = 18;
+        let value_x = 70; // Position for values
         
         // WiFi Status
-        display.fill_rect(120, y_start, 180, 20, BLACK)?;
+        display.fill_rect(value_x, y_start, 240, 16, BLACK)?;
         let status_text = if self.network_connected { "Connected" } else { "Disconnected" };
         let status_color = if self.network_connected { PRIMARY_GREEN } else { PRIMARY_RED };
-        display.draw_text(120, y_start, status_text, status_color, None, 1)?;
+        display.draw_text(value_x, y_start, status_text, status_color, None, 1)?;
         
         // SSID
-        display.fill_rect(120, y_start + line_height, 180, 20, BLACK)?;
-        display.draw_text(120, y_start + line_height, &self.network_ssid, TEXT_PRIMARY, None, 1)?;
+        display.fill_rect(value_x, y_start + line_height, 240, 16, BLACK)?;
+        display.draw_text(value_x, y_start + line_height, &self.network_ssid, TEXT_PRIMARY, None, 1)?;
         
-        // IP Address
-        display.fill_rect(120, y_start + line_height * 2, 180, 20, BLACK)?;
-        let ip_text = self.network_ip.as_deref().unwrap_or("No IP");
-        display.draw_text(120, y_start + line_height * 2, ip_text, TEXT_PRIMARY, None, 1)?;
+        // IP Address - with background for visibility
+        let ip_y = y_start + line_height * 2;
+        // Draw a dark background for better contrast
+        display.fill_rect(value_x - 2, ip_y - 1, 180, 18, SURFACE_DARK)?;
+        
+        if let Some(ref ip) = self.network_ip {
+            display.draw_text(value_x, ip_y, ip, WHITE, None, 1)?;
+        } else if self.network_ssid.is_empty() || self.network_ssid == "Not connected" {
+            // No WiFi credentials configured
+            display.draw_text(value_x, ip_y, "No WiFi Config", YELLOW, None, 1)?;
+        } else {
+            // WiFi configured but no IP yet
+            display.draw_text(value_x, ip_y, "Obtaining IP...", YELLOW, None, 1)?;
+        }
         
         // Signal strength indicator
-        let signal_strength = 75;
-        display.draw_text(10, 110, "Signal:", TEXT_PRIMARY, None, 1)?;
-        display.draw_progress_bar(80, 110, 100, 10, signal_strength, PRIMARY_GREEN, SURFACE_LIGHT, BORDER_COLOR)?;
-        display.draw_text(190, 110, &format!("{}%", signal_strength), TEXT_PRIMARY, None, 1)?;
+        let signal_strength = if self.network_connected { 75 } else { 0 };
+        let signal_y = y_start + line_height * 3;
+        display.fill_rect(value_x, signal_y, 180, 14, BLACK)?;
+        let signal_color = if signal_strength > 0 { PRIMARY_GREEN } else { PRIMARY_RED };
+        display.draw_progress_bar(value_x, signal_y, 80, 10, signal_strength, signal_color, SURFACE_LIGHT, BORDER_COLOR)?;
+        display.draw_text(value_x + 85, signal_y, &format!("{}%", signal_strength), TEXT_PRIMARY, None, 1)?;
         
-        // OTA Status
-        display.draw_text(10, 130, "OTA Status:", TEXT_PRIMARY, None, 1)?;
-        let (ota_text, ota_color) = match self.ota_status {
-            OtaStatus::Idle => ("Ready", TEXT_SECONDARY),
-            OtaStatus::Downloading { progress } => {
-                display.draw_progress_bar(120, 145, 180, 10, progress, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
-                ("Downloading", PRIMARY_BLUE)
-            },
-            OtaStatus::Verifying => ("Verifying", YELLOW),
-            OtaStatus::Ready => ("Update Ready", PRIMARY_GREEN),
-            OtaStatus::Failed => ("Failed", PRIMARY_RED),
-        };
-        display.fill_rect(120, 130, 180, 20, BLACK)?;
-        display.draw_text(120, 130, ota_text, ota_color, None, 1)?;
-        
-        // Web URLs
+        // Additional network information
         if self.network_connected {
-            display.draw_text_centered(95, &format!("Config: http://{}", self.network_ip.as_deref().unwrap_or("?.?.?.?")), TEXT_SECONDARY, None, 1)?;
-            display.draw_text_centered(105, &format!("OTA: http://{}:8080/ota", self.network_ip.as_deref().unwrap_or("?.?.?.?")), TEXT_SECONDARY, None, 1)?;
+            let info_y = y_start + line_height * 5;
+            
+            // MAC Address
+            display.draw_text(10, info_y, "MAC:", TEXT_PRIMARY, None, 1)?;
+            display.fill_rect(value_x, info_y, 240, 16, BLACK)?;
+            display.draw_text(value_x, info_y, "B4:3A:45:A2:81:8C", TEXT_SECONDARY, None, 1)?;
+            
+            // Gateway (example)
+            display.draw_text(10, info_y + line_height, "Gateway:", TEXT_PRIMARY, None, 1)?;
+            display.fill_rect(value_x, info_y + line_height, 240, 16, BLACK)?;
+            display.draw_text(value_x, info_y + line_height, "192.168.1.1", TEXT_SECONDARY, None, 1)?;
+            
+            // Web interface section - ensure no overlap
+            let web_section_y = info_y + line_height * 2 + 10; // Dynamic positioning
+            display.draw_line(10, web_section_y - 5, 290, web_section_y - 5, BORDER_COLOR)?;
+            
+            display.draw_text_centered(web_section_y + 5, "Web Configuration", TEXT_SECONDARY, None, 1)?;
+            if let Some(ref ip) = self.network_ip {
+                display.draw_text_centered(web_section_y + 20, &format!("http://{}", ip), PRIMARY_BLUE, None, 1)?;
+            }
+        } else {
+            // Not connected - show help
+            let help_y = y_start + line_height * 5;
+            display.draw_line(10, help_y - 5, 290, help_y - 5, BORDER_COLOR)?;
+            
+            if self.network_ssid.is_empty() || self.network_ssid == "Not connected" {
+                // No WiFi credentials
+                display.draw_text_centered(help_y + 10, "WiFi Not Configured", ACCENT_ORANGE, None, 1)?;
+                display.draw_text_centered(help_y + 28, "Edit wifi_config.h:", TEXT_PRIMARY, None, 1)?;
+                display.draw_text_centered(help_y + 42, "#define WIFI_SSID \"YourSSID\"", PRIMARY_BLUE, None, 1)?;
+                display.draw_text_centered(help_y + 56, "#define WIFI_PASSWORD \"YourPass\"", PRIMARY_BLUE, None, 1)?;
+                display.draw_text_centered(help_y + 74, "Then rebuild & flash", TEXT_SECONDARY, None, 1)?;
+            } else {
+                // WiFi configured but not connected
+                display.draw_text_centered(help_y + 10, "WiFi Connection Failed", PRIMARY_RED, None, 1)?;
+                display.draw_text_centered(help_y + 28, &format!("SSID: {}", self.network_ssid), TEXT_SECONDARY, None, 1)?;
+                display.draw_text_centered(help_y + 42, "Check password & signal", TEXT_SECONDARY, None, 1)?;
+                display.draw_text_centered(help_y + 65, "Retrying connection...", TEXT_SECONDARY, None, 1)?;
+            }
         }
         
         Ok(())
@@ -522,6 +558,108 @@ impl UiManager {
         // Version
         display.fill_rect(120, y_start + line_height * 3, 100, 20, BLACK)?;
         display.draw_text(120, y_start + line_height * 3, crate::version::DISPLAY_VERSION, TEXT_SECONDARY, None, 1)?;
+        
+        Ok(())
+    }
+    
+    fn render_ota_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
+        if screen_changed {
+            // Clear screen
+            display.clear(BLACK)?;
+            display.flush()?;
+            
+            // Header
+            display.fill_rect(0, 0, 300, 30, ACCENT_ORANGE)?;
+            display.draw_text_centered(8, "OTA Updates", WHITE, None, 2)?;
+            
+            // Button hints - moved to avoid overlap
+            display.draw_text(10, 155, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
+            display.draw_text(200, 155, "[USER] Check", TEXT_SECONDARY, None, 1)?;
+        }
+        
+        // Update time in header
+        display.fill_rect(240, 5, 60, 20, ACCENT_ORANGE)?;
+        let time_str = self.system_info.format_uptime();
+        display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
+        
+        // Main content area - adjusted spacing
+        let y_start = 36;
+        let line_height = 16;
+        
+        // Current version info
+        display.draw_text(10, y_start, "Firmware:", TEXT_PRIMARY, None, 1)?;
+        display.fill_rect(80, y_start, 100, 16, BLACK)?;
+        display.draw_text(80, y_start, crate::version::DISPLAY_VERSION, PRIMARY_BLUE, None, 1)?;
+        
+        // Partition info
+        display.draw_text(180, y_start, "Partition:", TEXT_PRIMARY, None, 1)?;
+        display.fill_rect(240, y_start, 50, 16, BLACK)?;
+        display.draw_text(240, y_start, "Factory", TEXT_SECONDARY, None, 1)?;
+        
+        // OTA Status
+        display.draw_text(10, y_start + line_height, "Status:", TEXT_PRIMARY, None, 1)?;
+        display.fill_rect(80, y_start + line_height, 200, 16, BLACK)?;
+        
+        let (status_text, status_color) = match &self.ota_status {
+            OtaStatus::Idle => ("Ready", TEXT_SECONDARY),
+            OtaStatus::Downloading { progress: _ } => ("Downloading", PRIMARY_BLUE),
+            OtaStatus::Verifying => ("Verifying Update", YELLOW),
+            OtaStatus::Ready => ("Update Ready - Restart", PRIMARY_GREEN),
+            OtaStatus::Failed => ("Update Failed", PRIMARY_RED),
+        };
+        
+        // Draw status text - need to handle owned String
+        match &self.ota_status {
+            OtaStatus::Downloading { progress } => {
+                let text = format!("Downloading {}%", progress);
+                display.draw_text(80, y_start + line_height, &text, status_color, None, 1)?;
+            },
+            _ => {
+                display.draw_text(80, y_start + line_height, status_text, status_color, None, 1)?;
+            }
+        }
+        
+        // Progress bar (if downloading) - adjusted position
+        let progress_y = y_start + line_height * 2 + 4;
+        if let OtaStatus::Downloading { progress } = self.ota_status {
+            display.draw_progress_bar(10, progress_y, 280, 10, progress, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
+        }
+        
+        // OTA Server section - properly spaced
+        let server_section_y = if matches!(self.ota_status, OtaStatus::Downloading { .. }) {
+            progress_y + 16  // Extra space after progress bar
+        } else {
+            y_start + line_height * 2 + 8  // Normal spacing
+        };
+        display.draw_line(10, server_section_y - 3, 290, server_section_y - 3, BORDER_COLOR)?;
+        
+        if self.network_connected {
+            // Show OTA endpoints with proper spacing
+            display.draw_text_centered(server_section_y + 4, "OTA Endpoints", TEXT_SECONDARY, None, 1)?;
+            
+            if let Some(ref ip) = self.network_ip {
+                // Web upload interface - adjusted spacing
+                let endpoint_y = server_section_y + 20;
+                display.draw_text(10, endpoint_y, "Upload:", TEXT_PRIMARY, None, 1)?;
+                display.fill_rect(60, endpoint_y, 230, 14, BLACK)?;  // Clear area first
+                display.draw_text(60, endpoint_y, &format!("http://{}:8080/ota", ip), PRIMARY_BLUE, None, 1)?;
+                
+                // Status API endpoint - proper spacing
+                let status_y = endpoint_y + 16;
+                display.draw_text(10, status_y, "Status:", TEXT_PRIMARY, None, 1)?;
+                display.fill_rect(60, status_y, 230, 14, BLACK)?;  // Clear area first
+                display.draw_text(60, status_y, &format!("http://{}:8080/api/ota/status", ip), PRIMARY_BLUE, None, 1)?;
+                
+                // Quick guide - dynamically positioned
+                let guide_y = status_y + 20;
+                display.draw_text_centered(guide_y, "Upload .bin file at OTA URL", TEXT_SECONDARY, None, 1)?;
+                display.draw_text_centered(guide_y + 14, "Device auto-restarts after update", TEXT_SECONDARY, None, 1)?;
+            }
+        } else {
+            // Not connected message
+            display.draw_text_centered(server_section_y + 8, "Network Required", PRIMARY_RED, None, 1)?;
+            display.draw_text_centered(server_section_y + 24, "Connect to WiFi to enable OTA", TEXT_SECONDARY, None, 1)?;
+        }
         
         Ok(())
     }
