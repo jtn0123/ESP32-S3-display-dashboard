@@ -1,6 +1,12 @@
-# ESP32-S3 Dashboard Rust Performance Optimizations
+# ESP32-S3 Dashboard Performance Optimizations
 
-## Implemented Optimizations (v4.0-PERF-OPTIMIZED)
+## Current Performance
+- **Display**: 10 FPS using GPIO bit-banging (stable and reliable)
+- **Binary Size**: ~1MB (vs 1.4MB Arduino)
+- **Boot Time**: ~3 seconds to UI
+- **Power**: 80-240MHz dynamic CPU scaling
+
+## Implemented Optimizations
 
 ### 1. Cargo.toml Release Profile Optimizations ✅
 ```toml

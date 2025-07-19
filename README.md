@@ -101,7 +101,7 @@ This build includes several performance enhancements:
 - **Size-Optimized Build** - Compiler flag `-Os` for smaller code
 - **WiFi Power Save** - MIN_MODEM mode after connection
 - **Display Optimizations** - Dirty rectangle tracking, auto-dimming
-- **DMA Support** - Hardware-accelerated display updates
+- **Reliable GPIO Driver** - 10 FPS stable performance
 
 ## 🛠️ Development
 
@@ -266,6 +266,23 @@ If the bootloader reports 4MB instead of 16MB:
 2. Rebuild: `./compile.sh --release`
 3. Flash with explicit size: `espflash flash --flash-size 16mb ...`
 
+## 📚 Documentation
+
+### Key Documents
+- **[KNOWN_ISSUES.md](KNOWN_ISSUES.md)** - Consolidated list of known issues and attempted solutions
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design decisions
+- **[OTA_DOCUMENTATION.md](OTA_DOCUMENTATION.md)** - Complete OTA update guide
+- **[scripts/README.md](scripts/README.md)** - Detailed flashing and OTA scripts documentation
+
+### Technical Reports
+- **[LCD_CAM_FINAL_REPORT.md](LCD_CAM_FINAL_REPORT.md)** - Hardware acceleration investigation results
+- **[BOOTLOADER_INVESTIGATION_REPORT.md](BOOTLOADER_INVESTIGATION_REPORT.md)** - Flash size detection analysis
+- **[DISPLAY_COMMAND_INVESTIGATION.md](DISPLAY_COMMAND_INVESTIGATION.md)** - Display driver debugging
+
+### Setup Guides
+- **[WIFI_SETUP.md](WIFI_SETUP.md)** - WiFi configuration instructions
+- **[FLASHING_GUIDE.md](FLASHING_GUIDE.md)** - Detailed flashing procedures
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -300,8 +317,8 @@ This is a complete rewrite in Rust. The Arduino implementation has been moved to
 - Hardware abstraction layer for display and sensors
 - Async/await for concurrent operations
 - Comprehensive error handling with Result types
-- DMA-accelerated display updates
 - Dirty rectangle tracking for efficient rendering
+- Dual-core processing support
 
 ## 📄 License
 

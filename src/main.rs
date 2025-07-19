@@ -122,22 +122,20 @@ fn main() -> Result<()> {
         use esp_idf_hal::delay::Ets;
         Ets::delay_ms(500);  // Longer delay for power stability
         
-        // Test LCD_CAM simple verification
-        log::warn!("Testing LCD_CAM simple verification...");
-        display::lcd_cam_simple_test::lcd_cam_simple_test(
-            peripherals.pins.gpio39, // D0
-            peripherals.pins.gpio40, // D1
-            peripherals.pins.gpio41, // D2
-            peripherals.pins.gpio42, // D3
-            peripherals.pins.gpio45, // D4
-            peripherals.pins.gpio46, // D5
-            peripherals.pins.gpio47, // D6
-            peripherals.pins.gpio48, // D7
-            peripherals.pins.gpio8,  // WR
-            peripherals.pins.gpio7,  // DC
-            peripherals.pins.gpio6,  // CS
-            peripherals.pins.gpio5,  // RST
-        )?;
+        // First run minimal test to check for register access issues
+        log::warn!("Running minimal LCD_CAM register test...");
+        display::lcd_cam_minimal_test::test_lcd_cam_minimal()?;
+        
+        // If that works, try the full test
+        log::warn!("Testing LCD_CAM with shadow register fix...");
+        display::lcd_cam_working::test_lcd_cam_working()?;
+        
+        log::warn!("Test complete!");
+        
+        // Keep running
+        loop {
+            esp_idf_hal::delay::FreeRtos::delay_ms(1000);
+        }
         
         // If we get here, test was interrupted - shouldn't happen
         return Ok(());
