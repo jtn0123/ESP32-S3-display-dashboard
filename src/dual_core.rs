@@ -9,24 +9,22 @@ use log::*;
 // Core affinity constants
 pub const CORE_0: i32 = 0;
 pub const CORE_1: i32 = 1;
-pub const NO_AFFINITY: i32 = -1; // tskNO_AFFINITY equivalent
 
 // Task priorities (higher number = higher priority)
-pub const PRIORITY_HIGH: u8 = 20;
 pub const PRIORITY_NORMAL: u8 = 10;
-pub const PRIORITY_LOW: u8 = 5;
+pub const _PRIORITY_LOW: u8 = 5;
 
 // Stack sizes
-pub const STACK_SIZE_LARGE: usize = 8192;
+pub const _STACK_SIZE_LARGE: usize = 8192;
 pub const STACK_SIZE_NORMAL: usize = 4096;
-pub const STACK_SIZE_SMALL: usize = 2048;
+pub const _STACK_SIZE_SMALL: usize = 2048;
 
 /// Work item that can be processed on either core
 pub enum WorkItem {
-    UpdateSensors,
-    RenderDisplay,
-    ProcessNetwork,
-    HandleOta,
+    _UpdateSensors,
+    _RenderDisplay,
+    _ProcessNetwork,
+    _HandleOta,
     Custom(Box<dyn FnOnce() + Send>),
 }
 
@@ -170,19 +168,19 @@ impl DualCoreProcessor {
                     
                     // Process work item
                     match work {
-                        WorkItem::UpdateSensors => {
+                        WorkItem::_UpdateSensors => {
                             debug!("Processing sensor update on core {}", Self::current_core());
                             // Sensor update logic would go here
                         }
-                        WorkItem::RenderDisplay => {
+                        WorkItem::_RenderDisplay => {
                             debug!("Processing display render on core {}", Self::current_core());
                             // Display rendering logic would go here
                         }
-                        WorkItem::ProcessNetwork => {
+                        WorkItem::_ProcessNetwork => {
                             debug!("Processing network task on core {}", Self::current_core());
                             // Network processing logic would go here
                         }
-                        WorkItem::HandleOta => {
+                        WorkItem::_HandleOta => {
                             debug!("Processing OTA task on core {}", Self::current_core());
                             // OTA handling logic would go here
                         }
@@ -225,42 +223,16 @@ impl DualCoreProcessor {
         }
     }
     
-    /// Run a task on a specific core and wait for completion
-    pub fn run_on_core<F, R>(core: i32, task: F) -> Result<R, String>
-    where
-        F: FnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        let (tx, rx) = channel();
-        
-        let wrapper = move || {
-            let result = task();
-            let _ = tx.send(result);
-        };
-        
-        Self::create_pinned_task(
-            "temp_task",
-            wrapper,
-            core,
-            PRIORITY_HIGH,
-            STACK_SIZE_NORMAL,
-        )?;
-        
-        rx.recv()
-            .map_err(|e| format!("Failed to receive result: {}", e))
-    }
 }
 
 /// CPU load monitoring
 pub struct CpuMonitor {
-    last_idle_ticks: [u32; 2],
     last_total_ticks: [u32; 2],
 }
 
 impl CpuMonitor {
     pub fn new() -> Self {
         Self {
-            last_idle_ticks: [0; 2],
             last_total_ticks: [0; 2],
         }
     }
@@ -298,37 +270,6 @@ impl CpuMonitor {
     }
 }
 
-/// Helper to balance work across cores
-pub struct WorkBalancer {
-    processor: DualCoreProcessor,
-    prefer_core: i32,
-}
-
-impl WorkBalancer {
-    pub fn new(processor: DualCoreProcessor) -> Self {
-        Self {
-            processor,
-            prefer_core: CORE_1, // Prefer Core 1 for background tasks
-        }
-    }
-    
-    /// Submit work with automatic core selection
-    pub fn submit_balanced(&mut self, work: WorkItem) -> Result<(), String> {
-        // In a real implementation, this would check core loads
-        // and submit to the least loaded core
-        self.processor.submit(work)?;
-        
-        // Alternate preferred core for next submission
-        self.prefer_core = if self.prefer_core == CORE_0 { CORE_1 } else { CORE_0 };
-        
-        Ok(())
-    }
-    
-    /// Get processor statistics
-    pub fn get_stats(&self) -> ProcessorStats {
-        self.processor.get_stats()
-    }
-}
 
 #[cfg(test)]
 mod tests {

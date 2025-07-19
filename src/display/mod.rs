@@ -93,7 +93,9 @@ pub struct DisplayManager {
     height: u16,
     last_activity: Instant,
     dirty_rect: DirtyRect,
+    #[allow(dead_code)]
     frame_buffer: Vec<u16>, // Optional frame buffer for optimized updates
+    #[allow(dead_code)]
     use_frame_buffer: bool,
 }
 
@@ -647,6 +649,7 @@ impl DisplayManager {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn enable_frame_buffer(&mut self, enable: bool) -> Result<()> {
         self.use_frame_buffer = enable;
         if enable && self.frame_buffer.is_empty() {

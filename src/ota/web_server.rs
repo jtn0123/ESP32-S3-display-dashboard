@@ -94,7 +94,7 @@ pub const OTA_HTML: &str = r#"
         <h1>ESP32-S3 Dashboard OTA Update</h1>
         
         <div class="info">
-            <p><strong>Current Version:</strong> v4.13-rust</p>
+            <p><strong>Current Version:</strong> v4.69-rust-full</p>
             <p><strong>Device:</strong> ESP32-S3 T-Display</p>
         </div>
         

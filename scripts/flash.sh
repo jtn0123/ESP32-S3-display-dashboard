@@ -123,7 +123,7 @@ $ESPTOOL --chip esp32s3 --port "$PORT" --baud 921600 \
 rm -f "$BIN_FILE" "$PARTITION_BIN"
 
 # Extract version from the binary
-VERSION=$(grep -a "v[0-9]\+\.[0-9]\+-rust" "$ELF_FILE" 2>/dev/null | head -1 | grep -o "v[0-9]\+\.[0-9]\+-rust" || echo "unknown")
+VERSION=$(grep -a "v[0-9]\+\.[0-9]\+-rust[^\"]*" "$ELF_FILE" 2>/dev/null | head -1 | grep -o "v[0-9]\+\.[0-9]\+-rust[^\"]*" || echo "unknown")
 
 echo -e "\n${GREEN}✅ USB flash complete!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

@@ -33,6 +33,9 @@ mod system;
 mod ui;
 mod version;
 mod dual_core;
+mod psram;
+#[allow(dead_code)]
+mod hardware_timer;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
@@ -50,6 +53,10 @@ fn main() -> Result<()> {
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
+    
+    // Initialize and log PSRAM info
+    let psram_info = crate::psram::PsramAllocator::get_info();
+    psram_info.log_info();
     
     // Reconfigure watchdog timeout to 5 seconds
     unsafe {
@@ -397,7 +404,7 @@ fn run_app(
     // due to thread safety constraints with ESP-IDF HTTP server
 
     // Main UI loop with performance telemetry
-    let target_frame_time = Duration::from_millis(33); // ~30 FPS
+    let _target_frame_time = Duration::from_millis(33); // ~30 FPS
     let mut last_sensor_update = Instant::now();
     let sensor_update_interval = Duration::from_secs(10); // Reduced from 5s to 10s
     
@@ -433,25 +440,13 @@ fn run_app(
             display_manager.reset_activity_timer();
         }
 
-        // Update sensors periodically - offload to Core 1
+        // Update sensors periodically
         if last_sensor_update.elapsed() >= sensor_update_interval {
-            // Clone what we need for the background task
-            let sensor_mgr = &mut sensor_manager;
-            let ui_mgr = &mut ui_manager;
-            let net_mgr = &network_manager;
+            // Sample sensors (this is fast, keep on main thread)
+            let sensor_result = sensor_manager.sample()?;
+            ui_manager.update_sensor_data(sensor_result);
             
-            // Submit sensor update work to Core 1
-            let sensor_result = sensor_mgr.sample()?;
-            ui_mgr.update_sensor_data(sensor_result);
-            
-            // Submit network status update
-            if let Err(e) = dual_core.submit(WorkItem::Custom(Box::new(move || {
-                log::debug!("Updating network status on core {}", DualCoreProcessor::current_core());
-            }))) {
-                log::warn!("Failed to submit network status work: {}", e);
-            }
-            
-            // Update network status on main thread for now (due to borrow checker)
+            // Update network status
             ui_manager.update_network_status(
                 network_manager.is_connected(),
                 network_manager.get_ip(),
@@ -460,6 +455,17 @@ fn run_app(
                 network_manager.get_gateway(),
                 network_manager.get_mac()
             );
+            
+            // Demonstrate dual-core with a background task
+            let current_core = DualCoreProcessor::current_core();
+            if let Err(e) = dual_core.submit(WorkItem::Custom(Box::new(move || {
+                log::info!("Background task running on core {} (main on core {})", 
+                    DualCoreProcessor::current_core(), current_core);
+                // Simulate some background work
+                unsafe { esp_idf_sys::vTaskDelay(10); }
+            }))) {
+                log::warn!("Failed to submit background work: {}", e);
+            }
             
             last_sensor_update = Instant::now();
         }
@@ -508,8 +514,10 @@ fn run_app(
             };
             
             // Get PSRAM info if available
-            let psram_free = unsafe {
-                esp_idf_sys::esp_get_free_internal_heap_size() / 1024
+            let psram_free = if crate::psram::PsramAllocator::is_available() {
+                crate::psram::PsramAllocator::get_free_size() / 1024
+            } else {
+                0
             };
             
             // Get CPU usage for both cores
@@ -523,7 +531,10 @@ fn run_app(
             // Get dual-core stats
             let core_stats = dual_core.get_stats();
             
-            log::info!("[PERF] FPS: {:.1} | Avg: {:?} | Max: {:?} | CPU: {}MHz | Heap: {}KB | IRAM: {}KB",
+            // Update UI with core stats
+            ui_manager.update_core_stats(cpu0_usage, cpu1_usage, core_stats.core0_tasks, core_stats.core1_tasks);
+            
+            log::info!("[PERF] FPS: {:.1} | Avg: {:?} | Max: {:?} | CPU: {}MHz | Heap: {}KB | PSRAM: {}KB",
                 fps,
                 avg_frame_time,
                 max_frame_time,

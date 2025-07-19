@@ -38,12 +38,14 @@ pub struct UiManager {
     cached_heap: String,
     cached_cpu: String,
     cached_flash: String,
+    // Dual-core stats
+    cpu0_usage: u8,
+    cpu1_usage: u8,
+    core_tasks: (u32, u32),
     cached_temp: String,
     cached_battery: u8,
-    // Pre-allocated string buffers for formatting
+    // Pre-allocated string buffer for formatting
     string_buffer: String,
-    string_buffer2: String,
-    string_buffer3: String,
     // Skip render counter
     skip_renders: u32,
     total_renders: u32,
@@ -51,8 +53,6 @@ pub struct UiManager {
     text_cache: Vec<TextCache>,
     // OTA screen caching
     cached_ota_time: u64,
-    cached_ota_status: String,
-    cached_ota_endpoints: (String, String),
     cached_network_ip: Option<String>,
     cached_ota_status_enum: Option<OtaStatus>,
     ota_screen_initialized: bool,
@@ -114,14 +114,10 @@ impl UiManager {
             cached_temp: String::new(),
             cached_battery: 0,
             string_buffer: String::with_capacity(32),
-            string_buffer2: String::with_capacity(32),
-            string_buffer3: String::with_capacity(32),
             skip_renders: 0,
             total_renders: 0,
             text_cache: Vec::with_capacity(20),
             cached_ota_time: 0,
-            cached_ota_status: String::new(),
-            cached_ota_endpoints: (String::new(), String::new()),
             cached_network_ip: None,
             cached_ota_status_enum: None,
             ota_screen_initialized: false,
@@ -130,6 +126,9 @@ impl UiManager {
             sensor_screen_initialized: false,
             settings_screen_initialized: false,
             global_cached_time: 0,
+            cpu0_usage: 0,
+            cpu1_usage: 0,
+            core_tasks: (0, 0),
         })
     }
 
@@ -174,6 +173,12 @@ impl UiManager {
     
     pub fn update_ota_status(&mut self, status: OtaStatus) {
         self.ota_status = status;
+    }
+    
+    pub fn update_core_stats(&mut self, cpu0: u8, cpu1: u8, tasks0: u32, tasks1: u32) {
+        self.cpu0_usage = cpu0;
+        self.cpu1_usage = cpu1;
+        self.core_tasks = (tasks0, tasks1);
     }
     
     fn force_next_render(&mut self) {
@@ -398,11 +403,11 @@ impl UiManager {
             self.cached_heap = heap_str;
         }
         
-        // CPU value (only update if changed)
+        // CPU value with dual-core usage (only update if changed)
         let cpu_freq = self.system_info.get_cpu_freq_mhz();
-        let cpu_str = format!("{} MHz", cpu_freq);
+        let cpu_str = format!("{} MHz C0:{}% C1:{}%", cpu_freq, self.cpu0_usage, self.cpu1_usage);
         if cpu_str != self.cached_cpu {
-            display.fill_rect(120, y_start + line_height * 2, 120, 16, BLACK)?;
+            display.fill_rect(120, y_start + line_height * 2, 180, 16, BLACK)?;
             display.draw_text(120, y_start + line_height * 2, &cpu_str, PRIMARY_GREEN, None, 1)?;
             self.cached_cpu = cpu_str;
         }
