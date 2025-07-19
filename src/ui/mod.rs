@@ -130,6 +130,8 @@ impl UiManager {
 
     pub fn update_sensor_data(&mut self, data: SensorData) {
         self.sensor_data = data;
+        // Force render when sensor data updates
+        self.force_next_render();
     }
     
     pub fn update_network_status(&mut self, connected: bool, ip: Option<String>, ssid: String, signal: i8, gateway: Option<String>, mac: String) {
@@ -143,6 +145,16 @@ impl UiManager {
     
     pub fn update_ota_status(&mut self, status: OtaStatus) {
         self.ota_status = status;
+    }
+    
+    fn force_next_render(&mut self) {
+        // Force render by clearing cached values
+        self.cached_uptime.clear();
+        self.cached_heap.clear();
+        self.cached_cpu.clear();
+        self.cached_flash.clear();
+        self.cached_temp.clear();
+        self.cached_battery = 255; // Invalid value to force update
     }
 
     pub fn update(&mut self) -> Result<()> {
@@ -272,12 +284,20 @@ impl UiManager {
         }
         
         // Battery indicator in header (only update if changed)
-        if self.sensor_data._battery_percentage != self.cached_battery {
-            display.fill_rect(5, 5, 50, 20, PRIMARY_BLUE)?;
-            let battery_color = if self.sensor_data._battery_percentage > 50 { PRIMARY_GREEN } 
+        if self.sensor_data._battery_percentage != self.cached_battery || self.sensor_data._is_charging {
+            display.fill_rect(5, 5, 65, 20, PRIMARY_BLUE)?;
+            let battery_color = if self.sensor_data._is_charging { PRIMARY_BLUE }
+                               else if self.sensor_data._battery_percentage > 50 { PRIMARY_GREEN } 
                                else if self.sensor_data._battery_percentage > 20 { YELLOW } 
                                else { PRIMARY_RED };
-            let battery_str = format!("{}%", self.sensor_data._battery_percentage);
+            
+            let battery_str = if self.sensor_data._is_charging {
+                format!("{}%+", self.sensor_data._battery_percentage)
+            } else if self.sensor_data._is_on_usb && self.sensor_data._battery_percentage == 0 {
+                "USB".to_string()
+            } else {
+                format!("{}%", self.sensor_data._battery_percentage)
+            };
             display.draw_text(10, 8, &battery_str, battery_color, None, 1)?;
             self.cached_battery = self.sensor_data._battery_percentage;
         }
@@ -301,7 +321,7 @@ impl UiManager {
         }
         let uptime_str = self.string_buffer.clone();
         if uptime_str != self.cached_uptime {
-            display.fill_rect(120, y_start, 80, 16, BLACK)?;
+            display.fill_rect(120, y_start, 120, 16, BLACK)?;
             display.draw_text(120, y_start, &uptime_str, PRIMARY_GREEN, None, 1)?;
             self.cached_uptime = uptime_str;
         }
@@ -310,7 +330,7 @@ impl UiManager {
         let heap_kb = self.system_info.get_free_heap_kb();
         let heap_str = format!("{} KB", heap_kb);
         if heap_str != self.cached_heap {
-            display.fill_rect(120, y_start + line_height, 80, 16, BLACK)?;
+            display.fill_rect(120, y_start + line_height, 120, 16, BLACK)?;
             display.draw_text(120, y_start + line_height, &heap_str, PRIMARY_GREEN, None, 1)?;
             self.cached_heap = heap_str;
         }
@@ -319,7 +339,7 @@ impl UiManager {
         let cpu_freq = self.system_info.get_cpu_freq_mhz();
         let cpu_str = format!("{} MHz", cpu_freq);
         if cpu_str != self.cached_cpu {
-            display.fill_rect(120, y_start + line_height * 2, 80, 16, BLACK)?;
+            display.fill_rect(120, y_start + line_height * 2, 120, 16, BLACK)?;
             display.draw_text(120, y_start + line_height * 2, &cpu_str, PRIMARY_GREEN, None, 1)?;
             self.cached_cpu = cpu_str;
         }
@@ -328,7 +348,7 @@ impl UiManager {
         let (flash_total, app_size) = self.system_info.get_flash_info();
         let flash_str = format!("{}/{}MB", app_size, flash_total);
         if flash_str != self.cached_flash {
-            display.fill_rect(120, y_start + line_height * 3, 80, 16, BLACK)?;
+            display.fill_rect(120, y_start + line_height * 3, 120, 16, BLACK)?;
             display.draw_text(120, y_start + line_height * 3, &flash_str, PRIMARY_GREEN, None, 1)?;
             self.cached_flash = flash_str;
         }
@@ -336,7 +356,7 @@ impl UiManager {
         // Temperature value (only update if changed)
         let temp_str = format!("{:.1}°C", self.sensor_data._temperature);
         if temp_str != self.cached_temp {
-            display.fill_rect(120, y_start + line_height * 4, 80, 16, BLACK)?;
+            display.fill_rect(120, y_start + line_height * 4, 120, 16, BLACK)?;
             let temp_color = if self.sensor_data._temperature > 50.0 { PRIMARY_RED } 
                             else if self.sensor_data._temperature > 40.0 { YELLOW } 
                             else { PRIMARY_GREEN };
@@ -402,13 +422,12 @@ impl UiManager {
         let ssid_color = if self.network_connected { TEXT_PRIMARY } else { TEXT_SECONDARY };
         display.draw_text(value_x, y_start + line_height, &self.network_ssid, ssid_color, None, 1)?;
         
-        // IP Address - with background for visibility
+        // IP Address
         let ip_y = y_start + line_height * 2;
-        // Draw a dark background for better contrast
-        display.fill_rect(value_x - 2, ip_y - 1, 180, 18, SURFACE_DARK)?;
+        display.fill_rect(value_x, ip_y, 200, 16, BLACK)?;
         
         if let Some(ref ip) = self.network_ip {
-            display.draw_text(value_x, ip_y, ip, WHITE, None, 1)?;
+            display.draw_text(value_x, ip_y, ip, TEXT_PRIMARY, None, 1)?;
         } else if self.network_ssid.is_empty() || self.network_ssid == "Not connected" {
             // No WiFi credentials configured
             display.draw_text(value_x, ip_y, "No WiFi Config", YELLOW, None, 1)?;
@@ -519,19 +538,56 @@ impl UiManager {
         let y_start = 50;
         let line_height = 30;
         
-        // Battery value and bar
+        // Battery value and bar with voltage and charging status
         let battery_percent = self.sensor_data._battery_percentage;
-        let battery_color = if battery_percent > 50 { PRIMARY_GREEN } else if battery_percent > 20 { YELLOW } else { PRIMARY_RED };
-        display.draw_progress_bar(100, y_start, 150, 15, battery_percent, battery_color, SURFACE_LIGHT, BORDER_COLOR)?;
-        display.draw_text(260, y_start, &format!("{}%", battery_percent), battery_color, None, 1)?;
+        let battery_voltage = self.sensor_data._battery_voltage;
+        let is_charging = self.sensor_data._is_charging;
+        let is_on_usb = self.sensor_data._is_on_usb;
         
-        // Temperature value (clear old value first)
-        display.fill_rect(100, y_start + line_height, 100, 20, BLACK)?;
-        display.draw_text(100, y_start + line_height, &format!("{:.1}°C", self.sensor_data._temperature), TEXT_PRIMARY, None, 1)?;
+        // Color based on battery state
+        let battery_color = if is_charging { PRIMARY_BLUE }
+                           else if battery_percent > 50 { PRIMARY_GREEN }
+                           else if battery_percent > 20 { YELLOW }
+                           else { PRIMARY_RED };
         
-        // Light level value (clear old value first)
-        display.fill_rect(100, y_start + line_height * 2, 100, 20, BLACK)?;
-        display.draw_text(100, y_start + line_height * 2, &format!("{} lux", self.sensor_data._light_level), TEXT_PRIMARY, None, 1)?;
+        // Draw progress bar
+        display.draw_progress_bar(100, y_start, 120, 15, battery_percent, battery_color, SURFACE_LIGHT, BORDER_COLOR)?;
+        
+        // Draw percentage and voltage
+        display.fill_rect(225, y_start, 70, 16, BLACK)?;
+        display.draw_text(225, y_start, &format!("{}%", battery_percent), battery_color, None, 1)?;
+        
+        // Draw voltage below percentage
+        display.fill_rect(100, y_start + 18, 195, 14, BLACK)?;
+        if battery_voltage > 0 {
+            let voltage_str = format!("{:.2}V", battery_voltage as f32 / 1000.0);
+            display.draw_text(100, y_start + 18, &voltage_str, TEXT_SECONDARY, None, 1)?;
+            
+            // Show charging/USB status
+            if is_charging {
+                display.draw_text(150, y_start + 18, "Charging", PRIMARY_BLUE, None, 1)?;
+            } else if is_on_usb {
+                display.draw_text(150, y_start + 18, "USB Power", ACCENT_ORANGE, None, 1)?;
+            } else {
+                display.draw_text(150, y_start + 18, "Battery", TEXT_SECONDARY, None, 1)?;
+            }
+        } else {
+            display.draw_text(100, y_start + 18, "No Battery", TEXT_SECONDARY, None, 1)?;
+        }
+        
+        // Temperature value (adjusted position due to battery info)
+        let temp_y = y_start + line_height + 5;
+        display.fill_rect(100, temp_y, 100, 20, BLACK)?;
+        display.draw_text(100, temp_y, &format!("{:.1}°C", self.sensor_data._temperature), TEXT_PRIMARY, None, 1)?;
+        
+        // Light level value (adjusted position)
+        let light_y = y_start + line_height * 2 + 5;
+        display.fill_rect(100, light_y, 100, 20, BLACK)?;
+        if self.sensor_data._light_level > 0 {
+            display.draw_text(100, light_y, &format!("{} lux", self.sensor_data._light_level), TEXT_PRIMARY, None, 1)?;
+        } else {
+            display.draw_text(100, light_y, "N/A", TEXT_SECONDARY, None, 1)?;
+        }
         
         // Visual indicator
         let radius = 20;

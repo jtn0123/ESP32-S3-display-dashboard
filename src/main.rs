@@ -25,6 +25,7 @@ mod app_desc {
 mod boot;
 mod config;
 mod display;
+// mod hardware;  // Temporarily disabled - API changes
 mod network;
 mod ota;
 mod sensors;
@@ -186,7 +187,8 @@ fn main() -> Result<()> {
     log::info!("Boot: Sensor init screen rendered");
     
     let battery_pin = peripherals.pins.gpio4;
-    let sensor_manager = sensors::SensorManager::new(battery_pin)?;
+    let adc1 = peripherals.adc1;
+    let sensor_manager = sensors::SensorManager::new(adc1, battery_pin)?;
     
     // Animate progress
     for i in 0..3 {

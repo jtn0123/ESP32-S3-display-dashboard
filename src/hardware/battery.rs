@@ -1,7 +1,8 @@
 // Battery voltage monitoring via ADC
 
+use anyhow::Result;
 use esp_idf_hal::{
-    adc::{AdcConfig, AdcPin, Attenuation, ADC},
+    adc::{AdcDriver, AdcChannelDriver, Attenuation, config::Config as AdcConfig},
     gpio::Gpio4,
     peripherals::ADC1,
 };
@@ -19,31 +20,38 @@ const ADC_MAX: f32 = 4095.0;
 const ATTENUATION_FACTOR: f32 = 3.9;  // For 11dB attenuation
 
 pub struct BatteryMonitor {
-    adc: ADC<'static, ADC1>,
-    pin: AdcPin<Gpio4, ADC1>,
+    adc: AdcDriver<'static, ADC1>,
+    pin: AdcChannelDriver<'static, Gpio4, Attenuation::Attenuation11dB>,
     history: [u16; 10],
     history_index: usize,
 }
 
 impl BatteryMonitor {
-    pub fn new(adc1: ADC1, pin: Gpio4) -> Self {
-        let config = AdcConfig::new();
-        let mut adc = ADC::new(adc1, config);
+    pub fn new(adc1: ADC1, pin: Gpio4) -> Result<Self> {
+        let config = AdcConfig::default();
+        let adc = AdcDriver::new(adc1, &config)?;
         
-        // Configure pin for battery monitoring
-        let adc_pin = AdcPin::new(pin, Attenuation::Attenuation11dB);
+        // Configure pin for battery monitoring with 11dB attenuation
+        // This gives us a range of 0-3.9V which is perfect for battery monitoring
+        let adc_pin = AdcChannelDriver::new(pin)?;
         
-        Self {
+        Ok(Self {
             adc,
             pin: adc_pin,
             history: [0; 10],
             history_index: 0,
-        }
+        })
     }
     
     pub fn read_raw(&mut self) -> u16 {
         // Read ADC value
-        let raw = self.adc.read(&mut self.pin).unwrap_or(0);
+        let raw = match self.adc.read(&mut self.pin) {
+            Ok(val) => val,
+            Err(e) => {
+                log::warn!("ADC read error: {:?}", e);
+                0
+            }
+        };
         
         // Add to history for averaging
         self.history[self.history_index] = raw;

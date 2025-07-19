@@ -1,14 +1,18 @@
 // Sensor abstraction layer for ESP32-S3 dashboard
 
 use anyhow;
-
-// Individual sensor modules removed - not implemented yet
+// use crate::hardware::battery::BatteryMonitor;  // Temporarily disabled
+use esp_idf_hal::gpio::Gpio4;
+use esp_idf_hal::adc::ADC1;
 
 // Sensor data struct for UI consumption
 #[derive(Debug, Clone)]
 pub struct SensorData {
     pub _temperature: f32,
     pub _battery_percentage: u8,
+    pub _battery_voltage: u16,  // mV
+    pub _is_charging: bool,
+    pub _is_on_usb: bool,
     pub _light_level: u16,
 }
 
@@ -17,6 +21,9 @@ impl Default for SensorData {
         Self {
             _temperature: 25.0,
             _battery_percentage: 100,
+            _battery_voltage: 4200,
+            _is_charging: false,
+            _is_on_usb: false,
             _light_level: 0,
         }
     }
@@ -30,25 +37,34 @@ impl Default for SensorData {
 
 // Sensor manager for coordinating multiple sensors
 pub struct SensorManager {
+    // battery_monitor: Option<BatteryMonitor>,
 }
 
 impl SensorManager {
-    pub fn new(_battery_pin: impl Into<esp_idf_hal::gpio::AnyIOPin> + 'static) -> Result<Self, anyhow::Error> {
-        // ADC setup simplified for now - the API has changed
-        Ok(Self {})
+    pub fn new(_adc1: ADC1, _battery_pin: Gpio4) -> Result<Self, anyhow::Error> {
+        // Battery monitoring temporarily disabled until ADC API is fixed
+        log::warn!("Battery monitoring temporarily disabled - ADC API needs update");
+        
+        Ok(Self {
+            // battery_monitor: None,
+        })
     }
     
     pub fn sample(&mut self) -> Result<SensorData, anyhow::Error> {
         // Read internal temperature sensor
         let temperature = self.read_internal_temperature();
         
-        // Read battery voltage (if connected to GPIO4)
-        let battery_percentage = self.read_battery_percentage();
+        // Read battery data - temporarily return simulated values
+        // TODO: Fix ADC API and re-enable real battery monitoring
+        let (battery_percentage, battery_voltage, is_charging, is_on_usb) = (75, 3800, false, false);
         
         Ok(SensorData {
             _temperature: temperature,
             _battery_percentage: battery_percentage,
-            _light_level: 500, // No light sensor connected
+            _battery_voltage: battery_voltage,
+            _is_charging: is_charging,
+            _is_on_usb: is_on_usb,
+            _light_level: 0, // No light sensor on T-Display
         })
     }
     
@@ -79,10 +95,7 @@ impl SensorManager {
         }
     }
     
-    fn read_battery_percentage(&mut self) -> u8 {
-        // Return a default value for now - ADC API needs updating
-        85
-    }
+    // Battery reading moved to battery_monitor
 }
 
 // Tests removed - test types no longer exist
