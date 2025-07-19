@@ -25,6 +25,9 @@ pub struct UiManager {
     network_connected: bool,
     network_ip: Option<String>,
     network_ssid: String,
+    network_signal: i8,
+    network_gateway: Option<String>,
+    network_mac: String,
     ota_status: OtaStatus,
     // FPS tracking
     fps: f32,
@@ -81,6 +84,9 @@ impl UiManager {
             network_connected: false,
             network_ip: None,
             network_ssid: String::from("Not connected"),
+            network_signal: -100,
+            network_gateway: None,
+            network_mac: String::from("Unknown"),
             ota_status: OtaStatus::Idle,
             fps: 0.0,
             frame_count: 0,
@@ -126,10 +132,13 @@ impl UiManager {
         self.sensor_data = data;
     }
     
-    pub fn update_network_status(&mut self, connected: bool, ip: Option<String>, ssid: String) {
+    pub fn update_network_status(&mut self, connected: bool, ip: Option<String>, ssid: String, signal: i8, gateway: Option<String>, mac: String) {
         self.network_connected = connected;
         self.network_ip = ip;
         self.network_ssid = ssid;
+        self.network_signal = signal;
+        self.network_gateway = gateway;
+        self.network_mac = mac;
     }
     
     pub fn update_ota_status(&mut self, status: OtaStatus) {
@@ -359,9 +368,9 @@ impl UiManager {
             display.fill_rect(0, 0, 300, 30, PRIMARY_PURPLE)?;
             display.draw_text_centered(8, "Network Status", WHITE, None, 2)?;
             
-            // Static labels - adjusted layout
-            let y_start = 40;
-            let line_height = 18;
+            // Static labels - consistent layout
+            let y_start = 38;
+            let line_height = 20;
             display.draw_text(10, y_start, "Status:", TEXT_PRIMARY, None, 1)?;
             display.draw_text(10, y_start + line_height, "SSID:", TEXT_PRIMARY, None, 1)?;
             display.draw_text(10, y_start + line_height * 2, "IP:", TEXT_PRIMARY, None, 1)?;
@@ -377,10 +386,10 @@ impl UiManager {
         let time_str = self.system_info.format_uptime();
         display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
         
-        // Dynamic content - adjusted to match new layout
-        let y_start = 40;
-        let line_height = 18;
-        let value_x = 70; // Position for values
+        // Dynamic content - consistent spacing
+        let y_start = 38;
+        let line_height = 20;
+        let value_x = 65; // Better aligned position for values
         
         // WiFi Status
         display.fill_rect(value_x, y_start, 240, 16, BLACK)?;
@@ -390,7 +399,8 @@ impl UiManager {
         
         // SSID
         display.fill_rect(value_x, y_start + line_height, 240, 16, BLACK)?;
-        display.draw_text(value_x, y_start + line_height, &self.network_ssid, TEXT_PRIMARY, None, 1)?;
+        let ssid_color = if self.network_connected { TEXT_PRIMARY } else { TEXT_SECONDARY };
+        display.draw_text(value_x, y_start + line_height, &self.network_ssid, ssid_color, None, 1)?;
         
         // IP Address - with background for visibility
         let ip_y = y_start + line_height * 2;
@@ -407,27 +417,49 @@ impl UiManager {
             display.draw_text(value_x, ip_y, "Obtaining IP...", YELLOW, None, 1)?;
         }
         
-        // Signal strength indicator
-        let signal_strength = if self.network_connected { 75 } else { 0 };
+        // Signal strength - just text, no graph
         let signal_y = y_start + line_height * 3;
-        display.fill_rect(value_x, signal_y, 180, 14, BLACK)?;
-        let signal_color = if signal_strength > 0 { PRIMARY_GREEN } else { PRIMARY_RED };
-        display.draw_progress_bar(value_x, signal_y, 80, 10, signal_strength, signal_color, SURFACE_LIGHT, BORDER_COLOR)?;
-        display.draw_text(value_x + 85, signal_y, &format!("{}%", signal_strength), TEXT_PRIMARY, None, 1)?;
+        display.fill_rect(value_x, signal_y, 200, 16, BLACK)?;
+        
+        if self.network_connected {
+            let signal_quality = match self.network_signal {
+                -50..=0 => "Excellent",
+                -60..=-51 => "Good",
+                -70..=-61 => "Fair",
+                -80..=-71 => "Weak",
+                _ => "Poor"
+            };
+            
+            let signal_color = match self.network_signal {
+                -50..=0 => PRIMARY_GREEN,
+                -60..=-51 => PRIMARY_GREEN,
+                -70..=-61 => YELLOW,
+                -80..=-71 => ACCENT_ORANGE,
+                _ => PRIMARY_RED
+            };
+            
+            display.draw_text(value_x, signal_y, &format!("{} dBm ({})", self.network_signal, signal_quality), signal_color, None, 1)?;
+        } else {
+            display.draw_text(value_x, signal_y, "No signal", TEXT_SECONDARY, None, 1)?;
+        }
         
         // Additional network information
         if self.network_connected {
-            let info_y = y_start + line_height * 5;
+            let info_y = y_start + line_height * 4 + 5;
             
             // MAC Address
             display.draw_text(10, info_y, "MAC:", TEXT_PRIMARY, None, 1)?;
             display.fill_rect(value_x, info_y, 240, 16, BLACK)?;
-            display.draw_text(value_x, info_y, "B4:3A:45:A2:81:8C", TEXT_SECONDARY, None, 1)?;
+            display.draw_text(value_x, info_y, &self.network_mac, TEXT_SECONDARY, None, 1)?;
             
-            // Gateway (example)
+            // Gateway
             display.draw_text(10, info_y + line_height, "Gateway:", TEXT_PRIMARY, None, 1)?;
             display.fill_rect(value_x, info_y + line_height, 240, 16, BLACK)?;
-            display.draw_text(value_x, info_y + line_height, "192.168.1.1", TEXT_SECONDARY, None, 1)?;
+            if let Some(ref gateway) = self.network_gateway {
+                display.draw_text(value_x, info_y + line_height, gateway, TEXT_SECONDARY, None, 1)?;
+            } else {
+                display.draw_text(value_x, info_y + line_height, "Not available", TEXT_SECONDARY, None, 1)?;
+            }
             
             // Web interface section - ensure no overlap
             let web_section_y = info_y + line_height * 2 + 10; // Dynamic positioning
@@ -439,7 +471,7 @@ impl UiManager {
             }
         } else {
             // Not connected - show help
-            let help_y = y_start + line_height * 5;
+            let help_y = y_start + line_height * 4 + 10;
             display.draw_line(10, help_y - 5, 290, help_y - 5, BORDER_COLOR)?;
             
             if self.network_ssid.is_empty() || self.network_ssid == "Not connected" {

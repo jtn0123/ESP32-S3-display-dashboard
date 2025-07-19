@@ -12,6 +12,7 @@ use esp_idf_svc::{
 pub struct WifiManager {
     wifi: BlockingWifi<EspWifi<'static>>,
     pub ssid: String,
+    last_signal_strength: i8,
 }
 
 impl WifiManager {
@@ -45,11 +46,11 @@ impl WifiManager {
         Ok(Self {
             wifi,
             ssid,
+            last_signal_strength: -100,
         })
     }
 
-    #[allow(dead_code)]
-    pub fn connect(&mut self) -> Result<()> {
+    pub fn connect_and_get_signal(&mut self) -> Result<i8> {
         log::info!("Starting WiFi...");
         self.wifi.start()?;
 
@@ -64,10 +65,12 @@ impl WifiManager {
         unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         
         let mut found = false;
+        let mut signal_strength = -100i8;
         for ap in ap_infos.iter() {
             if ap.ssid.as_str() == self.ssid.as_str() {
                 found = true;
-                log::info!("Found network: {} (signal: {})", ap.ssid, ap.signal_strength);
+                signal_strength = ap.signal_strength;
+                log::info!("Found network: {} (signal: {} dBm)", ap.ssid, signal_strength);
                 break;
             }
         }
@@ -91,6 +94,9 @@ impl WifiManager {
 
         log::info!("WiFi connected!");
         
+        // Store signal strength
+        self.last_signal_strength = signal_strength;
+        
         // Enable WiFi power save mode
         unsafe {
             use esp_idf_sys::*;
@@ -102,7 +108,7 @@ impl WifiManager {
             }
         }
         
-        Ok(())
+        Ok(signal_strength)
     }
 
     // disconnect and is_connected removed - not used
@@ -110,5 +116,32 @@ impl WifiManager {
     pub fn get_ip(&self) -> Option<String> {
         self.wifi.wifi().sta_netif().get_ip_info().ok()
             .map(|ip_info| format!("{}", ip_info.ip))
+    }
+    
+    pub fn get_gateway(&self) -> Option<String> {
+        // Get the IP and assume gateway is .1 in the same subnet
+        self.wifi.wifi().sta_netif().get_ip_info().ok()
+            .and_then(|ip_info| {
+                let ip_str = format!("{}", ip_info.ip);
+                let parts: Vec<&str> = ip_str.split('.').collect();
+                if parts.len() == 4 {
+                    // Assume gateway is x.x.x.1
+                    Some(format!("{}.{}.{}.1", parts[0], parts[1], parts[2]))
+                } else {
+                    None
+                }
+            })
+    }
+    
+    pub fn get_mac(&self) -> String {
+        self.wifi.wifi().sta_netif().get_mac().ok()
+            .map(|mac| format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+                              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]))
+            .unwrap_or_else(|| "Unknown".to_string())
+    }
+    
+    #[allow(dead_code)]
+    pub fn get_signal_strength(&self) -> i8 {
+        self.last_signal_strength
     }
 }

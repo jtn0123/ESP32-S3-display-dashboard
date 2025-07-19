@@ -427,7 +427,10 @@ fn run_app(
             ui_manager.update_network_status(
                 network_manager.is_connected(),
                 network_manager.get_ip(),
-                network_manager.get_ssid().to_string()
+                network_manager.get_ssid().to_string(),
+                network_manager.get_signal_strength(),
+                network_manager.get_gateway(),
+                network_manager.get_mac()
             );
             
             last_sensor_update = Instant::now();

@@ -16,6 +16,7 @@ use esp_idf_svc::mdns::EspMdns;
 pub struct NetworkManager {
     wifi: WifiManager,
     _mdns: Option<EspMdns>,
+    signal_strength: i8,
 }
 
 impl NetworkManager {
@@ -32,13 +33,14 @@ impl NetworkManager {
         Ok(Self {
             wifi,
             _mdns: None,
+            signal_strength: -100,
         })
     }
 
-    #[allow(dead_code)]
     pub fn connect(&mut self) -> Result<()> {
-        self.wifi.connect()?;
-        log::info!("WiFi connected, IP: {:?}", self.wifi.get_ip());
+        // Get signal strength during connection
+        self.signal_strength = self.wifi.connect_and_get_signal()?;
+        log::info!("WiFi connected, IP: {:?}, Signal: {} dBm", self.wifi.get_ip(), self.signal_strength);
         
         // Start mDNS for network discovery
         match self.start_mdns() {
@@ -81,6 +83,26 @@ impl NetworkManager {
     }
     
     pub fn get_ssid(&self) -> &str {
-        &self.wifi.ssid
+        if self.wifi.ssid.is_empty() {
+            "Not configured"
+        } else {
+            &self.wifi.ssid
+        }
+    }
+    
+    pub fn get_signal_strength(&self) -> i8 {
+        if self.is_connected() {
+            self.signal_strength
+        } else {
+            -100
+        }
+    }
+    
+    pub fn get_gateway(&self) -> Option<String> {
+        self.wifi.get_gateway()
+    }
+    
+    pub fn get_mac(&self) -> String {
+        self.wifi.get_mac()
     }
 }
