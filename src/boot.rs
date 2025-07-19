@@ -47,27 +47,68 @@ pub struct BootManager {
 
 impl BootManager {
     pub fn new() -> Self {
-        // Pre-calculate circuit pattern points for animation
+        // Pre-calculate random sparkle distribution
         let mut circuit_points = Vec::new();
         
-        // Create a tech circuit pattern
-        // Horizontal lines
-        for x in (20..280).step_by(40) {
-            circuit_points.push((x as u16, 40));
-            circuit_points.push((x as u16, 140));
-        }
+        // Use multiple distribution methods for true randomness
+        let num_sparkles = 60; // More stars for better coverage
         
-        // Vertical connections
-        for y in (40..140).step_by(20) {
-            circuit_points.push((60, y as u16));
-            circuit_points.push((220, y as u16));
-        }
+        // Method 1: Poisson disk sampling approximation
+        // This ensures stars don't cluster too much
+        let min_distance = 15.0; // Minimum distance between stars
+        let mut placed_points: Vec<(f32, f32)> = Vec::new();
         
-        // Node points
-        for x in [60, 140, 220] {
-            for y in [60, 100] {
-                circuit_points.push((x, y));
+        // Try to place stars with minimum spacing
+        for i in 0..num_sparkles * 3 { // Try 3x attempts to fill space
+            // Use multiple primes for better randomness
+            let seed_x = (i * 137 + i * i * 7) % 1000;
+            let seed_y = (i * 223 + i * i * 11) % 1000;
+            
+            let x = 20.0 + (seed_x as f32 / 1000.0) * 280.0;
+            let y = 25.0 + (seed_y as f32 / 1000.0) * 120.0;
+            
+            // Check distance to existing points
+            let mut too_close = false;
+            for &(px, py) in placed_points.iter() {
+                let dist = ((x - px).powi(2) + (y - py).powi(2)).sqrt();
+                if dist < min_distance {
+                    too_close = true;
+                    break;
+                }
             }
+            
+            if !too_close && circuit_points.len() < num_sparkles {
+                circuit_points.push((x as u16, y as u16));
+                placed_points.push((x, y));
+            }
+        }
+        
+        // Method 2: Add some truly random scattered stars
+        // These can be closer together for variety
+        for i in 0..20 {
+            let hash1 = (i * 73 + 29) % 997;
+            let hash2 = (i * 97 + 53) % 883;
+            
+            let x = 15 + (hash1 % 290) as u16;
+            let y = 20 + (hash2 % 130) as u16;
+            
+            circuit_points.push((x, y));
+        }
+        
+        // Method 3: Add edge stars for full coverage
+        // These ensure the edges aren't empty
+        let edge_positions = [
+            // Top edge
+            (30, 25), (80, 23), (130, 26), (180, 24), (230, 25), (280, 23),
+            // Bottom edge
+            (40, 145), (100, 143), (160, 146), (220, 144), (270, 145),
+            // Left edge
+            (18, 50), (20, 80), (17, 110),
+            // Right edge
+            (302, 45), (300, 75), (303, 105), (301, 135)
+        ];
+        for &pos in edge_positions.iter() {
+            circuit_points.push(pos);
         }
         
         Self {
@@ -99,9 +140,15 @@ impl BootManager {
         // Main content area with subtle gradient effect
         let content_y = 50;
         
-        // Title with glow effect
-        self.draw_glowing_text(display, 160, content_y, "ESP32-S3", PRIMARY_BLUE, 2)?;
-        display.draw_text_centered(content_y + 25, "DASHBOARD", WHITE, None, 1)?;
+        // Title with cleaner design
+        display.draw_text_centered(content_y, "ESP32-S3", PRIMARY_BLUE, None, 2)?;
+        display.draw_text_centered(content_y + 25, "DASHBOARD", TEXT_PRIMARY, None, 1)?;
+        
+        // Subtle separator line
+        let line_y = content_y + 45;
+        let line_width = 100;
+        let line_x = (320 - line_width) / 2;
+        display.draw_line(line_x, line_y, line_x + line_width, line_y, BORDER_COLOR)?;
         
         // Progress section
         let progress_y = content_y + 60;
@@ -111,24 +158,27 @@ impl BootManager {
         let chars_to_show = ((self.animation_frame / 2) as usize).min(desc.len());
         let partial_desc = &desc[..chars_to_show];
         
-        // Clear description area
-        display.fill_rect(50, progress_y - 5, 200, 20, BLACK)?;
+        // Clear description area (full width to prevent overlap)
+        display.fill_rect(0, progress_y - 5, 320, 20, BLACK)?;
         display.draw_text_centered(progress_y, partial_desc, TEXT_PRIMARY, None, 1)?;
         
         // Animated progress bar with gradient
         self.draw_animated_progress(display, 50, progress_y + 25, 200, 12, stage.progress())?;
         
-        // Progress percentage with pulse effect
-        let pulse = (self.animation_frame as f32 * 0.1).sin().abs();
-        let percent_color = interpolate_color(PRIMARY_BLUE, WHITE, pulse);
-        display.draw_text_centered(progress_y + 45, &format!("{}%", stage.progress()), percent_color, None, 1)?;
+        // Progress percentage with subtle color
+        display.fill_rect(130, progress_y + 42, 60, 16, BLACK)?; // Clear area first
+        display.draw_text_centered(progress_y + 45, &format!("{}%", stage.progress()), PRIMARY_BLUE, None, 1)?;
         
         // Version and build info at bottom
+        display.fill_rect(100, 152, 120, 16, BLACK)?; // Clear area first
         display.draw_text_centered(155, crate::version::DISPLAY_VERSION, TEXT_SECONDARY, None, 1)?;
         
         // Animated dots for "loading" effect
         if stage.progress() < 100 {
             self.draw_loading_dots(display, 160, 165)?;
+        } else {
+            // Clear the dots area when complete
+            display.fill_rect(140, 165, 40, 10, BLACK)?;
         }
         
         self.animation_frame += 1;
@@ -136,29 +186,54 @@ impl BootManager {
     }
     
     fn draw_circuit_pattern(&self, display: &mut DisplayManager) -> Result<()> {
-        // Draw fading circuit lines based on animation frame
-        let fade_factor = ((self.animation_frame as f32 * 0.05).sin().abs() * 0.5 + 0.5) * 255.0;
-        let line_color = rgb565(0, fade_factor as u8 / 4, fade_factor as u8 / 2);
+        // Base color for inactive sparkles (subtle blue)
+        let fade_factor = ((self.animation_frame as f32 * 0.03).sin().abs() * 0.3 + 0.2) * 255.0;
+        let line_color = rgb565(0, fade_factor as u8 / 8, fade_factor as u8 / 2);
         
-        // Draw connections between points
-        for i in 0..self.circuit_points.len() {
-            let (x, y) = self.circuit_points[i];
+        // Draw sparkle nodes with chaotic twinkling
+        for (i, &(x, y)) in self.circuit_points.iter().enumerate() {
+            // Create pseudo-random behavior using multiple prime numbers
+            let seed1 = (i as u32 * 31 + self.animation_frame * 7) as f32;
+            let seed2 = (i as u32 * 47 + self.animation_frame * 13) as f32;
+            let seed3 = (i as u32 * 23 + self.animation_frame * 5) as f32;
             
-            // Draw small nodes at intersection points
-            if i % 3 == 0 {
-                let node_active = (self.animation_frame + i as u32 * 10) % 60 < 20;
-                let node_color = if node_active { PRIMARY_BLUE } else { line_color };
-                display.fill_circle(x, y, 2, node_color)?;
-            }
+            // Chaotic oscillations for more natural twinkling
+            let twinkle = (seed1 * 0.017).sin() * (seed2 * 0.023).cos() + (seed3 * 0.011).sin();
+            let brightness = ((twinkle + 1.5) * 0.4).max(0.0).min(1.0);
             
-            // Draw connecting lines (simplified)
-            if i > 0 && i % 2 == 0 {
-                let (prev_x, prev_y) = self.circuit_points[i - 1];
-                // Only draw if points are close enough
-                let dx = (x as i32 - prev_x as i32).abs();
-                let dy = (y as i32 - prev_y as i32).abs();
-                if dx < 50 && dy < 50 {
-                    display.draw_line(prev_x, prev_y, x, y, line_color)?;
+            // Quick flashes - occasional bright pulses
+            let flash_chance = ((seed1 * 0.003).sin() + (seed2 * 0.007).cos()) > 1.85;
+            let flash_brightness = if flash_chance { 1.0 } else { brightness };
+            
+            // Color varies from deep blue through cyan to white
+            let color_phase = (seed3 * 0.019).sin() * 0.5 + 0.5;
+            let intensity = flash_brightness * 255.0;
+            
+            // Deep blue -> cyan -> white spectrum
+            let r = (intensity * flash_brightness * 0.3) as u8;  // Only bright sparkles have red
+            let g = (intensity * (0.3 + color_phase * 0.7)) as u8;  // Green varies with phase
+            let b = (intensity * (0.7 + flash_brightness * 0.3)) as u8;  // Blue always strong
+            
+            // Only draw visible sparkles
+            if brightness > 0.15 {
+                let sparkle_color = rgb565(r, g, b);
+                
+                // Smaller sizes - mostly single pixels with occasional 2-pixel stars
+                let size = if brightness > 0.8 && ((seed1 * 0.05).sin() > 0.7) { 2 } else { 1 };
+                
+                display.fill_circle(x, y, size, sparkle_color)?;
+                
+                // Rare bright halos for magical effect
+                if flash_brightness > 0.9 {
+                    let halo = rgb565(r/3, g/3, b/2);
+                    display.draw_circle(x, y, size + 1, halo)?;
+                    // Tiny cross for super bright ones
+                    if flash_chance {
+                        display.draw_pixel(x - 1, y, halo)?;
+                        display.draw_pixel(x + 1, y, halo)?;
+                        display.draw_pixel(x, y - 1, halo)?;
+                        display.draw_pixel(x, y + 1, halo)?;
+                    }
                 }
             }
         }
@@ -166,45 +241,54 @@ impl BootManager {
         Ok(())
     }
     
-    fn draw_glowing_text(&self, display: &mut DisplayManager, _x: u16, y: u16, text: &str, color: u16, scale: u8) -> Result<()> {
-        // Create glow effect with multiple layers
-        let glow_intensity = (self.animation_frame as f32 * 0.1).sin().abs() * 0.5 + 0.5;
-        
-        // Outer glow
-        let glow_color = interpolate_color(BLACK, color, glow_intensity * 0.3);
-        display.draw_text_centered(y - 1, text, glow_color, None, scale)?;
-        display.draw_text_centered(y + 1, text, glow_color, None, scale)?;
-        
-        // Main text
-        display.draw_text_centered(y, text, color, None, scale)?;
-        
-        Ok(())
-    }
     
     fn draw_animated_progress(&self, display: &mut DisplayManager, x: u16, y: u16, w: u16, h: u16, progress: u8) -> Result<()> {
-        // Border with rounded corners effect
-        display.draw_rect(x, y, w, h, BORDER_COLOR)?;
+        // Draw shadow for depth
+        display.fill_rect(x + 2, y + 2, w, h, rgb565(10, 10, 10))?;
         
-        // Background
+        // Border with subtle highlight
+        display.draw_rect(x, y, w, h, BORDER_COLOR)?;
+        display.draw_line(x + 1, y + 1, x + w - 2, y + 1, rgb565(60, 60, 60))?; // Top highlight
+        
+        // Background with subtle gradient
         display.fill_rect(x + 1, y + 1, w - 2, h - 2, SURFACE_DARK)?;
         
         // Calculate actual progress width
         let progress_width = ((w - 2) as u32 * progress as u32 / 100) as u16;
         
         if progress_width > 0 {
-            // Create gradient effect in progress bar
+            // Main progress fill with smooth gradient
             for i in 0..progress_width {
-                let gradient_factor = i as f32 / progress_width as f32;
-                let color = interpolate_color(PRIMARY_PURPLE, PRIMARY_BLUE, gradient_factor);
-                display.fill_rect(x + 1 + i, y + 1, 1, h - 2, color)?;
+                // Create a smooth gradient from left to right
+                let gradient_factor = i as f32 / w as f32;
+                let base_color = interpolate_color(PRIMARY_PURPLE, PRIMARY_BLUE, gradient_factor);
+                
+                // Add subtle vertical gradient for 3D effect
+                for j in 0..(h - 2) {
+                    let vertical_factor = 1.0 - (j as f32 / (h - 2) as f32) * 0.3;
+                    let color = interpolate_color(SURFACE_DARK, base_color, vertical_factor);
+                    display.draw_pixel(x + 1 + i, y + 1 + j, color)?;
+                }
             }
             
-            // Add shimmer effect
-            let shimmer_pos = (self.animation_frame * 3) % (progress_width as u32 + 20);
-            if shimmer_pos < progress_width as u32 {
-                let shimmer_x = x + 1 + shimmer_pos as u16;
-                display.fill_rect(shimmer_x, y + 1, 2.min(progress_width - shimmer_pos as u16), h - 2, WHITE)?;
+            // Add subtle pulse glow at the end of progress
+            let pulse = (self.animation_frame as f32 * 0.15).sin().abs();
+            if progress_width > 3 {
+                let glow_width = 3.min(progress_width);
+                let glow_color = interpolate_color(PRIMARY_BLUE, WHITE, pulse * 0.5);
+                display.fill_rect(x + progress_width - glow_width + 1, y + 1, glow_width, h - 2, glow_color)?;
             }
+            
+            // Add edge highlight for definition
+            if progress_width > 1 {
+                display.draw_line(x + progress_width, y + 1, x + progress_width, y + h - 2, interpolate_color(PRIMARY_BLUE, WHITE, 0.3))?;
+            }
+        }
+        
+        // Progress track markers every 20%
+        for i in 1..5 {
+            let marker_x = x + (w as u32 * i * 20 / 100) as u16;
+            display.draw_line(marker_x, y, marker_x, y + h - 1, rgb565(40, 40, 40))?;
         }
         
         Ok(())
