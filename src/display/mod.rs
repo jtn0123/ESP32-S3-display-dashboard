@@ -2,12 +2,14 @@ pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
 // pub mod lcd_cam; // Commented out - needs esp-hal for proper peripheral access
+pub mod dma; // New DMA implementation using GDMA
 
 // Color type not used - colors are defined as u16 constants
 
 use anyhow::Result;
 use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;
+use self::dma::DmaDisplayWrapper;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::{Instant, Duration};
@@ -97,6 +99,7 @@ pub struct DisplayManager {
     frame_buffer: Vec<u16>, // Optional frame buffer for optimized updates
     #[allow(dead_code)]
     use_frame_buffer: bool,
+    dma_display: Option<DmaDisplayWrapper>, // DMA-accelerated display
 }
 
 impl DisplayManager {
@@ -135,6 +138,23 @@ impl DisplayManager {
         backlight_pin.set_high()?;
         log::info!("Backlight enabled (GPIO high)");
         
+        // Try to initialize DMA display
+        let dma_display = match DmaDisplayWrapper::new() {
+            Ok(dma) => {
+                if dma.is_available() {
+                    log::info!("DMA display initialized successfully");
+                    Some(dma)
+                } else {
+                    log::warn!("DMA display not available, using standard mode");
+                    None
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to initialize DMA display: {}", e);
+                None
+            }
+        };
+        
         let mut display = Self {
             lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
             backlight_pin: Some(backlight_pin),
@@ -146,6 +166,7 @@ impl DisplayManager {
             dirty_rect: DirtyRect::new(0, 0, 0, 0),
             frame_buffer: Vec::new(),
             use_frame_buffer: false,
+            dma_display,
         };
         
         display.init()?;
@@ -658,6 +679,49 @@ impl DisplayManager {
             self.frame_buffer = vec![0u16; size];
             log::info!("Frame buffer enabled: {} pixels ({} KB)", 
                       size, size * 2 / 1024);
+        }
+        Ok(())
+    }
+    
+    /// Check if DMA display is available
+    pub fn is_dma_available(&self) -> bool {
+        self.dma_display.as_ref().map(|d| d.is_available()).unwrap_or(false)
+    }
+    
+    /// Get DMA performance stats
+    pub fn get_dma_stats(&mut self) -> Option<(bool, u32)> {
+        if let Some(ref mut dma) = self.dma_display {
+            dma.with_display(|display| {
+                (display.is_transfer_active(), display.get_frames_rendered())
+            })
+        } else {
+            None
+        }
+    }
+    
+    /// Enable DMA rendering mode
+    pub fn enable_dma_mode(&mut self, enable: bool) -> Result<()> {
+        if enable && self.is_dma_available() {
+            log::info!("DMA rendering mode enabled");
+            self.use_frame_buffer = true; // DMA requires frame buffer
+        } else {
+            log::info!("DMA rendering mode disabled");
+        }
+        Ok(())
+    }
+    
+    /// Render frame buffer to display using DMA
+    pub fn render_dma_frame(&mut self) -> Result<()> {
+        if let Some(ref mut dma_wrapper) = self.dma_display {
+            dma_wrapper.with_display(|dma| {
+                // Start DMA transfer
+                if let Err(e) = dma.start_transfer() {
+                    log::error!("DMA transfer failed: {}", e);
+                } else {
+                    // Wait for previous transfer to complete
+                    dma.wait_transfer();
+                }
+            });
         }
         Ok(())
     }

@@ -325,6 +325,7 @@ impl UiManager {
             self.text_cache.push(TextCache { text: "CPU Freq:".to_string(), x: 10, y: y_start + line_height * 2, color: TEXT_PRIMARY, rendered: false });
             self.text_cache.push(TextCache { text: "Flash:".to_string(), x: 10, y: y_start + line_height * 3, color: TEXT_PRIMARY, rendered: false });
             self.text_cache.push(TextCache { text: "Temp:".to_string(), x: 10, y: y_start + line_height * 4, color: TEXT_PRIMARY, rendered: false });
+            self.text_cache.push(TextCache { text: "PSRAM/DMA:".to_string(), x: 10, y: y_start + line_height * 5, color: TEXT_PRIMARY, rendered: false });
             
             // Render cached text
             for cache_entry in &mut self.text_cache {
@@ -431,6 +432,18 @@ impl UiManager {
             display.draw_text(120, y_start + line_height * 4, &temp_str, temp_color, None, 1)?;
             self.cached_temp = temp_str;
         }
+        
+        // PSRAM/DMA status (new addition)
+        let psram_info = crate::psram::PsramAllocator::get_info();
+        let dma_available = display.is_dma_available();
+        let psram_str = if psram_info.available {
+            format!("{}MB free, DMA: {}", psram_info.free_size / 1024 / 1024, if dma_available { "ON" } else { "OFF" })
+        } else {
+            "Not available".to_string()
+        };
+        display.fill_rect(120, y_start + line_height * 5, 180, 16, BLACK)?;
+        let psram_color = if psram_info.available && dma_available { PRIMARY_GREEN } else { YELLOW };
+        display.draw_text(120, y_start + line_height * 5, &psram_str, psram_color, None, 1)?;
         
         // Progress indicator (only update when progress changes)
         static mut LAST_PROGRESS: u8 = 255; // Invalid initial value
