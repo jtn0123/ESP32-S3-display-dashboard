@@ -1,7 +1,6 @@
 pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
-pub mod lcd_bus_fast;
 
 // Color type not used - colors are defined as u16 constants
 
