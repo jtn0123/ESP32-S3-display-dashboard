@@ -40,8 +40,10 @@ pub struct UiManager {
     cached_flash: String,
     cached_temp: String,
     cached_battery: u8,
-    // Pre-allocated string buffer for formatting
+    // Pre-allocated string buffers for formatting
     string_buffer: String,
+    string_buffer2: String,
+    string_buffer3: String,
     // Skip render counter
     skip_renders: u32,
     total_renders: u32,
@@ -112,6 +114,8 @@ impl UiManager {
             cached_temp: String::new(),
             cached_battery: 0,
             string_buffer: String::with_capacity(32),
+            string_buffer2: String::with_capacity(32),
+            string_buffer3: String::with_capacity(32),
             skip_renders: 0,
             total_renders: 0,
             text_cache: Vec::with_capacity(20),

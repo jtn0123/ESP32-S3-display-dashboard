@@ -476,11 +476,23 @@ fn run_app(
             let avg_frame_time = total_frame_time / frame_count;
             let fps = (frame_count as f32) / last_fps_report.elapsed().as_secs_f32();
             
-            log::info!("[PERF] FPS: {:.1} | Avg frame: {:?} | Max frame: {:?} | Heap free: {} KB",
+            // Get CPU frequency
+            let cpu_freq = unsafe { 
+                esp_idf_sys::esp_clk_cpu_freq() / 1_000_000
+            };
+            
+            // Get PSRAM info if available
+            let psram_free = unsafe {
+                esp_idf_sys::esp_get_free_internal_heap_size() / 1024
+            };
+            
+            log::info!("[PERF] FPS: {:.1} | Avg: {:?} | Max: {:?} | CPU: {}MHz | Heap: {}KB | IRAM: {}KB",
                 fps,
                 avg_frame_time,
                 max_frame_time,
-                unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024
+                cpu_freq,
+                unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024,
+                psram_free
             );
             
             // Reset counters
