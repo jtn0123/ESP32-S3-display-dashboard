@@ -75,7 +75,10 @@ source ~/export-esp.sh
 ├── build.rs                # Build script
 ├── sdkconfig.defaults      # ESP-IDF config
 ├── compile.sh              # Build script
-├── flash.sh                # Build & flash script
+├── scripts/
+│   ├── flash.sh            # Build & flash script
+│   ├── ota.sh              # OTA update script
+│   └── check-partition.sh  # Partition checker
 └── setup-toolchain.sh      # Toolchain installer
 ```
 
@@ -246,7 +249,7 @@ source ~/esp-env.sh
 ls /dev/tty.usb* /dev/cu.usb*
 
 # Flash with specific port
-./flash.sh --port /dev/tty.usbmodem14201
+./scripts/flash.sh --port /dev/tty.usbmodem14201
 ```
 
 **"ESP-IDF App Descriptor missing" Error (espflash 4.x)**

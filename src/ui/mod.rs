@@ -47,6 +47,20 @@ pub struct UiManager {
     total_renders: u32,
     // Text cache for static labels
     text_cache: Vec<TextCache>,
+    // OTA screen caching
+    cached_ota_time: u64,
+    cached_ota_status: String,
+    cached_ota_endpoints: (String, String),
+    cached_network_ip: Option<String>,
+    cached_ota_status_enum: Option<OtaStatus>,
+    ota_screen_initialized: bool,
+    // Screen initialization flags for optimized rendering
+    system_screen_initialized: bool,
+    network_screen_initialized: bool,
+    sensor_screen_initialized: bool,
+    settings_screen_initialized: bool,
+    // Global time caching for all screens
+    global_cached_time: u64,
 }
 
 impl UiManager {
@@ -101,6 +115,17 @@ impl UiManager {
             skip_renders: 0,
             total_renders: 0,
             text_cache: Vec::with_capacity(20),
+            cached_ota_time: 0,
+            cached_ota_status: String::new(),
+            cached_ota_endpoints: (String::new(), String::new()),
+            cached_network_ip: None,
+            cached_ota_status_enum: None,
+            ota_screen_initialized: false,
+            system_screen_initialized: false,
+            network_screen_initialized: false,
+            sensor_screen_initialized: false,
+            settings_screen_initialized: false,
+            global_cached_time: 0,
         })
     }
 
@@ -192,6 +217,13 @@ impl UiManager {
             log::info!("Switching to screen {}", self.current_screen);
             self.last_rendered_screen = Some(self.current_screen);
             unsafe { RENDER_NEEDED = true; }
+            
+            // Reset all screen initialization flags when switching
+            self.system_screen_initialized = false;
+            self.network_screen_initialized = false;
+            self.sensor_screen_initialized = false;
+            self.settings_screen_initialized = false;
+            self.ota_screen_initialized = false;
         }
         
         // Skip render if nothing changed (except on screen change)
@@ -234,6 +266,31 @@ impl UiManager {
     }
 
     fn render_system_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
+        // Early exit if nothing needs updating
+        if !screen_changed && self.system_screen_initialized {
+            // Check if any values actually changed
+            let heap_kb = self.system_info.get_free_heap_kb();
+            let heap_str = format!("{} KB", heap_kb);
+            let cpu_freq = self.system_info.get_cpu_freq_mhz();
+            let cpu_str = format!("{} MHz", cpu_freq);
+            let temp_str = format!("{:.1}°C", self.sensor_data._temperature);
+            
+            if heap_str == self.cached_heap && 
+               cpu_str == self.cached_cpu && 
+               temp_str == self.cached_temp &&
+               self.sensor_data._battery_percentage == self.cached_battery {
+                // Only update time every 5 seconds
+                let current_seconds = self.system_info.get_uptime().as_secs();
+                if current_seconds >= self.global_cached_time + 5 {
+                    self.global_cached_time = current_seconds;
+                    display.fill_rect(235, 5, 65, 20, PRIMARY_BLUE)?;
+                    let time_str = self.system_info.format_uptime();
+                    display.draw_text(240, 8, &time_str, WHITE, None, 1)?;
+                }
+                return Ok(());
+            }
+        }
+        
         // Only clear screen when switching to this screen
         if screen_changed {
             log::info!("render_system_screen: Clearing screen for new screen");
@@ -244,6 +301,9 @@ impl UiManager {
             // Header (using actual display width)
             display.fill_rect(0, 0, 300, 30, PRIMARY_BLUE)?;
             display.draw_text_centered(8, "System Status", WHITE, None, 2)?;
+            
+            // Reset initialization flag
+            self.system_screen_initialized = false;
             
             // Static labels - cache them instead of redrawing
             let y_start = 45;
@@ -270,17 +330,16 @@ impl UiManager {
             display.draw_text(200, 150, "[USER] Next", TEXT_SECONDARY, None, 1)?;
         }
         
-        // Update time in header (only update every second)
-        static mut LAST_TIME_UPDATE: u64 = 0;
-        let current_seconds = self.system_info.get_uptime().as_secs();
+        // Set screen as initialized after first render
+        self.system_screen_initialized = true;
         
-        unsafe {
-            if current_seconds != LAST_TIME_UPDATE {
-                LAST_TIME_UPDATE = current_seconds;
-                display.fill_rect(235, 5, 65, 20, PRIMARY_BLUE)?;
-                let time_str = self.system_info.format_uptime();
-                display.draw_text(240, 8, &time_str, WHITE, None, 1)?;
-            }
+        // Update time in header (only update every 5 seconds or on first render)
+        let current_seconds = self.system_info.get_uptime().as_secs();
+        if current_seconds >= self.global_cached_time + 5 || !self.system_screen_initialized {
+            self.global_cached_time = current_seconds;
+            display.fill_rect(235, 5, 65, 20, PRIMARY_BLUE)?;
+            let time_str = self.system_info.format_uptime();
+            display.draw_text(240, 8, &time_str, WHITE, None, 1)?;
         }
         
         // Battery indicator in header (only update if changed)
@@ -388,6 +447,9 @@ impl UiManager {
             display.fill_rect(0, 0, 300, 30, PRIMARY_PURPLE)?;
             display.draw_text_centered(8, "Network Status", WHITE, None, 2)?;
             
+            // Reset initialization
+            self.network_screen_initialized = false;
+            
             // Static labels - consistent layout
             let y_start = 38;
             let line_height = 20;
@@ -401,10 +463,14 @@ impl UiManager {
             display.draw_text(200, 155, "[USER] Next", TEXT_SECONDARY, None, 1)?;
         }
         
-        // Update time in header
-        display.fill_rect(240, 5, 75, 20, PRIMARY_PURPLE)?;
-        let time_str = self.system_info.format_uptime();
-        display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
+        // Update time in header (every 5 seconds)
+        let current_seconds = self.system_info.get_uptime().as_secs();
+        if current_seconds >= self.global_cached_time + 5 || screen_changed {
+            self.global_cached_time = current_seconds;
+            display.fill_rect(240, 5, 75, 20, PRIMARY_PURPLE)?;
+            let time_str = self.system_info.format_uptime();
+            display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
+        }
         
         // Dynamic content - consistent spacing
         let y_start = 38;
@@ -509,10 +575,32 @@ impl UiManager {
             }
         }
         
+        // Mark screen as initialized
+        self.network_screen_initialized = true;
+        
         Ok(())
     }
 
     fn render_sensor_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
+        // Early exit if nothing needs updating
+        static mut LAST_BATTERY: u8 = 255;
+        static mut LAST_TEMP: f32 = -999.0;
+        static mut LAST_LIGHT: u16 = 65535;
+        
+        unsafe {
+            if !screen_changed && self.sensor_screen_initialized &&
+               LAST_BATTERY == self.sensor_data._battery_percentage &&
+               (LAST_TEMP - self.sensor_data._temperature).abs() < 0.5 &&
+               LAST_LIGHT == self.sensor_data._light_level {
+                return Ok(());
+            }
+            
+            // Update cached values
+            LAST_BATTERY = self.sensor_data._battery_percentage;
+            LAST_TEMP = self.sensor_data._temperature;
+            LAST_LIGHT = self.sensor_data._light_level;
+        }
+        
         // Only clear screen when switching to this screen
         if screen_changed {
             display.clear(BLACK)?;
@@ -521,6 +609,9 @@ impl UiManager {
             // Header
             display.fill_rect(0, 0, 300, 30, PRIMARY_GREEN)?;
             display.draw_text_centered(8, "Sensor Data", WHITE, None, 2)?;
+            
+            // Reset initialization
+            self.sensor_screen_initialized = false;
             
             // Static labels
             let y_start = 50;
@@ -534,7 +625,10 @@ impl UiManager {
             display.draw_text(230, 150, "[USER] Next", TEXT_SECONDARY, None, 1)?;
         }
         
-        // Dynamic sensor values (always update)
+        // Mark screen as initialized
+        self.sensor_screen_initialized = true;
+        
+        // Dynamic sensor values (only update if changed)
         let y_start = 50;
         let line_height = 30;
         
@@ -603,6 +697,11 @@ impl UiManager {
     }
 
     fn render_settings_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
+        // Early exit - settings screen is mostly static
+        if !screen_changed && self.settings_screen_initialized {
+            return Ok(());
+        }
+        
         if screen_changed {
             // Clear screen only on screen change
             display.clear(BLACK)?;
@@ -611,6 +710,9 @@ impl UiManager {
             // Header
             display.fill_rect(0, 0, 300, 30, ACCENT_ORANGE)?;
             display.draw_text_centered(8, "Settings", WHITE, None, 2)?;
+            
+            // Reset initialization
+            self.settings_screen_initialized = false;
             
             // Settings options
             let y_start = 50;
@@ -647,10 +749,29 @@ impl UiManager {
         display.fill_rect(120, y_start + line_height * 3, 100, 20, BLACK)?;
         display.draw_text(120, y_start + line_height * 3, crate::version::DISPLAY_VERSION, TEXT_SECONDARY, None, 1)?;
         
+        // Mark screen as initialized
+        self.settings_screen_initialized = true;
+        
         Ok(())
     }
     
     fn render_ota_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
+        // Early exit if nothing needs updating
+        if !screen_changed && 
+           self.cached_ota_status_enum == Some(self.ota_status.clone()) &&
+           self.cached_network_ip == self.network_ip &&
+           self.ota_screen_initialized {
+            // Only update time every 5 seconds to reduce operations
+            let current_seconds = self.system_info.get_uptime().as_secs();
+            if current_seconds >= self.cached_ota_time + 5 {
+                self.cached_ota_time = current_seconds;
+                display.fill_rect(240, 5, 60, 20, ACCENT_ORANGE)?;
+                let time_str = self.system_info.format_uptime();
+                display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
+            }
+            return Ok(());
+        }
+        
         if screen_changed {
             // Clear screen
             display.clear(BLACK)?;
@@ -660,94 +781,122 @@ impl UiManager {
             display.fill_rect(0, 0, 300, 30, ACCENT_ORANGE)?;
             display.draw_text_centered(8, "OTA Updates", WHITE, None, 2)?;
             
-            // Button hints - moved to avoid overlap
+            // Button hints
             display.draw_text(10, 155, "[BOOT] Prev", TEXT_SECONDARY, None, 1)?;
             display.draw_text(200, 155, "[USER] Check", TEXT_SECONDARY, None, 1)?;
+            
+            // Reset initialization flag
+            self.ota_screen_initialized = false;
         }
         
-        // Update time in header
-        display.fill_rect(240, 5, 60, 20, ACCENT_ORANGE)?;
-        let time_str = self.system_info.format_uptime();
-        display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
+        // Update time on first render
+        if !self.ota_screen_initialized {
+            let current_seconds = self.system_info.get_uptime().as_secs();
+            self.cached_ota_time = current_seconds;
+            display.fill_rect(240, 5, 60, 20, ACCENT_ORANGE)?;
+            let time_str = self.system_info.format_uptime();
+            display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
+        }
         
         // Main content area - adjusted spacing
         let y_start = 36;
         let line_height = 16;
         
-        // Current version info
-        display.draw_text(10, y_start, "Firmware:", TEXT_PRIMARY, None, 1)?;
-        display.fill_rect(80, y_start, 100, 16, BLACK)?;
-        display.draw_text(80, y_start, crate::version::DISPLAY_VERSION, PRIMARY_BLUE, None, 1)?;
-        
-        // Partition info
-        display.draw_text(180, y_start, "Partition:", TEXT_PRIMARY, None, 1)?;
-        display.fill_rect(240, y_start, 50, 16, BLACK)?;
-        display.draw_text(240, y_start, "Factory", TEXT_SECONDARY, None, 1)?;
-        
-        // OTA Status
-        display.draw_text(10, y_start + line_height, "Status:", TEXT_PRIMARY, None, 1)?;
-        display.fill_rect(80, y_start + line_height, 200, 16, BLACK)?;
-        
-        let (status_text, status_color) = match &self.ota_status {
-            OtaStatus::Idle => ("Ready", TEXT_SECONDARY),
-            OtaStatus::Downloading { progress: _ } => ("Downloading", PRIMARY_BLUE),
-            OtaStatus::Verifying => ("Verifying Update", YELLOW),
-            OtaStatus::Ready => ("Update Ready - Restart", PRIMARY_GREEN),
-            OtaStatus::Failed => ("Update Failed", PRIMARY_RED),
-        };
-        
-        // Draw status text - need to handle owned String
-        match &self.ota_status {
-            OtaStatus::Downloading { progress } => {
-                let text = format!("Downloading {}%", progress);
-                display.draw_text(80, y_start + line_height, &text, status_color, None, 1)?;
-            },
-            _ => {
-                display.draw_text(80, y_start + line_height, status_text, status_color, None, 1)?;
-            }
+        // Static content - only draw once
+        if !self.ota_screen_initialized || screen_changed {
+            // Current version info
+            display.draw_text(10, y_start, "Firmware:", TEXT_PRIMARY, None, 1)?;
+            display.draw_text(80, y_start, crate::version::DISPLAY_VERSION, PRIMARY_BLUE, None, 1)?;
+            
+            // Partition info
+            display.draw_text(180, y_start, "Partition:", TEXT_PRIMARY, None, 1)?;
+            display.draw_text(240, y_start, "Factory", TEXT_SECONDARY, None, 1)?;
+            
+            // Status label
+            display.draw_text(10, y_start + line_height, "Status:", TEXT_PRIMARY, None, 1)?;
+            
+            // Draw separator line once
+            let base_server_y = y_start + line_height * 2 + 8;
+            display.draw_line(10, base_server_y - 3, 290, base_server_y - 3, BORDER_COLOR)?;
         }
         
-        // Progress bar (if downloading) - adjusted position
+        // OTA Status - only format and update if truly changed
+        let status_changed = self.cached_ota_status_enum != Some(self.ota_status.clone());
+        if status_changed || !self.ota_screen_initialized {
+            self.cached_ota_status_enum = Some(self.ota_status.clone());
+            
+            let (status_text, status_color) = match &self.ota_status {
+                OtaStatus::Idle => ("Ready", TEXT_SECONDARY),
+                OtaStatus::Downloading { progress } => {
+                    self.string_buffer.clear();
+                    use std::fmt::Write;
+                    let _ = write!(&mut self.string_buffer, "Downloading {}%", progress);
+                    (self.string_buffer.as_str(), PRIMARY_BLUE)
+                },
+                OtaStatus::Verifying => ("Verifying Update", YELLOW),
+                OtaStatus::Ready => ("Update Ready - Restart", PRIMARY_GREEN),
+                OtaStatus::Failed => ("Update Failed", PRIMARY_RED),
+            };
+            
+            display.fill_rect(80, y_start + line_height, 200, 16, BLACK)?;
+            display.draw_text(80, y_start + line_height, status_text, status_color, None, 1)?;
+        }
+        
+        // Progress bar - use fixed position to leverage caching
         let progress_y = y_start + line_height * 2 + 4;
         if let OtaStatus::Downloading { progress } = self.ota_status {
             display.draw_progress_bar(10, progress_y, 280, 10, progress, PRIMARY_BLUE, SURFACE_LIGHT, BORDER_COLOR)?;
+        } else if status_changed && matches!(self.cached_ota_status_enum, Some(OtaStatus::Downloading { .. })) {
+            // Clear progress bar area when transitioning away from downloading
+            display.fill_rect(10, progress_y, 280, 10, BLACK)?;
         }
         
-        // OTA Server section - properly spaced
-        let server_section_y = if matches!(self.ota_status, OtaStatus::Downloading { .. }) {
-            progress_y + 16  // Extra space after progress bar
-        } else {
-            y_start + line_height * 2 + 8  // Normal spacing
-        };
-        display.draw_line(10, server_section_y - 3, 290, server_section_y - 3, BORDER_COLOR)?;
+        // Fixed server section position
+        let server_section_y = y_start + line_height * 2 + 24;
         
-        if self.network_connected {
-            // Show OTA endpoints with proper spacing
-            display.draw_text_centered(server_section_y + 4, "OTA Endpoints", TEXT_SECONDARY, None, 1)?;
+        // Network section - only update on actual changes
+        let network_changed = self.cached_network_ip != self.network_ip;
+        if network_changed || !self.ota_screen_initialized {
+            // Clear the entire network section area
+            display.fill_rect(10, server_section_y, 290, 80, BLACK)?;
             
-            if let Some(ref ip) = self.network_ip {
-                // Web upload interface - adjusted spacing
-                let endpoint_y = server_section_y + 20;
-                display.draw_text(10, endpoint_y, "Upload:", TEXT_PRIMARY, None, 1)?;
-                display.fill_rect(60, endpoint_y, 230, 14, BLACK)?;  // Clear area first
-                display.draw_text(60, endpoint_y, &format!("http://{}:8080/ota", ip), PRIMARY_BLUE, None, 1)?;
+            if self.network_connected {
+                display.draw_text_centered(server_section_y + 4, "OTA Endpoints", TEXT_SECONDARY, None, 1)?;
                 
-                // Status API endpoint - proper spacing
-                let status_y = endpoint_y + 16;
-                display.draw_text(10, status_y, "Status:", TEXT_PRIMARY, None, 1)?;
-                display.fill_rect(60, status_y, 230, 14, BLACK)?;  // Clear area first
-                display.draw_text(60, status_y, &format!("http://{}:8080/api/ota/status", ip), PRIMARY_BLUE, None, 1)?;
-                
-                // Quick guide - dynamically positioned
-                let guide_y = status_y + 20;
-                display.draw_text_centered(guide_y, "Upload .bin file at OTA URL", TEXT_SECONDARY, None, 1)?;
-                display.draw_text_centered(guide_y + 14, "Device auto-restarts after update", TEXT_SECONDARY, None, 1)?;
+                if let Some(ref ip) = self.network_ip {
+                    self.cached_network_ip = Some(ip.clone());
+                    
+                    // Format endpoints using pre-allocated buffer
+                    let endpoint_y = server_section_y + 20;
+                    display.draw_text(10, endpoint_y, "Upload:", TEXT_PRIMARY, None, 1)?;
+                    
+                    self.string_buffer.clear();
+                    use std::fmt::Write;
+                    let _ = write!(&mut self.string_buffer, "http://{}:8080/ota", ip);
+                    display.draw_text(60, endpoint_y, &self.string_buffer, PRIMARY_BLUE, None, 1)?;
+                    
+                    let status_y = endpoint_y + 16;
+                    display.draw_text(10, status_y, "Status:", TEXT_PRIMARY, None, 1)?;
+                    
+                    self.string_buffer.clear();
+                    let _ = write!(&mut self.string_buffer, "http://{}:8080/api/ota/status", ip);
+                    display.draw_text(60, status_y, &self.string_buffer, PRIMARY_BLUE, None, 1)?;
+                    
+                    let guide_y = status_y + 20;
+                    display.draw_text_centered(guide_y, "Upload .bin file at OTA URL", TEXT_SECONDARY, None, 1)?;
+                    display.draw_text_centered(guide_y + 14, "Device auto-restarts after update", TEXT_SECONDARY, None, 1)?;
+                } else {
+                    self.cached_network_ip = None;
+                }
+            } else {
+                self.cached_network_ip = None;
+                display.draw_text_centered(server_section_y + 8, "Network Required", PRIMARY_RED, None, 1)?;
+                display.draw_text_centered(server_section_y + 24, "Connect to WiFi to enable OTA", TEXT_SECONDARY, None, 1)?;
             }
-        } else {
-            // Not connected message
-            display.draw_text_centered(server_section_y + 8, "Network Required", PRIMARY_RED, None, 1)?;
-            display.draw_text_centered(server_section_y + 24, "Connect to WiFi to enable OTA", TEXT_SECONDARY, None, 1)?;
         }
+        
+        // Mark screen as initialized
+        self.ota_screen_initialized = true;
         
         Ok(())
     }
