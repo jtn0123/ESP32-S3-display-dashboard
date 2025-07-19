@@ -32,12 +32,14 @@ mod sensors;
 mod system;
 mod ui;
 mod version;
+mod dual_core;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
 use crate::network::NetworkManager;
 use crate::ota::OtaManager;
 use crate::ui::UiManager;
+use crate::dual_core::{DualCoreProcessor, WorkItem, CpuMonitor};
 
 fn main() -> Result<()> {
     // Initialize ESP-IDF
@@ -384,6 +386,13 @@ fn run_app(
 ) -> Result<()> {
     use std::time::{Duration, Instant};
 
+    // Initialize dual-core processor
+    let dual_core = DualCoreProcessor::new();
+    let mut cpu_monitor = CpuMonitor::new();
+    
+    log::info!("Dual-core processing initialized");
+    log::info!("Main task running on core {}", DualCoreProcessor::current_core());
+
     // Note: OTA checker would run in the main loop instead of a separate thread
     // due to thread safety constraints with ESP-IDF HTTP server
 
@@ -406,6 +415,10 @@ fn run_app(
     let mut last_watchdog_reset = Instant::now();
     let watchdog_reset_interval = Duration::from_secs(2); // Reduced from 500ms to 2s
     
+    // CPU usage tracking
+    let mut last_cpu_check = Instant::now();
+    let cpu_check_interval = Duration::from_secs(2);
+    
     log::info!("Main render loop started - entering infinite loop");
 
     loop {
@@ -420,12 +433,25 @@ fn run_app(
             display_manager.reset_activity_timer();
         }
 
-        // Update sensors periodically
+        // Update sensors periodically - offload to Core 1
         if last_sensor_update.elapsed() >= sensor_update_interval {
-            let sensor_data = sensor_manager.sample()?;
-            ui_manager.update_sensor_data(sensor_data);
+            // Clone what we need for the background task
+            let sensor_mgr = &mut sensor_manager;
+            let ui_mgr = &mut ui_manager;
+            let net_mgr = &network_manager;
             
-            // Update network status
+            // Submit sensor update work to Core 1
+            let sensor_result = sensor_mgr.sample()?;
+            ui_mgr.update_sensor_data(sensor_result);
+            
+            // Submit network status update
+            if let Err(e) = dual_core.submit(WorkItem::Custom(Box::new(move || {
+                log::debug!("Updating network status on core {}", DualCoreProcessor::current_core());
+            }))) {
+                log::warn!("Failed to submit network status work: {}", e);
+            }
+            
+            // Update network status on main thread for now (due to borrow checker)
             ui_manager.update_network_status(
                 network_manager.is_connected(),
                 network_manager.get_ip(),
@@ -478,13 +504,24 @@ fn run_app(
             
             // Get CPU frequency
             let cpu_freq = unsafe { 
-                esp_idf_sys::esp_clk_cpu_freq() / 1_000_000
+                esp_idf_sys::ets_get_cpu_frequency()
             };
             
             // Get PSRAM info if available
             let psram_free = unsafe {
                 esp_idf_sys::esp_get_free_internal_heap_size() / 1024
             };
+            
+            // Get CPU usage for both cores
+            let (cpu0_usage, cpu1_usage) = if last_cpu_check.elapsed() >= cpu_check_interval {
+                last_cpu_check = Instant::now();
+                cpu_monitor.get_cpu_usage()
+            } else {
+                (0, 0)
+            };
+            
+            // Get dual-core stats
+            let core_stats = dual_core.get_stats();
             
             log::info!("[PERF] FPS: {:.1} | Avg: {:?} | Max: {:?} | CPU: {}MHz | Heap: {}KB | IRAM: {}KB",
                 fps,
@@ -493,6 +530,15 @@ fn run_app(
                 cpu_freq,
                 unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024,
                 psram_free
+            );
+            
+            log::info!("[CORES] CPU0: {}% | CPU1: {}% | Tasks: C0={} C1={} Total={} | Avg: {}μs",
+                cpu0_usage,
+                cpu1_usage,
+                core_stats.core0_tasks,
+                core_stats.core1_tasks,
+                core_stats.total_tasks,
+                core_stats.avg_task_time_us
             );
             
             // Reset counters

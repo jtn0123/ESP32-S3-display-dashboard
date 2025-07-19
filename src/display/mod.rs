@@ -1,6 +1,7 @@
 pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
+// pub mod lcd_cam; // Commented out - needs esp-hal for proper peripheral access
 
 // Color type not used - colors are defined as u16 constants
 
@@ -10,6 +11,7 @@ use self::lcd_bus::LcdBus;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::{Instant, Duration};
+
 
 // Display boundaries - Discovered values from Arduino testing
 const DISPLAY_X_START: u16 = 10;   // Left boundary offset

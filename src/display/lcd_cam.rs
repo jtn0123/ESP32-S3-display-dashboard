@@ -155,10 +155,10 @@ impl LcdCam {
         
         for (i, &pin) in DATA_PINS.iter().enumerate() {
             // Configure pin as output
-            gpio_set_direction(pin as i32, GPIO_MODE_OUTPUT);
+            gpio_set_direction(pin as i32, gpio_mode_t_GPIO_MODE_OUTPUT);
             
             // Connect to LCD_CAM peripheral via GPIO matrix
-            gpio_matrix_out(pin as u32, LCD_DATA_OUT0_IDX + i as u32, false, false);
+            esp_rom_gpio_connect_out_signal(pin as u32, LCD_DATA_OUT0_IDX + i as u32, false, false);
         }
         
         Ok(())
@@ -168,10 +168,10 @@ impl LcdCam {
         const WR_PIN: u8 = 8;
         
         // Configure as output
-        gpio_set_direction(WR_PIN as i32, GPIO_MODE_OUTPUT);
+        gpio_set_direction(WR_PIN as i32, gpio_mode_t_GPIO_MODE_OUTPUT);
         
         // Connect to LCD_CAM PCLK signal
-        gpio_matrix_out(WR_PIN as u32, LCD_PCLK_IDX, false, false);
+        esp_rom_gpio_connect_out_signal(WR_PIN as u32, LCD_PCLK_IDX, false, false);
         
         Ok(())
     }
