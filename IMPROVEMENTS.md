@@ -156,30 +156,21 @@ This document outlines performance improvement opportunities for the ESP32-S3 Di
 - **Implementation**: Inline all hot-path functions
 - **Verification**: Binary size vs performance trade-off
 
-## Implementation Plan
+## Key Metrics to Track
 
-### Phase 1: Research (Before Any Code Changes)
-1. Research each optimization area online
-2. Find ESP32-specific examples and benchmarks
-3. Identify potential risks and gotchas
-4. Update this document with findings
+### Performance Metrics
+- **Core Utilization**: Monitor both Core 0 and Core 1 usage percentages
+- **Task Latency**: Measure sensor update delays and UI responsiveness
+- **Memory**: Heap fragmentation, allocation counts, free heap trends
+- **Power**: Current draw in different states, sleep time percentage
+- **Network**: Reconnection count, average RSSI, packet loss
 
-### Phase 2: Baseline Measurements
-1. Create performance benchmark suite
-2. Measure current metrics for each area
-3. Set improvement targets
-
-### Phase 3: Implementation (One at a Time)
-1. Implement one optimization
-2. Test thoroughly
-3. Measure improvement
-4. Document results
-5. Only proceed to next if stable
-
-### Phase 4: Integration Testing
-1. Test all optimizations together
-2. Check for interactions/conflicts
-3. Final performance validation
+### Success Criteria
+- Core 0 CPU usage < 50% (from ~100%)
+- Core 1 CPU usage 20-30% (from ~0%)
+- UI responsiveness < 50ms for button presses
+- No increase in crash rate or instability
+- Measurable reduction in power consumption during idle
 
 ## Verification Methods
 
@@ -232,32 +223,45 @@ All research has been completed for the major optimization areas. Key findings i
 8. **Direct GPIO Register Access** - Minor performance gain, higher risk
 9. **Aggressive Inlining** - Marginal gains
 
-## Next Steps - Start with Dirty Rectangle Tracking
+## Implementation Strategy
 
-### Step 1: Create Performance Benchmark
-Before implementing any optimization, we need baseline measurements:
-1. Add performance counters to DisplayManager
-2. Track metrics per frame:
-   - Total pixels written
-   - Number of draw calls
-   - Time spent in each drawing function
-   - Time spent in flush()
-3. Log averages every second
+### Phase 1: Dual-Core Architecture (Highest Impact)
+The ESP32-S3's second core is completely idle while Core 0 handles everything. This is the biggest optimization opportunity:
 
-### Step 2: Implement Dirty Rectangle Tracking
-1. Enhance existing DirtyRect structure
-2. Add fixed-size array for tracking multiple rectangles
-3. Implement merge algorithm
-4. Modify flush() to only update dirty regions
-5. Test with various UI scenarios
+1. **Create Core 1 Task Infrastructure**
+   - Set up FreeRTOS task pinned to Core 1
+   - Implement thread-safe channels for inter-core communication
+   - Create event aggregation to reduce cross-core overhead
 
-### Step 3: Measure and Validate
-1. Compare metrics before/after implementation
-2. Verify display correctness
-3. Check for visual artifacts
-4. Document performance improvement
+2. **Move Sensor Monitoring to Core 1**
+   - Temperature sensor (5s interval)
+   - Battery monitoring (30s interval)
+   - CPU stats (2s interval)
+   - Implement circular buffers for historical data
 
-Only proceed to PSRAM frame buffer after dirty rectangles are stable and showing measurable improvement.
+3. **Add Network Monitor on Core 1**
+   - WiFi RSSI monitoring (10s interval)
+   - Connection state management
+   - Auto-reconnection logic
+   - mDNS service broadcasting
+
+4. **Implement Data Processing Pipeline**
+   - Noise filtering (Kalman filters)
+   - Moving averages
+   - Trend detection
+   - Threshold-based alerts
+
+### Phase 2: Memory Optimization
+1. **Pre-allocated Buffer Pool**
+   - Identify common allocation patterns
+   - Create fixed-size buffer pools
+   - Implement buffer recycling
+
+### Phase 3: Power Optimization
+1. **Dynamic Power Management**
+   - Enable light sleep during idle
+   - Implement activity-based CPU scaling
+   - Add wake-on-button interrupts
 
 ## Progress Tracking
 
@@ -277,12 +281,21 @@ Only proceed to PSRAM frame buffer after dirty rectangles are stable and showing
    - UI `render()` now returns boolean to indicate if frame was rendered
    - Main loop tracks skipped frames separately from rendered frames
    - Version: v5.16-fps-fix
+5. ✅ **Telnet Server** - Added remote monitoring capability (port 23)
+   - Enables wireless log monitoring without USB connection
+   - Scripts: `monitor-telnet.sh` and `monitor-telnet.py` for client access
+   - Version: v5.17-telnet
+6. ✅ **OTA Updates** - Verified working Over-The-Air update functionality
+   - HTTP endpoint at `/ota/update` accepts firmware uploads
+   - Partition table supports dual OTA app partitions (ota_0, ota_1)
+   - Script `scripts/ota.sh` provides easy device discovery and updates
+   - Tested and confirmed working on 2025-07-20
 
 ### In Progress
 - ⏸️ **Nothing currently in progress**
 
-### Next Up
-- 🔄 **Dual-Core Architecture Optimization** - Maximize ESP32-S3 dual-core potential
+### Priority Queue (Ordered by Impact/Feasibility)
+1. 🔄 **Dual-Core Architecture Optimization** - Maximize ESP32-S3 dual-core potential
   
   **Current State Analysis:**
   - Core 0: Overloaded (UI, sensors, network, display)
@@ -354,8 +367,8 @@ Only proceed to PSRAM frame buffer after dirty rectangles are stable and showing
   - Better sensor data quality
   - Enhanced system reliability
 
-### Completed (continued)
-4. ❌ **PSRAM Frame Buffer** - Implemented but causes severe performance degradation
+### Failed Attempts (Do Not Retry)
+1. ❌ **PSRAM Frame Buffer** - Implemented but causes severe performance degradation
    - Created `PsramFrameBuffer` with dual 16-byte aligned buffers in PSRAM
    - Implements block-based dirty detection (16x16 blocks)
    - Automatic region merging for efficient updates
@@ -365,8 +378,29 @@ Only proceed to PSRAM frame buffer after dirty rectangles are stable and showing
    - **Lesson Learned**: GPIO bit-banging cannot handle full frame buffer updates
    - **Future**: Requires hardware acceleration (LCD_CAM) or significant optimization
 
-### Pending
-- ⏳ Remove Simulated Sensor Data
-- ⏳ Display Driver Optimization
-- ⏳ Power Management
-- ⏳ Compiler Optimizations
+2. 📊 **Remove Simulated Sensor Data** - Replace fake data with real monitoring
+   - Currently using simulated data for temperature and battery
+   - Implement proper sensor reading intervals
+   - Add data filtering and moving averages
+   
+3. 🌐 **Network Monitor Service (Core 1)** - Continuous WiFi health monitoring
+   - Currently only checks RSSI on connect
+   - Move to Core 1 for background monitoring
+   - Implement auto-reconnection logic
+   - Track network performance metrics
+   
+4. 💾 **Pre-allocated Buffer Pool** - Reduce heap fragmentation
+   - Many repeated allocations in memory init
+   - Create reusable buffer pool
+   - Monitor heap health metrics
+   
+5. 🔋 **Power Management** - Reduce idle power consumption
+   - Enable light sleep mode (display will blank)
+   - Lower minimum CPU frequency to 40MHz
+   - Use PM locks during critical operations
+   - Potential 50x power reduction when idle
+
+### Low Priority / Future Considerations
+- ⏳ Direct GPIO Register Access - Minor performance gain, higher risk
+- ⏳ Aggressive Function Inlining - Marginal improvements
+- ⏳ Display Driver Micro-optimizations - Already near hardware limits
