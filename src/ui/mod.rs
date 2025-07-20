@@ -181,6 +181,10 @@ impl UiManager {
         self.core_tasks = (tasks0, tasks1);
     }
     
+    pub fn update_fps(&mut self, fps: f32) {
+        self.fps = fps;
+    }
+    
     fn force_next_render(&mut self) {
         // Force render by clearing cached values
         self.cached_uptime.clear();
@@ -204,21 +208,11 @@ impl UiManager {
         Ok(())
     }
 
-    pub fn render(&mut self, display: &mut DisplayManager) -> Result<()> {
+    pub fn render(&mut self, display: &mut DisplayManager) -> Result<bool> {
         // Track if anything needs updating
         static mut RENDER_NEEDED: bool = true;
         
         self.total_renders += 1;
-        
-        // Always count frames for FPS
-        self.frame_count += 1;
-        let elapsed = self.last_fps_update.elapsed();
-        if elapsed.as_secs_f32() >= 1.0 {
-            self.fps = self.frame_count as f32 / elapsed.as_secs_f32();
-            self.frame_count = 0;
-            self.last_fps_update = Instant::now();
-            unsafe { RENDER_NEEDED = true; }
-        }
         
         // Check if screen changed
         let screen_changed = self.last_rendered_screen != Some(self.current_screen);
@@ -241,7 +235,7 @@ impl UiManager {
                 self.skip_renders += 1;
                 // Still need to update and render FPS counter
                 self.render_fps_counter(display)?;
-                return Ok(());
+                return Ok(false); // Frame was skipped
             }
             RENDER_NEEDED = false; // Reset flag
         }
@@ -271,7 +265,7 @@ impl UiManager {
             self.render_ota_overlay(display, progress)?;
         }
         
-        Ok(())
+        Ok(true) // Frame was rendered
     }
 
     fn render_system_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {

@@ -191,6 +191,59 @@ Project requires ESP-IDF v5.3.x for stability but some features designed for v5.
 
 ---
 
+## 8. PSRAM Frame Buffer Performance Degradation
+
+### Issue Description
+Implementing a PSRAM-backed frame buffer causes severe performance degradation, reducing FPS from 55 to 1.9 (96% slower).
+
+### Symptoms
+- Frame time increases from ~18ms to ~537ms
+- Display updates become visibly slow
+- CPU usage remains high despite low FPS
+- System remains responsive but display lags severely
+
+### Root Cause
+GPIO bit-banging cannot efficiently handle full frame buffer updates:
+- 50,400 pixels × 2 bytes × 2 GPIO operations = 201,600 operations per frame
+- Each operation involves multiple GPIO pin manipulations
+- PSRAM access adds additional latency
+- No hardware acceleration available for bulk transfers
+
+### What We Tried
+1. **Basic Frame Buffer Implementation**
+   - Dual buffers in PSRAM with 16-byte alignment
+   - Differential updates with dirty region tracking
+   - Block-based change detection (16×16 pixels)
+
+2. **Performance Optimizations**
+   - Simplified to full buffer updates (removed differential logic)
+   - Added cache coherency barriers
+   - Attempted bulk pixel transfer methods
+   - Memory fence operations for PSRAM sync
+
+3. **Debugging Attempts**
+   - Added extensive logging
+   - Tested various pixel formats
+   - Verified buffer initialization
+   - Checked for endianness issues
+
+### Performance Impact
+- Baseline: ~55 FPS (18ms per frame)
+- With frame buffer: 1.9 FPS (537ms per frame)
+- Performance penalty: 2,883% slower
+- Unusable for real-time display updates
+
+### Current Status
+**Disabled** - Frame buffer code remains but is disabled (v5.15-fb-off)
+
+### Lessons Learned
+- GPIO bit-banging is fundamentally incompatible with frame buffer architectures
+- Full screen updates require hardware acceleration (LCD_CAM/DMA)
+- Dirty rectangle tracking alone provides better optimization
+- PSRAM access patterns need careful consideration for performance
+
+---
+
 ## Summary
 
 ### Working Features
@@ -206,11 +259,13 @@ Project requires ESP-IDF v5.3.x for stability but some features designed for v5.
 ### Not Working
 - LCD_CAM hardware acceleration
 - High-performance display updates (>10 FPS)
+- PSRAM frame buffer (too slow with GPIO bit-banging)
 
 ### Abandoned Attempts
 - ESP-HAL I8080 implementation
 - ESP-IDF LCD driver wrapper
 - Direct LCD_CAM register manipulation
 - DMA-based display updates
+- PSRAM frame buffer with full screen updates
 
 The project successfully achieves its goal of a functional IoT dashboard despite the LCD_CAM limitations. The 10 FPS performance is adequate for dashboard applications where smooth animations are not required.

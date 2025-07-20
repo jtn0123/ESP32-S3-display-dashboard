@@ -89,6 +89,7 @@ source ~/export-esp.sh
 - **Dynamic Frequency Scaling** - CPU scales 80-240MHz based on load
 - **Web Configuration** - Change settings via web browser at `http://<device-ip>/`
 - **OTA Updates** - Update firmware over WiFi at `http://<device-ip>:8080/ota`
+- **Remote Serial Monitoring** - Telnet server for wireless log streaming
 - **Power Management** - Auto-dim, sleep modes, WiFi power save
 - **Performance Monitoring** - Built-in telemetry in main loop
 - **Compile-time WiFi Config** - Credentials compiled into firmware for easy deployment
@@ -187,6 +188,11 @@ cargo fmt
 # Monitor serial output only
 espflash monitor
 
+# Monitor over WiFi (telnet)
+./scripts/monitor-telnet.sh              # Using mDNS
+./scripts/monitor-telnet.sh 192.168.1.x  # Using IP
+./scripts/monitor-telnet.py -f "PERF"    # Filter logs
+
 # Check toolchain status
 ./check-toolchain.sh
 ```
@@ -218,6 +224,59 @@ Build and upload firmware updates over WiFi:
 curl -X POST http://<device-ip>/ota \
   -F "firmware=@target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard"
 ```
+
+## 🔍 Remote Serial Monitoring
+
+The device runs a telnet server on port 23 for wireless log streaming:
+
+### Basic Monitoring
+```bash
+# Connect using mDNS (automatic discovery)
+./scripts/monitor-telnet.sh
+
+# Connect to specific IP
+./scripts/monitor-telnet.sh 192.168.1.100
+
+# Auto-reconnect on disconnect
+./scripts/monitor-telnet.sh -r
+
+# Save logs to file
+./scripts/monitor-telnet.sh -s -f debug.log
+```
+
+### Advanced Monitoring (Python)
+```bash
+# Filter specific log levels
+./scripts/monitor-telnet.py -f "ERROR|WARN"
+
+# Show only performance metrics
+./scripts/monitor-telnet.py -f "PERF|CORES"
+
+# Highlight patterns with colors
+./scripts/monitor-telnet.py -H "temperature.*[4-9][0-9]" RED
+
+# Statistics only mode
+./scripts/monitor-telnet.py --stats-only
+
+# Scan network for devices
+./scripts/monitor-telnet.py --scan
+```
+
+### Direct Connection
+```bash
+# Using telnet
+telnet esp32-dashboard.local 23
+
+# Using netcat
+nc esp32-dashboard.local 23
+```
+
+The telnet server provides:
+- Real-time log streaming
+- Last 100 log messages on connect
+- Performance metrics (FPS, CPU, memory)
+- Support for multiple simultaneous connections
+- mDNS service discovery (_telnet._tcp)
 
 ## 🐛 Troubleshooting
 

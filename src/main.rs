@@ -36,13 +36,15 @@ mod dual_core;
 mod psram;
 #[allow(dead_code)]
 mod hardware_timer;
+mod performance;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
-use crate::network::NetworkManager;
+use crate::network::{NetworkManager, telnet_server::TelnetLogServer};
 use crate::ota::OtaManager;
 use crate::ui::UiManager;
 use crate::dual_core::{DualCoreProcessor, WorkItem, CpuMonitor};
+use crate::performance::PerformanceMetrics;
 
 fn main() -> Result<()> {
     // Initialize ESP-IDF
@@ -348,6 +350,25 @@ fn main() -> Result<()> {
         log::info!("Skipping web server - no network connection");
         None
     };
+    
+    // Start telnet log server if we have network
+    let telnet_server = if network_manager.is_connected() {
+        let server = Arc::new(TelnetLogServer::new(23));
+        match Arc::clone(&server).start() {
+            Ok(_) => {
+                log::info!("Telnet log server started on port 23");
+                log::info!("Connect with: telnet {} 23", network_manager.get_ip().unwrap_or_default());
+                Some(server)
+            }
+            Err(e) => {
+                log::error!("Failed to start telnet server: {:?}", e);
+                None
+            }
+        }
+    } else {
+        log::info!("Skipping telnet server - no network connection");
+        None
+    };
 
     // Complete boot sequence
     boot_manager.set_stage(BootStage::Complete);
@@ -380,6 +401,27 @@ fn main() -> Result<()> {
     display_manager.clear(colors::BLACK)?;
     display_manager.flush()?;
     
+    // Test frame buffer by drawing test pattern
+    info!("Testing frame buffer with color rectangles...");
+    
+    // Draw test rectangles using frame buffer
+    display_manager.fill_rect(10, 10, 50, 50, 0xF800)?; // Red
+    display_manager.fill_rect(70, 10, 50, 50, 0x07E0)?; // Green  
+    display_manager.fill_rect(130, 10, 50, 50, 0x001F)?; // Blue
+    display_manager.fill_rect(190, 10, 50, 50, 0xFFFF)?; // White
+    display_manager.flush()?;
+    
+    info!("Test pattern drawn - checking for corruption...");
+    Ets::delay_ms(2000);
+    
+    // Clear and test with different pattern
+    display_manager.clear(colors::BLACK)?;
+    display_manager.fill_rect(0, 0, 300, 10, 0xF800)?; // Red stripe at top
+    display_manager.fill_rect(0, 158, 300, 10, 0x001F)?; // Blue stripe at bottom
+    display_manager.flush()?;
+    
+    Ets::delay_ms(2000);
+    
     // Start main application loop
     info!("Starting main loop - UI should now be visible");
     
@@ -398,6 +440,7 @@ fn main() -> Result<()> {
         config,
         web_server,
         ota_manager,
+        telnet_server,
     ) {
         Ok(_) => {
             log::warn!("UI loop exited normally (shouldn't happen)");
@@ -421,6 +464,7 @@ fn run_app(
     _config: Arc<Mutex<config::Config>>,
     _web_server: Option<network::web_server::WebConfigServer>,
     ota_manager: Option<Arc<Mutex<OtaManager>>>,
+    telnet_server: Option<Arc<TelnetLogServer>>,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
 
@@ -440,10 +484,8 @@ fn run_app(
     let sensor_update_interval = Duration::from_secs(10); // Reduced from 5s to 10s
     
     // Performance tracking
-    let mut frame_count = 0u32;
+    let mut perf_metrics = PerformanceMetrics::new();
     let mut last_fps_report = Instant::now();
-    let mut total_frame_time = Duration::ZERO;
-    let mut max_frame_time = Duration::ZERO;
     
     // OTA status update timer
     let mut last_ota_check = Instant::now();
@@ -460,6 +502,8 @@ fn run_app(
     log::info!("Main render loop started - entering infinite loop");
 
     loop {
+        // Start frame timing
+        let frame_timer = perf_metrics.fps_tracker.frame_start();
         let frame_start = Instant::now();
         
         // Removed debug logging from hot path
@@ -519,25 +563,38 @@ fn run_app(
         
         // Update and render UI
         ui_manager.update()?;
-        ui_manager.render(&mut display_manager)?;
+        
+        let render_start = Instant::now();
+        let rendered = ui_manager.render(&mut display_manager)?;
+        let render_time = render_start.elapsed();
+        
+        // Track whether frame was actually rendered or skipped
+        if rendered {
+            perf_metrics.record_render_time(render_time);
+        } else {
+            // Frame was skipped by UI manager
+            perf_metrics.fps_tracker.frame_skipped();
+        }
         
         // Removed redundant watchdog reset
         
         // Update auto-dim
         display_manager.update_auto_dim()?;
         
+        let flush_start = Instant::now();
         display_manager.flush()?;
+        let flush_time = flush_start.elapsed();
+        perf_metrics.record_flush_time(flush_time);
 
         // Frame timing and telemetry
         let frame_time = frame_start.elapsed();
-        frame_count += 1;
-        total_frame_time += frame_time;
-        max_frame_time = max_frame_time.max(frame_time);
+        
+        // Update memory stats periodically
+        perf_metrics.update_memory_stats();
         
         // Report FPS every second
         if last_fps_report.elapsed() >= Duration::from_secs(1) {
-            let avg_frame_time = total_frame_time / frame_count;
-            let fps = (frame_count as f32) / last_fps_report.elapsed().as_secs_f32();
+            let fps_stats = perf_metrics.fps_tracker.stats();
             
             // Get CPU frequency
             let cpu_freq = unsafe { 
@@ -565,16 +622,23 @@ fn run_app(
             // Update UI with core stats
             ui_manager.update_core_stats(cpu0_usage, cpu1_usage, core_stats.core0_tasks, core_stats.core1_tasks);
             
-            log::info!("[PERF] FPS: {:.1} | Avg: {:?} | Max: {:?} | CPU: {}MHz | Heap: {}KB | PSRAM: {}KB",
-                fps,
-                avg_frame_time,
-                max_frame_time,
+            let perf_msg = format!("[PERF] FPS: {:.1} (avg: {:.1}) | Skip: {:.1}% | Render: {:.1}ms | Flush: {:.1}ms | CPU: {}MHz | Heap: {}KB",
+                fps_stats.current_fps,
+                fps_stats.average_fps,
+                fps_stats.skip_rate,
+                perf_metrics.last_render_time.as_secs_f32() * 1000.0,
+                perf_metrics.last_flush_time.as_secs_f32() * 1000.0,
                 cpu_freq,
-                unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024,
-                psram_free
+                perf_metrics.heap_free / 1024
             );
+            log::info!("{}", perf_msg);
             
-            log::info!("[CORES] CPU0: {}% | CPU1: {}% | Tasks: C0={} C1={} Total={} | Avg: {}μs",
+            // Also send to telnet
+            if let Some(ref server) = telnet_server {
+                server.log_message("INFO", &perf_msg);
+            }
+            
+            let cores_msg = format!("[CORES] CPU0: {}% | CPU1: {}% | Tasks: C0={} C1={} Total={} | Avg: {}μs",
                 cpu0_usage,
                 cpu1_usage,
                 core_stats.core0_tasks,
@@ -582,11 +646,17 @@ fn run_app(
                 core_stats.total_tasks,
                 core_stats.avg_task_time_us
             );
+            log::info!("{}", cores_msg);
             
-            // Reset counters
-            frame_count = 0;
-            total_frame_time = Duration::ZERO;
-            max_frame_time = Duration::ZERO;
+            // Also send to telnet
+            if let Some(ref server) = telnet_server {
+                server.log_message("INFO", &cores_msg);
+            }
+            
+            // Update UI manager with accurate FPS
+            ui_manager.update_fps(fps_stats.current_fps);
+            
+            // Reset report timer
             last_fps_report = Instant::now();
         }
         

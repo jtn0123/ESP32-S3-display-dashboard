@@ -271,13 +271,102 @@ Only proceed to PSRAM frame buffer after dirty rectangles are stable and showing
 3. ✅ **FPS Cap Toggle** - Made 60 FPS cap a compile-time toggle (`ENABLE_FPS_CAP`)
    - Currently disabled for performance benchmarking
    - Can be re-enabled for production builds
+4. ✅ **FPS Counter Accuracy** - Fixed dual FPS calculation issue
+   - Created `PerformanceMetrics` module with accurate `FpsTracker`
+   - Integrated frame skip detection in UI render loop
+   - UI `render()` now returns boolean to indicate if frame was rendered
+   - Main loop tracks skipped frames separately from rendered frames
+   - Version: v5.16-fps-fix
 
 ### In Progress
-- 🔄 **PSRAM Frame Buffer** - Next optimization target
+- ⏸️ **Nothing currently in progress**
+
+### Next Up
+- 🔄 **Dual-Core Architecture Optimization** - Maximize ESP32-S3 dual-core potential
+  
+  **Current State Analysis:**
+  - Core 0: Overloaded (UI, sensors, network, display)
+  - Core 1: Severely underutilized (just waiting for work items)
+  - Result: Wasted processing power and potential responsiveness issues
+  
+  **Proposed Architecture:**
+  - **Core 0 (PRO_CPU)**: UI & Display Core
+    - Main UI render loop
+    - Display driver operations
+    - Touch/button event handling
+    - Immediate user feedback
+    - Watchdog management
+  
+  - **Core 1 (APP_CPU)**: Background Processing Core
+    - Continuous sensor monitoring
+    - Network status monitoring
+    - Data processing & filtering
+    - OTA update checking
+    - Telemetry collection
+    - Data persistence
+  
+  **Optimization Components:**
+  
+  1. **Sensor Management Service (Core 1)**
+     - Continuous monitoring: Temperature (5s), Battery (30s), RSSI (10s), CPU (2s)
+     - Circular buffer for historical data
+     - Moving averages and trend detection
+     - Channel-based updates to Core 0 only on significant changes
+  
+  2. **Network Monitor Service (Core 1)**
+     - Continuous WiFi signal strength monitoring
+     - Connection state management & auto-reconnection
+     - Network performance metrics
+     - mDNS service broadcasting
+  
+  3. **Data Processing Pipeline (Core 1)**
+     - Noise filtering (Kalman filters)
+     - Anomaly detection
+     - Trend calculation
+     - Alert generation
+  
+  4. **Display Preparation Service (Core 1)**
+     - Graph data point calculation
+     - Text layout computation
+     - Animation frame preparation
+     - Asset management
+  
+  5. **System Health Monitor (Core 1)**
+     - Memory usage tracking
+     - Task stack monitoring
+     - CPU temperature
+     - Flash wear stats
+  
+  6. **Event Aggregator Pattern**
+     - Smart event batching to reduce cross-core communication
+     - Batch events every 100ms or on critical events
+  
+  **Implementation Phases:**
+  - Phase 1: Sensor Service (biggest immediate impact)
+  - Phase 2: Network Monitor (improves reliability)
+  - Phase 3: Data Processing (enhances UX)
+  - Phase 4: Display Optimization (future performance)
+  
+  **Expected Benefits:**
+  - Core 0 CPU usage: <50% (from ~100%)
+  - Core 1 CPU usage: 20-30% (from ~0%)
+  - Improved UI responsiveness
+  - Better sensor data quality
+  - Enhanced system reliability
+
+### Completed (continued)
+4. ❌ **PSRAM Frame Buffer** - Implemented but causes severe performance degradation
+   - Created `PsramFrameBuffer` with dual 16-byte aligned buffers in PSRAM
+   - Implements block-based dirty detection (16x16 blocks)
+   - Automatic region merging for efficient updates
+   - **Critical Issue**: Reduces performance from 55 FPS to 1.9 FPS (96% slower!)
+   - **Root Cause**: Sending 50,400 pixels individually takes ~537ms per frame
+   - **Status**: Disabled in v5.15-fb-off to restore normal performance
+   - **Lesson Learned**: GPIO bit-banging cannot handle full frame buffer updates
+   - **Future**: Requires hardware acceleration (LCD_CAM) or significant optimization
 
 ### Pending
-- ⏳ Display Driver Optimization
-- ⏳ Task Distribution (Sensor → Core 1)
 - ⏳ Remove Simulated Sensor Data
+- ⏳ Display Driver Optimization
 - ⏳ Power Management
 - ⏳ Compiler Optimizations

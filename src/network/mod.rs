@@ -1,5 +1,6 @@
 pub mod wifi;
 pub mod web_server;
+pub mod telnet_server;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;
@@ -67,6 +68,11 @@ impl NetworkManager {
         // Add service for web config
         mdns.add_service(None, "_http", "_tcp", 80, &[
             ("path", "/"),
+        ])?;
+        
+        // Add service for telnet logging
+        mdns.add_service(None, "_telnet", "_tcp", 23, &[
+            ("type", "log-streaming"),
         ])?;
         
         self._mdns = Some(mdns);

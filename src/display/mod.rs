@@ -27,6 +27,7 @@ pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
 // pub mod lcd_cam_pac_test; // LCD_CAM using PAC approach - needs proper bindings
 pub mod lcd_cam_minimal_test; // Minimal test to debug register access
 pub mod dirty_rect_manager; // Enhanced dirty rectangle management
+pub mod psram_frame_buffer; // PSRAM-backed frame buffer with differential updates
 
 // Color type not used - colors are defined as u16 constants
 
@@ -35,6 +36,7 @@ use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;
 // use self::perf_metrics::DisplayMetrics;
 use self::dirty_rect_manager::DirtyRectManager;
+use self::psram_frame_buffer::{PsramFrameBuffer, DirtyRegion};
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::{Instant, Duration};
@@ -120,9 +122,7 @@ pub struct DisplayManager {
     height: u16,
     last_activity: Instant,
     dirty_rect_manager: DirtyRectManager,
-    #[allow(dead_code)]
-    frame_buffer: Vec<u16>, // Optional frame buffer for optimized updates
-    #[allow(dead_code)]
+    psram_frame_buffer: Option<PsramFrameBuffer>, // PSRAM-backed frame buffer
     use_frame_buffer: bool,
     // metrics: DisplayMetrics, // Performance tracking
 }
@@ -163,6 +163,21 @@ impl DisplayManager {
         backlight_pin.set_high()?;
         log::info!("Backlight enabled (GPIO high)");
         
+        // Try to create PSRAM frame buffer
+        let psram_frame_buffer = match PsramFrameBuffer::new(DISPLAY_WIDTH, DISPLAY_HEIGHT) {
+            Ok(fb) => {
+                log::info!("PSRAM frame buffer created successfully");
+                Some(fb)
+            }
+            Err(e) => {
+                log::warn!("Failed to create PSRAM frame buffer: {}", e);
+                None
+            }
+        };
+        
+        // Disable frame buffer temporarily - it's causing extreme slowdown
+        let use_frame_buffer = false; // psram_frame_buffer.is_some();
+        
         let mut display = Self {
             lcd_bus: LcdBus::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?,
             backlight_pin: Some(backlight_pin),
@@ -172,8 +187,8 @@ impl DisplayManager {
             height: DISPLAY_HEIGHT,
             last_activity: Instant::now(),
             dirty_rect_manager: DirtyRectManager::new(),
-            frame_buffer: Vec::new(),
-            use_frame_buffer: false,
+            psram_frame_buffer,
+            use_frame_buffer,
             // metrics: DisplayMetrics::new(),
         };
         
@@ -265,6 +280,18 @@ impl DisplayManager {
         // Clear visible area to black
         log::info!("Clearing visible area to black...");
         self.clear(colors::BLACK)?;
+        
+        // If using frame buffer, ensure both buffers are initialized
+        if self.use_frame_buffer {
+            if let Some(ref mut fb) = self.psram_frame_buffer {
+                // Clear and swap to initialize both buffers
+                fb.clear(colors::BLACK);
+                fb.swap_buffers();
+                fb.clear(colors::BLACK);
+                fb.swap_buffers();
+                log::info!("Both frame buffers initialized to black");
+            }
+        }
 
         log::info!("Display initialized successfully");
         Ok(())
@@ -333,19 +360,28 @@ impl DisplayManager {
     }
 
     pub fn clear(&mut self, color: u16) -> Result<()> {
-        // Always clear - removed optimization that was causing screen artifacts
-        
-        self.set_window(0, 0, self.width - 1, self.height - 1)?;
-        
-        // CRITICAL: Must send RAMWR before pixel data
-        self.lcd_bus.write_command(CMD_RAMWR)?;
-        
-        // Write pixels using optimized bulk write
-        let total_pixels = self.width as u32 * self.height as u32;
-        self.lcd_bus.write_pixels(color, total_pixels)?;
-        
-        // Mark entire screen as dirty
-        self.dirty_rect_manager.add_rect(0, 0, self.width, self.height);
+        if self.use_frame_buffer {
+            // Clear frame buffer
+            if let Some(ref mut fb) = self.psram_frame_buffer {
+                log::debug!("Clearing frame buffer with color 0x{:04x}", color);
+                fb.clear(color);
+                // Mark entire screen as dirty
+                self.dirty_rect_manager.add_rect(0, 0, self.width, self.height);
+            }
+        } else {
+            // Direct clear - original implementation
+            self.set_window(0, 0, self.width - 1, self.height - 1)?;
+            
+            // CRITICAL: Must send RAMWR before pixel data
+            self.lcd_bus.write_command(CMD_RAMWR)?;
+            
+            // Write pixels using optimized bulk write
+            let total_pixels = self.width as u32 * self.height as u32;
+            self.lcd_bus.write_pixels(color, total_pixels)?;
+            
+            // Mark entire screen as dirty
+            self.dirty_rect_manager.add_rect(0, 0, self.width, self.height);
+        }
         
         Ok(())
     }
@@ -380,13 +416,23 @@ impl DisplayManager {
             return Ok(());
         }
 
-        self.set_window(x, y, x, y)?;
-        // CRITICAL: Must send RAMWR before pixel data
-        self.lcd_bus.write_command(CMD_RAMWR)?;
-        self.lcd_bus.write_data_16(color)?;
-        
-        // Track dirty region
-        self.dirty_rect_manager.add_rect(x, y, 1, 1);
+        if self.use_frame_buffer {
+            // Set pixel in frame buffer
+            if let Some(ref mut fb) = self.psram_frame_buffer {
+                fb.set_pixel(x, y, color);
+                // Track dirty region
+                self.dirty_rect_manager.add_rect(x, y, 1, 1);
+            }
+        } else {
+            // Direct pixel write - original implementation
+            self.set_window(x, y, x, y)?;
+            // CRITICAL: Must send RAMWR before pixel data
+            self.lcd_bus.write_command(CMD_RAMWR)?;
+            self.lcd_bus.write_data_16(color)?;
+            
+            // Track dirty region
+            self.dirty_rect_manager.add_rect(x, y, 1, 1);
+        }
         
         Ok(())
     }
@@ -398,18 +444,30 @@ impl DisplayManager {
 
         let x1 = (x + w - 1).min(self.width - 1);
         let y1 = (y + h - 1).min(self.height - 1);
+        let actual_width = x1 - x + 1;
+        let actual_height = y1 - y + 1;
 
-        self.set_window(x, y, x1, y1)?;
-        
-        // CRITICAL: Must send RAMWR before pixel data
-        self.lcd_bus.write_command(CMD_RAMWR)?;
-        
-        // Write pixels using optimized bulk write
-        let total_pixels = (x1 - x + 1) as u32 * (y1 - y + 1) as u32;
-        self.lcd_bus.write_pixels(color, total_pixels)?;
-        
-        // Track dirty region
-        self.dirty_rect_manager.add_rect(x, y, x1 - x + 1, y1 - y + 1);
+        if self.use_frame_buffer {
+            // Fill in frame buffer
+            if let Some(ref mut fb) = self.psram_frame_buffer {
+                fb.fill_rect(x, y, actual_width, actual_height, color);
+                // Track dirty region
+                self.dirty_rect_manager.add_rect(x, y, actual_width, actual_height);
+            }
+        } else {
+            // Direct fill - original implementation
+            self.set_window(x, y, x1, y1)?;
+            
+            // CRITICAL: Must send RAMWR before pixel data
+            self.lcd_bus.write_command(CMD_RAMWR)?;
+            
+            // Write pixels using optimized bulk write
+            let total_pixels = actual_width as u32 * actual_height as u32;
+            self.lcd_bus.write_pixels(color, total_pixels)?;
+            
+            // Track dirty region
+            self.dirty_rect_manager.add_rect(x, y, actual_width, actual_height);
+        }
         
         Ok(())
     }
@@ -706,30 +764,68 @@ impl DisplayManager {
     }
     
     pub fn flush(&mut self) -> Result<()> {
-        // Only update if there are dirty regions
-        if !self.dirty_rect_manager.is_empty() {
-            // Get statistics for debugging
-            let (rect_count, merge_count, _update_count) = self.dirty_rect_manager.get_stats();
-            if rect_count > 5 {
-                log::debug!("Dirty rectangles: {} (merges: {})", rect_count, merge_count);
+        if self.use_frame_buffer {
+            // SIMPLIFIED DEBUG VERSION - Full buffer update
+            // Get buffer data first to avoid borrow issues
+            let buffer_data = if let Some(ref fb) = self.psram_frame_buffer {
+                let buffer = fb.get_full_buffer();
+                Some(buffer.to_vec())
+            } else {
+                None
+            };
+            
+            // Now process the buffer data
+            if let Some(pixels) = buffer_data {
+                // Set window to full screen
+                self.set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1)?;
+                self.lcd_bus.write_command(CMD_RAMWR)?;
+                
+                // Write all pixels
+                for (i, pixel) in pixels.iter().enumerate() {
+                    if i < 10 {
+                        log::debug!("Pixel {}: 0x{:04x}", i, pixel);
+                    }
+                    self.lcd_bus.write_data_16(*pixel)?;
+                }
+                
+                log::debug!("Flushed {} pixels from frame buffer", pixels.len());
             }
             
-            // For now, we'll still do a full refresh but track what changed
-            // In the future, we can optimize to only update the dirty regions
+            // Swap buffers
+            if let Some(ref mut fb) = self.psram_frame_buffer {
+                fb.swap_buffers();
+            }
+            
+            // Clear our dirty rect manager
             self.dirty_rect_manager.clear();
+        } else {
+            // Non-frame buffer path - just track dirty regions
+            if !self.dirty_rect_manager.is_empty() {
+                // Get statistics for debugging
+                let (rect_count, merge_count, _update_count) = self.dirty_rect_manager.get_stats();
+                if rect_count > 5 {
+                    log::debug!("Dirty rectangles: {} (merges: {})", rect_count, merge_count);
+                }
+                
+                // For now, we'll still do a full refresh but track what changed
+                // In the future, we can optimize to only update the dirty regions
+                self.dirty_rect_manager.clear();
+            }
         }
         Ok(())
     }
     
     #[allow(dead_code)]
     pub fn enable_frame_buffer(&mut self, enable: bool) -> Result<()> {
-        self.use_frame_buffer = enable;
-        if enable && self.frame_buffer.is_empty() {
-            // Allocate frame buffer
-            let size = (self.width as usize) * (self.height as usize);
-            self.frame_buffer = vec![0u16; size];
-            log::info!("Frame buffer enabled: {} pixels ({} KB)", 
-                      size, size * 2 / 1024);
+        // Only enable if PSRAM frame buffer is available
+        if enable && self.psram_frame_buffer.is_some() {
+            self.use_frame_buffer = true;
+            log::info!("PSRAM frame buffer enabled");
+        } else if !enable {
+            self.use_frame_buffer = false;
+            log::info!("Frame buffer disabled");
+        } else {
+            log::warn!("Cannot enable frame buffer - PSRAM not available");
         }
         Ok(())
     }
@@ -742,6 +838,10 @@ impl DisplayManager {
     /// Get display height
     pub fn height(&self) -> u16 {
         self.height
+    }
+    
+    pub fn is_frame_buffer_enabled(&self) -> bool {
+        self.use_frame_buffer
     }
 
 }
