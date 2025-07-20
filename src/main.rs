@@ -37,13 +37,14 @@ mod psram;
 #[allow(dead_code)]
 mod hardware_timer;
 mod performance;
+mod core1_tasks;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
 use crate::network::{NetworkManager, telnet_server::TelnetLogServer};
 use crate::ota::OtaManager;
 use crate::ui::UiManager;
-use crate::dual_core::{DualCoreProcessor, WorkItem, CpuMonitor};
+use crate::dual_core::{DualCoreProcessor, CpuMonitor};
 use crate::performance::PerformanceMetrics;
 
 fn main() -> Result<()> {
@@ -431,6 +432,11 @@ fn main() -> Result<()> {
     info!("Entering run_app function now...");
     
     // Run the main app with crash recovery
+    // Initialize Core 1 tasks
+    let (mut core1_manager, core1_channels) = core1_tasks::Core1Manager::new()?;
+    core1_manager.start()?;
+    info!("Core 1 background tasks started");
+    
     match run_app(
         ui_manager,
         display_manager,
@@ -441,6 +447,7 @@ fn main() -> Result<()> {
         web_server,
         ota_manager,
         telnet_server,
+        core1_channels,
     ) {
         Ok(_) => {
             log::warn!("UI loop exited normally (shouldn't happen)");
@@ -465,6 +472,7 @@ fn run_app(
     _web_server: Option<network::web_server::WebConfigServer>,
     ota_manager: Option<Arc<Mutex<OtaManager>>>,
     telnet_server: Option<Arc<TelnetLogServer>>,
+    core1_channels: core1_tasks::Core1Channels,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
 
@@ -515,9 +523,31 @@ fn run_app(
             display_manager.reset_activity_timer();
         }
 
-        // Update sensors periodically
+        // Check for updates from Core 1
+        // Process data from Core 1 (non-blocking)
+        if let Ok(processed_data) = core1_channels.processed_rx.try_recv() {
+            // Update UI with processed sensor data
+            ui_manager.update_sensor_data(sensors::SensorData {
+                _temperature: processed_data.temperature,
+                _battery_percentage: processed_data.battery_percentage,
+                _battery_voltage: processed_data.battery_voltage,
+                _is_charging: processed_data.is_charging,
+                _is_on_usb: processed_data.is_on_usb,
+                _light_level: 0,
+            });
+            
+            // Update CPU usage display
+            ui_manager.update_cpu_usage(
+                processed_data.cpu_usage_core0,
+                processed_data.cpu_usage_core1
+            );
+            
+            last_sensor_update = Instant::now();
+        }
+        
+        // Fallback: Use old sensor sampling if no Core 1 data (during startup)
         if last_sensor_update.elapsed() >= sensor_update_interval {
-            // Sample sensors (this is fast, keep on main thread)
+            // Sample sensors directly as fallback
             let sensor_result = sensor_manager.sample()?;
             ui_manager.update_sensor_data(sensor_result);
             
@@ -530,17 +560,6 @@ fn run_app(
                 network_manager.get_gateway(),
                 network_manager.get_mac()
             );
-            
-            // Demonstrate dual-core with a background task
-            let current_core = DualCoreProcessor::current_core();
-            if let Err(e) = dual_core.submit(WorkItem::Custom(Box::new(move || {
-                log::info!("Background task running on core {} (main on core {})", 
-                    DualCoreProcessor::current_core(), current_core);
-                // Simulate some background work
-                unsafe { esp_idf_sys::vTaskDelay(10); }
-            }))) {
-                log::warn!("Failed to submit background work: {}", e);
-            }
             
             last_sensor_update = Instant::now();
         }

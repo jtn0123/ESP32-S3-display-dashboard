@@ -185,6 +185,11 @@ impl UiManager {
         self.fps = fps;
     }
     
+    pub fn update_cpu_usage(&mut self, cpu0: u8, cpu1: u8) {
+        self.cpu0_usage = cpu0;
+        self.cpu1_usage = cpu1;
+    }
+    
     fn force_next_render(&mut self) {
         // Force render by clearing cached values
         self.cached_uptime.clear();

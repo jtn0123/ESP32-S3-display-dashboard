@@ -290,17 +290,23 @@ The ESP32-S3's second core is completely idle while Core 0 handles everything. T
    - Partition table supports dual OTA app partitions (ota_0, ota_1)
    - Script `scripts/ota.sh` provides easy device discovery and updates
    - Tested and confirmed working on 2025-07-20
+7. ✅ **Dual-Core Architecture** - Implemented Core 1 background tasks
+   - Created Core 1 task infrastructure with FreeRTOS pinning
+   - Sensor monitoring task runs on Core 1 (temperature, battery, CPU)
+   - Network monitoring task tracks WiFi health on Core 1
+   - Data processing pipeline with filtering and trend analysis
+   - Inter-core communication via channels
+   - Version: v5.18-core1
 
 ### In Progress
 - ⏸️ **Nothing currently in progress**
 
 ### Priority Queue (Ordered by Impact/Feasibility)
-1. 🔄 **Dual-Core Architecture Optimization** - Maximize ESP32-S3 dual-core potential
-  
-  **Current State Analysis:**
-  - Core 0: Overloaded (UI, sensors, network, display)
-  - Core 1: Severely underutilized (just waiting for work items)
-  - Result: Wasted processing power and potential responsiveness issues
+1. 📊 **Remove Simulated Sensor Data** - Replace fake data with real monitoring
+   - Currently using simulated data for temperature and battery
+   - Temperature sensor is partially implemented (internal sensor)
+   - Battery monitoring needs ADC API fixes
+   - CPU usage monitoring needs proper implementation
   
   **Proposed Architecture:**
   - **Core 0 (PRO_CPU)**: UI & Display Core

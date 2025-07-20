@@ -60,12 +60,24 @@ unsafe impl Sync for OtaManager {}
 
 impl OtaManager {
     pub fn new() -> Result<Self, OtaError> {
+        log::info!("OTA: Initializing OTA manager...");
+        
+        // Check current partition
+        let running_partition = unsafe { esp_idf_sys::esp_ota_get_running_partition() };
+        if !running_partition.is_null() {
+            unsafe {
+                let partition = &*running_partition;
+                let label = CStr::from_ptr(partition.label.as_ptr());
+                log::info!("OTA: Currently running from partition: {:?}", label);
+            }
+        }
+        
         // Try to get the next OTA partition normally
         let mut update_partition = unsafe { esp_ota_get_next_update_partition(core::ptr::null()) };
         
         // If that fails (we're on factory), find the first OTA partition manually
         if update_partition.is_null() {
-            log::info!("Running from factory partition, finding first OTA partition...");
+            log::info!("OTA: Running from factory partition, finding first OTA partition...");
             
             // Find first OTA partition (ota_0)
             update_partition = unsafe {
@@ -77,7 +89,7 @@ impl OtaManager {
             };
             
             if update_partition.is_null() {
-                log::error!("No OTA partition found in partition table");
+                log::error!("OTA: No OTA partition found in partition table");
                 return Err(OtaError::NoUpdatePartition);
             }
             
@@ -85,7 +97,15 @@ impl OtaManager {
             unsafe {
                 let partition = &*update_partition;
                 let label = CStr::from_ptr(partition.label.as_ptr());
-                log::info!("Found OTA partition: {:?} at offset 0x{:x}, size: {} bytes", 
+                log::info!("OTA: Found OTA partition: {:?} at offset 0x{:x}, size: {} bytes", 
+                    label, partition.address, partition.size);
+            }
+        } else {
+            // Log the found partition
+            unsafe {
+                let partition = &*update_partition;
+                let label = CStr::from_ptr(partition.label.as_ptr());
+                log::info!("OTA: Next update partition: {:?} at offset 0x{:x}, size: {} bytes", 
                     label, partition.address, partition.size);
             }
         }
@@ -102,7 +122,18 @@ impl OtaManager {
     pub fn begin_update(&mut self, size: usize) -> Result<(), OtaError> {
         if size == 0 || size > 4 * 1024 * 1024 {
             // Sanity check: firmware should be between 0 and 4MB
+            log::error!("OTA: Invalid firmware size: {} bytes", size);
             return Err(OtaError::InvalidSize);
+        }
+        
+        log::info!("OTA: Beginning update with size: {} bytes", size);
+        
+        // Log partition info
+        unsafe {
+            let partition = &*self.update_partition;
+            let label = CStr::from_ptr(partition.label.as_ptr());
+            log::info!("OTA: Target partition: {:?} at 0x{:x}, size: {} bytes", 
+                label, partition.address, partition.size);
         }
         
         let mut handle: esp_ota_handle_t = 0;
@@ -116,6 +147,33 @@ impl OtaManager {
         };
         
         if result != 0 {
+            log::error!("OTA: esp_ota_begin failed with error code: {} (0x{:x})", result, result);
+            
+            // Log specific error details
+            match result {
+                -1 => log::error!("OTA: ESP_FAIL - Generic failure"),
+                0x101 => log::error!("OTA: ESP_ERR_NO_MEM - Out of memory"),
+                0x102 => log::error!("OTA: ESP_ERR_INVALID_ARG - Invalid argument"), 
+                0x103 => log::error!("OTA: ESP_ERR_INVALID_STATE - Invalid state"),
+                0x104 => log::error!("OTA: ESP_ERR_INVALID_SIZE - Invalid size"),
+                0x105 => log::error!("OTA: ESP_ERR_NOT_FOUND - Requested resource not found"),
+                0x106 => log::error!("OTA: ESP_ERR_NOT_SUPPORTED - Operation not supported"),
+                0x107 => log::error!("OTA: ESP_ERR_TIMEOUT - Operation timed out"),
+                0x108 => log::error!("OTA: ESP_ERR_INVALID_RESPONSE - Received invalid response"),
+                0x109 => log::error!("OTA: ESP_ERR_INVALID_CRC - CRC or checksum was invalid"),
+                0x10A => log::error!("OTA: ESP_ERR_INVALID_VERSION - Version was invalid"),
+                0x10B => log::error!("OTA: ESP_ERR_INVALID_MAC - MAC address was invalid"),
+                0x10C => log::error!("OTA: ESP_ERR_NOT_FINISHED - Operation has not fully completed"),
+                0x1500 => log::error!("OTA: ESP_ERR_OTA_BASE - OTA error base"),
+                0x1501 => log::error!("OTA: ESP_ERR_OTA_PARTITION_CONFLICT - Partition conflict"),
+                0x1502 => log::error!("OTA: ESP_ERR_OTA_SELECT_INFO_INVALID - OTA data partition invalid"),
+                0x1503 => log::error!("OTA: ESP_ERR_OTA_VALIDATE_FAILED - OTA image validate failed"),
+                0x1504 => log::error!("OTA: ESP_ERR_OTA_SMALL_SEC_VER - New firmware security version is less than current"),
+                0x1505 => log::error!("OTA: ESP_ERR_OTA_ROLLBACK_FAILED - Rollback failed"),
+                0x1506 => log::error!("OTA: ESP_ERR_OTA_ROLLBACK_INVALID_STATE - Invalid rollback state"),
+                _ => log::error!("OTA: Unknown error code: {} (0x{:x})", result, result),
+            }
+            
             return Err(OtaError::BeginFailed);
         }
         
