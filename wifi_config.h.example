@@ -1,0 +1,6 @@
+// WiFi Configuration Example
+// Copy this file to wifi_config.h and add your actual WiFi credentials
+// DO NOT commit wifi_config.h to git (it's in .gitignore)
+
+#define WIFI_SSID "YourWiFiSSID"
+#define WIFI_PASSWORD "YourWiFiPassword"

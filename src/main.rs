@@ -38,6 +38,7 @@ mod psram;
 mod hardware_timer;
 mod performance;
 mod core1_tasks;
+mod logging;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
@@ -50,7 +51,9 @@ use crate::performance::PerformanceMetrics;
 fn main() -> Result<()> {
     // Initialize ESP-IDF
     esp_idf_svc::sys::link_patches();
-    EspLogger::initialize_default();
+    
+    // Initialize our custom logger instead of EspLogger
+    logging::init_logger().expect("Failed to initialize logger");
 
     info!("ESP32-S3 Dashboard {} - OTA on Port 80", crate::version::full_version());
     info!("Free heap: {} bytes", unsafe {
@@ -112,6 +115,15 @@ fn main() -> Result<()> {
     // Load configuration
     let config = Arc::new(Mutex::new(config::load_or_default()?));
     info!("Configuration loaded");
+    
+    // Log WiFi credentials (safely)
+    {
+        let cfg = config.lock().unwrap();
+        log::info!("WiFi credentials: SSID='{}', Password={}", 
+            cfg.wifi_ssid,
+            if cfg.wifi_password.is_empty() { "<empty>" } else { "<set>" }
+        );
+    }
 
     // Debug flag - set to true to run display tests
     // Change this to true and recompile to run baseline performance test
@@ -355,6 +367,10 @@ fn main() -> Result<()> {
     // Start telnet log server if we have network
     let telnet_server = if network_manager.is_connected() {
         let server = Arc::new(TelnetLogServer::new(23));
+        
+        // Set the telnet server in our custom logger
+        logging::set_telnet_server(Arc::clone(&server));
+        
         match Arc::clone(&server).start() {
             Ok(_) => {
                 log::info!("Telnet log server started on port 23");
@@ -528,6 +544,10 @@ fn run_app(
         // Check for updates from Core 1
         // Process data from Core 1 (non-blocking)
         if let Ok(processed_data) = core1_channels.processed_rx.try_recv() {
+            log::debug!("Main: Received sensor data from Core 1 - Temp={:.1}°C, Battery={}%, CPU0={}%, CPU1={}%",
+                processed_data.temperature, processed_data.battery_percentage, 
+                processed_data.cpu_usage_core0, processed_data.cpu_usage_core1);
+                
             // Update UI with processed sensor data
             ui_manager.update_sensor_data(sensors::SensorData {
                 _temperature: processed_data.temperature,
@@ -657,11 +677,6 @@ fn run_app(
             );
             log::info!("{}", perf_msg);
             
-            // Also send to telnet
-            if let Some(ref server) = telnet_server {
-                server.log_message("INFO", &perf_msg);
-            }
-            
             let cores_msg = format!("[CORES] CPU0: {}% | CPU1: {}% | Tasks: C0={} C1={} Total={} | Avg: {}μs",
                 cpu0_usage,
                 cpu1_usage,
@@ -671,11 +686,6 @@ fn run_app(
                 core_stats.avg_task_time_us
             );
             log::info!("{}", cores_msg);
-            
-            // Also send to telnet
-            if let Some(ref server) = telnet_server {
-                server.log_message("INFO", &cores_msg);
-            }
             
             // Update UI manager with accurate FPS
             ui_manager.update_fps(fps_stats.current_fps);

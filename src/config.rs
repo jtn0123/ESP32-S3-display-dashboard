@@ -37,9 +37,19 @@ pub enum Theme {
 
 impl Default for Config {
     fn default() -> Self {
+        // Get WiFi credentials from environment variables set by build.rs
+        // These come from wifi_config.h which should NOT be committed to git
+        let wifi_ssid = env!("WIFI_SSID");
+        let wifi_password = env!("WIFI_PASSWORD");
+        
+        log::info!("Config default: SSID='{}', Password={}", 
+            wifi_ssid, 
+            if wifi_password.is_empty() { "<empty>" } else { "<set>" }
+        );
+        
         Self {
-            wifi_ssid: env!("WIFI_SSID").to_string(),
-            wifi_password: env!("WIFI_PASSWORD").to_string(),
+            wifi_ssid: wifi_ssid.to_string(),
+            wifi_password: wifi_password.to_string(),
             brightness: 80,
             auto_brightness: true,
             dim_timeout_secs: 30,
@@ -62,13 +72,34 @@ impl Config {
 
 pub fn load_or_default() -> Result<Config> {
     match load_from_nvs() {
-        Ok(config) => {
+        Ok(mut config) => {
             log::info!("Loaded configuration from NVS");
+            
+            // If NVS has empty WiFi credentials, use the compiled-in ones
+            if config.wifi_ssid.is_empty() || config.wifi_password.is_empty() {
+                let default_config = Config::default();
+                log::warn!("NVS WiFi credentials empty, using compiled defaults: SSID='{}'", default_config.wifi_ssid);
+                config.wifi_ssid = default_config.wifi_ssid;
+                config.wifi_password = default_config.wifi_password;
+                
+                // Save the updated config back to NVS
+                if let Err(e) = config.save() {
+                    log::warn!("Failed to save updated config with WiFi credentials: {:?}", e);
+                }
+            }
+            
             Ok(config)
         }
         Err(e) => {
             log::warn!("Failed to load config from NVS: {:?}, using defaults", e);
-            Ok(Config::default())
+            let config = Config::default();
+            
+            // Try to save default config to NVS for next time
+            if let Err(save_err) = config.save() {
+                log::warn!("Failed to save default config to NVS: {:?}", save_err);
+            }
+            
+            Ok(config)
         }
     }
 }

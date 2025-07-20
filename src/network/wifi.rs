@@ -22,27 +22,45 @@ impl WifiManager {
         ssid: String,
         password: String,
     ) -> Result<Self> {
+        log::info!("Initializing WiFi manager for SSID: '{}'", ssid);
+        
+        // Check if credentials are empty
+        if ssid.is_empty() {
+            log::error!("WiFi SSID is empty! Check wifi_config.h");
+            bail!("WiFi SSID cannot be empty");
+        }
+        
         let nvs = EspDefaultNvsPartition::take()?;
         let mut esp_wifi = EspWifi::new(modem, sys_loop.clone(), Some(nvs))?;
 
         // Configure WiFi
         let cfg = Configuration::Client(ClientConfiguration {
             ssid: ssid.as_str().try_into()
-                .map_err(|_| anyhow::anyhow!("Invalid SSID format"))?,
+                .map_err(|e| {
+                    log::error!("Failed to convert SSID '{}': {:?}", ssid, e);
+                    anyhow::anyhow!("Invalid SSID format: {}", ssid)
+                })?,
             password: password.as_str().try_into()
-                .map_err(|_| anyhow::anyhow!("Invalid password format"))?,
+                .map_err(|e| {
+                    log::error!("Failed to convert password: {:?}", e);
+                    anyhow::anyhow!("Invalid password format")
+                })?,
             auth_method: if password.is_empty() {
+                log::warn!("WiFi password is empty, using open network");
                 AuthMethod::None
             } else {
+                log::info!("Using WPA2 authentication");
                 AuthMethod::WPA2Personal
             },
             ..Default::default()
         });
 
+        log::info!("Setting WiFi configuration...");
         esp_wifi.set_configuration(&cfg)?;
         
         let wifi = BlockingWifi::wrap(esp_wifi, sys_loop)?;
 
+        log::info!("WiFi manager initialized successfully");
         Ok(Self {
             wifi,
             ssid,

@@ -58,6 +58,9 @@ impl SensorTask {
         // Read CPU usage
         let (cpu0, cpu1) = self.read_cpu_usage();
         
+        log::info!("Core 1 Sensor: Temp={:.1}°C (filtered={:.1}°C), Battery={}% ({:.2}V), CPU0={}%, CPU1={}%", 
+            temperature, filtered_temp, battery_percentage, battery_voltage as f32 / 1000.0, cpu0, cpu1);
+        
         // Send update to Core 0
         let update = SensorUpdate {
             temperature: filtered_temp,
@@ -72,6 +75,8 @@ impl SensorTask {
         // Send update (will block if channel is full)
         if let Err(e) = self.tx.send(update) {
             log::error!("Failed to send sensor update: {}", e);
+        } else {
+            log::debug!("Core 1: Sensor update sent to Core 0");
         }
         
         Ok(())
