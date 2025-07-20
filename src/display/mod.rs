@@ -2,6 +2,7 @@ pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
 pub mod debug_tests;
+// pub mod perf_metrics; // Temporarily disabled
 // pub mod lcd_cam; // Commented out - needs esp-hal for proper peripheral access
 pub mod lcd_cam_ll; // Low-level LCD_CAM bindings
 pub mod lcd_cam_dma; // DMA support for LCD_CAM
@@ -25,12 +26,15 @@ pub mod lcd_cam_dma_fixed_test; // LCD_CAM with DMA and proper configuration
 pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
 // pub mod lcd_cam_pac_test; // LCD_CAM using PAC approach - needs proper bindings
 pub mod lcd_cam_minimal_test; // Minimal test to debug register access
+pub mod dirty_rect_manager; // Enhanced dirty rectangle management
 
 // Color type not used - colors are defined as u16 constants
 
 use anyhow::Result;
 use self::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use self::lcd_bus::LcdBus;
+// use self::perf_metrics::DisplayMetrics;
+use self::dirty_rect_manager::DirtyRectManager;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::{Instant, Duration};
@@ -115,11 +119,12 @@ pub struct DisplayManager {
     width: u16,
     height: u16,
     last_activity: Instant,
-    dirty_rect: DirtyRect,
+    dirty_rect_manager: DirtyRectManager,
     #[allow(dead_code)]
     frame_buffer: Vec<u16>, // Optional frame buffer for optimized updates
     #[allow(dead_code)]
     use_frame_buffer: bool,
+    // metrics: DisplayMetrics, // Performance tracking
 }
 
 impl DisplayManager {
@@ -166,9 +171,10 @@ impl DisplayManager {
             width: DISPLAY_WIDTH,
             height: DISPLAY_HEIGHT,
             last_activity: Instant::now(),
-            dirty_rect: DirtyRect::new(0, 0, 0, 0),
+            dirty_rect_manager: DirtyRectManager::new(),
             frame_buffer: Vec::new(),
             use_frame_buffer: false,
+            // metrics: DisplayMetrics::new(),
         };
         
         display.init()?;
@@ -339,7 +345,7 @@ impl DisplayManager {
         self.lcd_bus.write_pixels(color, total_pixels)?;
         
         // Mark entire screen as dirty
-        self.mark_dirty(0, 0, self.width, self.height);
+        self.dirty_rect_manager.add_rect(0, 0, self.width, self.height);
         
         Ok(())
     }
@@ -378,6 +384,10 @@ impl DisplayManager {
         // CRITICAL: Must send RAMWR before pixel data
         self.lcd_bus.write_command(CMD_RAMWR)?;
         self.lcd_bus.write_data_16(color)?;
+        
+        // Track dirty region
+        self.dirty_rect_manager.add_rect(x, y, 1, 1);
+        
         Ok(())
     }
 
@@ -399,12 +409,18 @@ impl DisplayManager {
         self.lcd_bus.write_pixels(color, total_pixels)?;
         
         // Track dirty region
-        self.mark_dirty(x, y, x1 - x + 1, y1 - y + 1);
+        self.dirty_rect_manager.add_rect(x, y, x1 - x + 1, y1 - y + 1);
         
         Ok(())
     }
 
     pub fn draw_line(&mut self, x0: u16, y0: u16, x1: u16, y1: u16, color: u16) -> Result<()> {
+        // Calculate bounding box for the line
+        let min_x = x0.min(x1);
+        let max_x = x0.max(x1);
+        let min_y = y0.min(y1);
+        let max_y = y0.max(y1);
+        
         let dx = (x1 as i32 - x0 as i32).abs();
         let dy = (y1 as i32 - y0 as i32).abs();
         let sx = if x0 < x1 { 1 } else { -1 };
@@ -430,6 +446,9 @@ impl DisplayManager {
                 y += sy;
             }
         }
+        
+        // Track the entire line's bounding box as dirty
+        self.dirty_rect_manager.add_rect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
 
         Ok(())
     }
@@ -439,6 +458,10 @@ impl DisplayManager {
         self.draw_line(x, y + h - 1, x + w - 1, y + h - 1, color)?;
         self.draw_line(x, y, x, y + h - 1, color)?;
         self.draw_line(x + w - 1, y, x + w - 1, y + h - 1, color)?;
+        
+        // The entire rectangle area is dirty
+        self.dirty_rect_manager.add_rect(x, y, w, h);
+        
         Ok(())
     }
 
@@ -532,12 +555,18 @@ impl DisplayManager {
             }
         }
         
+        // Mark the entire character area as dirty
+        let char_width = FONT_WIDTH * scale;
+        let char_height = FONT_HEIGHT * scale;
+        self.dirty_rect_manager.add_rect(x, y, char_width as u16, char_height as u16);
+        
         Ok(())
     }
 
     pub fn draw_text(&mut self, x: u16, y: u16, text: &str, color: u16, bg_color: Option<u16>, scale: u8) -> Result<()> {
         let mut cursor_x = x;
         let char_width = (FONT_WIDTH * scale + 1) as u16; // +1 for spacing
+        let start_x = x;
         
         for c in text.chars() {
             if cursor_x + char_width as u16 > self.width {
@@ -546,6 +575,13 @@ impl DisplayManager {
             
             self.draw_char(cursor_x, y, c, color, bg_color, scale)?;
             cursor_x += char_width;
+        }
+        
+        // Mark the entire text area as dirty
+        if cursor_x > start_x {
+            let text_width = cursor_x - start_x;
+            let text_height = (FONT_HEIGHT * scale) as u16;
+            self.dirty_rect_manager.add_rect(start_x, y, text_width, text_height);
         }
         
         Ok(())
@@ -560,6 +596,12 @@ impl DisplayManager {
     }
 
     pub fn draw_circle(&mut self, cx: u16, cy: u16, r: u16, color: u16) -> Result<()> {
+        // Calculate bounding box
+        let min_x = (cx as i32 - r as i32).max(0) as u16;
+        let max_x = (cx as i32 + r as i32).min(self.width as i32 - 1) as u16;
+        let min_y = (cy as i32 - r as i32).max(0) as u16;
+        let max_y = (cy as i32 + r as i32).min(self.height as i32 - 1) as u16;
+        
         let mut x = r as i32;
         let mut y = 0i32;
         let mut err = 0i32;
@@ -583,6 +625,9 @@ impl DisplayManager {
                 err -= 2 * x + 1;
             }
         }
+        
+        // Mark the circle's bounding box as dirty
+        self.dirty_rect_manager.add_rect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
 
         Ok(())
     }
@@ -610,6 +655,14 @@ impl DisplayManager {
                 }
             }
         }
+        
+        // Mark the circle's bounding box as dirty
+        let min_x = (cx as i32 - r as i32).max(0) as u16;
+        let max_x = (cx as i32 + r as i32).min(self.width as i32 - 1) as u16;
+        let min_y = (cy as i32 - r as i32).max(0) as u16;
+        let max_y = (cy as i32 + r as i32).min(self.height as i32 - 1) as u16;
+        self.dirty_rect_manager.add_rect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+        
         Ok(())
     }
 
@@ -652,22 +705,18 @@ impl DisplayManager {
         Ok(())
     }
     
-    // Dirty rectangle tracking methods
-    pub fn mark_dirty(&mut self, x: u16, y: u16, width: u16, height: u16) {
-        let new_rect = DirtyRect::new(x, y, width, height);
-        if self.dirty_rect.is_empty() {
-            self.dirty_rect = new_rect;
-        } else {
-            self.dirty_rect.merge(&new_rect);
-        }
-    }
-    
     pub fn flush(&mut self) -> Result<()> {
-        // Only update if there's a dirty region
-        if !self.dirty_rect.is_empty() {
+        // Only update if there are dirty regions
+        if !self.dirty_rect_manager.is_empty() {
+            // Get statistics for debugging
+            let (rect_count, merge_count, _update_count) = self.dirty_rect_manager.get_stats();
+            if rect_count > 5 {
+                log::debug!("Dirty rectangles: {} (merges: {})", rect_count, merge_count);
+            }
+            
             // For now, we'll still do a full refresh but track what changed
-            // In the future, we can optimize to only update the dirty region
-            self.dirty_rect.clear();
+            // In the future, we can optimize to only update the dirty regions
+            self.dirty_rect_manager.clear();
         }
         Ok(())
     }

@@ -56,13 +56,26 @@ impl WifiManager {
 
         log::info!("Scanning for networks...");
         
-        // Reset watchdog before scan (scan can take 4+ seconds)
-        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        // Temporarily remove current task from watchdog monitoring during WiFi scan
+        unsafe {
+            let result = esp_idf_sys::esp_task_wdt_delete(std::ptr::null_mut());
+            if result == esp_idf_sys::ESP_OK {
+                log::info!("Temporarily disabled watchdog for WiFi scan");
+            }
+        }
         
+        // Perform the scan (this can take 3-5 seconds)
         let ap_infos = self.wifi.scan()?;
         
-        // Reset watchdog after scan
-        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        // Re-add task to watchdog monitoring
+        unsafe {
+            let result = esp_idf_sys::esp_task_wdt_add(std::ptr::null_mut());
+            if result == esp_idf_sys::ESP_OK {
+                log::info!("Re-enabled watchdog after WiFi scan");
+                // Reset immediately to start fresh
+                esp_idf_sys::esp_task_wdt_reset();
+            }
+        };
         
         let mut found = false;
         let mut signal_strength = -100i8;

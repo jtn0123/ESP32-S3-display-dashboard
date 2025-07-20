@@ -4,6 +4,26 @@
 
 set -euo pipefail
 
+# Parse command line arguments
+MONITOR=false
+NO_ERASE=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --monitor)
+            MONITOR=true
+            shift
+            ;;
+        --no-erase)
+            NO_ERASE=true
+            shift
+            ;;
+        *)
+            echo "Usage: $0 [--monitor] [--no-erase]"
+            exit 1
+            ;;
+    esac
+done
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -79,7 +99,7 @@ else
 fi
 
 # Step 3: Optional full erase
-if [[ "${1:-}" != "--no-erase" ]]; then
+if [[ "$NO_ERASE" != "true" ]]; then
     echo -e "\n${YELLOW}Erasing entire flash...${NC}"
     $ESPTOOL --chip esp32s3 --port "$PORT" erase_flash
     echo -e "${GREEN}✓ Flash erased${NC}"
@@ -123,7 +143,7 @@ $ESPTOOL --chip esp32s3 --port "$PORT" --baud 921600 \
 rm -f "$BIN_FILE" "$PARTITION_BIN"
 
 # Extract version from the binary
-VERSION=$(grep -a "v[0-9]\+\.[0-9]\+-rust[^\"]*" "$ELF_FILE" 2>/dev/null | head -1 | grep -o "v[0-9]\+\.[0-9]\+-rust[^\"]*" || echo "unknown")
+VERSION=$(grep -a "v[0-9]\+\.[0-9]\+-rust" "$ELF_FILE" 2>/dev/null | head -1 | grep -o "v[0-9]\+\.[0-9]\+-rust" || echo "unknown")
 
 echo -e "\n${GREEN}✅ USB flash complete!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -136,5 +156,17 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo ""
 echo -e "${BLUE}Device will boot from factory partition.${NC}"
 echo -e "${BLUE}First OTA update will go to ota_1.${NC}"
-echo ""
-echo "To monitor: espflash monitor --port $PORT"
+
+# Start monitor if requested
+if [[ "$MONITOR" == "true" ]]; then
+    echo ""
+    echo -e "${YELLOW}Starting monitor...${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to exit${NC}"
+    echo ""
+    sleep 1
+    # Use simple serial monitor that won't interfere with the running device
+    exec ./scripts/monitor.sh
+else
+    echo ""
+    echo "To monitor: ./scripts/monitor.sh"
+fi

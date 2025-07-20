@@ -13,36 +13,37 @@ try:
     print("-" * 60)
     
     start_time = time.time()
-    lcd_cam_test_started = False
-    test_complete = False
+    metrics_found = False
     
-    while time.time() - start_time < 30:  # Monitor for 30 seconds
+    while time.time() - start_time < 60:  # Monitor for 60 seconds
         if ser.in_waiting:
             data = ser.readline()
             try:
                 line = data.decode('utf-8', errors='replace').strip()
                 if line:
-                    print(line)
+                    # Always print version and startup info
+                    if "ESP32-S3 Dashboard" in line or "Free heap" in line:
+                        print(line)
                     
-                    # Look for LCD_CAM test markers
-                    if "Testing LCD_CAM with shadow register fix" in line:
-                        lcd_cam_test_started = True
-                        print("\n*** LCD_CAM TEST STARTED ***\n")
-                    elif "Register verification after update:" in line:
-                        print("\n*** REGISTER VALUES AFTER UPDATE ***")
-                    elif "Test complete\!" in line:
-                        test_complete = True
-                        print("\n*** TEST COMPLETE ***\n")
-                    elif lcd_cam_test_started and "0x" in line:
-                        # Highlight register values
-                        print(f">>> {line}")
+                    # Look for performance metrics
+                    if "[DISPLAY PERF]" in line:
+                        metrics_found = True
+                        print(f"\n>>> PERFORMANCE: {line}")
+                    elif "[DISPLAY OPS]" in line:
+                        print(f">>> OPERATIONS: {line}")
+                    elif "[DISPLAY TIME]" in line:
+                        print(f">>> TIMING: {line}")
+                    elif "[DISPLAY EFF]" in line:
+                        print(f">>> EFFICIENCY: {line}")
+                    elif "[PERF]" in line:
+                        print(f">>> SYSTEM: {line}")
+                    elif "[CORES]" in line:
+                        print(f">>> CORES: {line}")
+                    elif metrics_found and "Free heap" in line:
+                        print(f">>> MEMORY: {line}")
                         
             except Exception as e:
                 print(f"Decode error: {e}")
-        
-        if test_complete:
-            time.sleep(2)  # Give a bit more time for final output
-            break
             
     ser.close()
     print("-" * 60)

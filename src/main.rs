@@ -590,16 +590,20 @@ fn run_app(
             last_fps_report = Instant::now();
         }
         
-        // Frame rate limiting - cap at 60 FPS to prevent burning cycles
-        let target_60fps = Duration::from_micros(16667); // ~60 FPS
-        if frame_time < target_60fps {
-            // Use busy wait for more precise timing
-            let wait_time = target_60fps - frame_time;
-            if wait_time > Duration::from_millis(1) {
-                esp_idf_hal::delay::FreeRtos::delay_ms((wait_time.as_millis() - 1) as u32);
+        // Frame rate limiting - toggleable for performance testing
+        const ENABLE_FPS_CAP: bool = false; // Set to true for production, false for benchmarking
+        
+        if ENABLE_FPS_CAP {
+            let target_60fps = Duration::from_micros(16667); // ~60 FPS
+            if frame_time < target_60fps {
+                // Use busy wait for more precise timing
+                let wait_time = target_60fps - frame_time;
+                if wait_time > Duration::from_millis(1) {
+                    esp_idf_hal::delay::FreeRtos::delay_ms((wait_time.as_millis() - 1) as u32);
+                }
+                // Busy wait for the last millisecond for precision
+                while frame_start.elapsed() < target_60fps {}
             }
-            // Busy wait for the last millisecond for precision
-            while frame_start.elapsed() < target_60fps {}
         }
     }
 }
