@@ -25,7 +25,7 @@ mod app_desc {
 mod boot;
 mod config;
 mod display;
-// mod hardware;  // Temporarily disabled - API changes
+mod hardware;
 mod network;
 mod ota;
 mod sensors;
@@ -506,6 +506,8 @@ fn run_app(
     // CPU usage tracking
     let mut last_cpu_check = Instant::now();
     let cpu_check_interval = Duration::from_secs(2);
+    let mut last_cpu0_usage = 0u8;
+    let mut last_cpu1_usage = 0u8;
     
     log::info!("Main render loop started - entering infinite loop");
 
@@ -630,9 +632,12 @@ fn run_app(
             // Get CPU usage for both cores
             let (cpu0_usage, cpu1_usage) = if last_cpu_check.elapsed() >= cpu_check_interval {
                 last_cpu_check = Instant::now();
-                cpu_monitor.get_cpu_usage()
+                let (new_cpu0, new_cpu1) = cpu_monitor.get_cpu_usage();
+                last_cpu0_usage = new_cpu0;
+                last_cpu1_usage = new_cpu1;
+                (new_cpu0, new_cpu1)
             } else {
-                (0, 0)
+                (last_cpu0_usage, last_cpu1_usage)
             };
             
             // Get dual-core stats

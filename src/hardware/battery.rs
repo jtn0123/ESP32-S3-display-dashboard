@@ -1,10 +1,10 @@
 // Battery voltage monitoring via ADC
 
-use anyhow::Result;
 use esp_idf_hal::{
-    adc::{AdcDriver, AdcChannelDriver, Attenuation, config::Config as AdcConfig},
-    gpio::Gpio4,
-    peripherals::ADC1,
+    adc::{
+        oneshot::config::AdcChannelConfig,
+        attenuation::DB_11,
+    },
 };
 
 // Battery constants (matching Arduino implementation)
@@ -20,66 +20,47 @@ const ADC_MAX: f32 = 4095.0;
 const ATTENUATION_FACTOR: f32 = 3.9;  // For 11dB attenuation
 
 pub struct BatteryMonitor {
-    adc: AdcDriver<'static, ADC1>,
-    pin: AdcChannelDriver<'static, Gpio4, Attenuation::Attenuation11dB>,
     history: [u16; 10],
     history_index: usize,
 }
 
 impl BatteryMonitor {
-    pub fn new(adc1: ADC1, pin: Gpio4) -> Result<Self> {
-        let config = AdcConfig::default();
-        let adc = AdcDriver::new(adc1, &config)?;
-        
-        // Configure pin for battery monitoring with 11dB attenuation
-        // This gives us a range of 0-3.9V which is perfect for battery monitoring
-        let adc_pin = AdcChannelDriver::new(pin)?;
-        
-        Ok(Self {
-            adc,
-            pin: adc_pin,
+    pub fn new() -> Self {
+        Self {
             history: [0; 10],
             history_index: 0,
-        })
+        }
     }
     
-    pub fn read_raw(&mut self) -> u16 {
-        // Read ADC value
-        let raw = match self.adc.read(&mut self.pin) {
-            Ok(val) => val,
-            Err(e) => {
-                log::warn!("ADC read error: {:?}", e);
-                0
-            }
-        };
-        
+    // Add a raw ADC reading to history and return converted voltage
+    pub fn add_reading(&mut self, raw_adc: u16) -> u16 {
         // Add to history for averaging
-        self.history[self.history_index] = raw;
+        self.history[self.history_index] = raw_adc;
         self.history_index = (self.history_index + 1) % self.history.len();
         
-        raw
-    }
-    
-    pub fn read_averaged(&self) -> u16 {
-        // Calculate average of history
-        let sum: u32 = self.history.iter().map(|&x| x as u32).sum();
-        (sum / self.history.len() as u32) as u16
-    }
-    
-    pub fn get_voltage_mv(&mut self) -> u16 {
-        let adc_reading = self.read_averaged();
-        
         // Convert ADC reading to voltage
-        // With 11dB attenuation, full scale is ~3.9V
+        let adc_reading = self.read_averaged();
         let voltage = (adc_reading as f32 / ADC_MAX) * VREF * ATTENUATION_FACTOR;
         
         // Clamp to reasonable range
         voltage.clamp(0.0, MAX_BATTERY_VOLTAGE as f32) as u16
     }
     
-    pub fn get_battery_percentage(&mut self) -> u8 {
-        let voltage = self.get_voltage_mv();
-        
+    fn read_averaged(&self) -> u16 {
+        // Calculate average of history
+        let sum: u32 = self.history.iter().map(|&x| x as u32).sum();
+        (sum / self.history.len() as u32) as u16
+    }
+    
+    pub fn get_last_raw(&self) -> u16 {
+        if self.history_index > 0 {
+            self.history[self.history_index - 1]
+        } else {
+            self.history[self.history.len() - 1]
+        }
+    }
+    
+    pub fn voltage_to_percentage(voltage: u16) -> u8 {
         // Enhanced Li-ion discharge curve (matching Arduino)
         let percentage = if voltage >= 4150 {
             95 + ((voltage - 4150) * 5) / 50  // 95-100%: 4.15V to 4.20V
@@ -108,27 +89,22 @@ impl BatteryMonitor {
         percentage.clamp(0, 100) as u8
     }
     
-    pub fn is_battery_connected(&mut self) -> bool {
-        let adc_raw = self.read_raw();
-        let voltage = self.get_voltage_mv();
-        
+    pub fn is_battery_connected(adc_raw: u16, voltage: u16) -> bool {
         // Check if battery is connected (not floating)
         !(adc_raw < NO_BATTERY_ADC_MIN || 
           adc_raw > NO_BATTERY_ADC_MAX ||
           voltage < 2500)
     }
     
-    pub fn is_on_usb_power(&mut self) -> bool {
-        let voltage = self.get_voltage_mv();
-        voltage > USB_DETECT_THRESHOLD || !self.is_battery_connected()
+    pub fn is_on_usb_power(voltage: u16, battery_connected: bool) -> bool {
+        voltage > USB_DETECT_THRESHOLD || !battery_connected
     }
     
-    pub fn is_charging(&mut self) -> bool {
-        let voltage = self.get_voltage_mv();
-        self.is_battery_connected() && voltage > CHARGING_THRESHOLD
+    pub fn is_charging(voltage: u16, battery_connected: bool) -> bool {
+        battery_connected && voltage > CHARGING_THRESHOLD
     }
     
-    pub fn get_voltage_trend(&mut self) -> i16 {
+    pub fn get_voltage_trend(&self) -> i16 {
         // Simple trend detection based on history
         if self.history_index == 0 {
             return 0;
@@ -138,5 +114,13 @@ impl BatteryMonitor {
         let newest = self.history[self.history_index.saturating_sub(1)];
         
         (newest as i16) - (oldest as i16)
+    }
+}
+
+// Helper to create ADC configuration for battery monitoring
+pub fn battery_adc_config() -> AdcChannelConfig {
+    AdcChannelConfig {
+        attenuation: DB_11,
+        ..Default::default()
     }
 }

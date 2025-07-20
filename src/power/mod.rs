@@ -1,7 +1,7 @@
 // Power management system for ESP32-S3 dashboard
 
 use embassy_time::{Duration, Instant, Timer};
-use esp_idf_hal::gpio::{AnyPin, Output, PinDriver};
+use esp_idf_hal::gpio::{AnyIOPin, Output, PinDriver};
 use crate::hardware::SensorData;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,7 +42,7 @@ pub struct PowerManager {
     last_activity: Instant,
     config: PowerConfig,
     brightness_level: u8,
-    backlight_pin: Option<PinDriver<'static, AnyPin, Output>>,
+    backlight_pin: Option<PinDriver<'static, AnyIOPin, Output>>,
     force_power_save: bool,
 }
 

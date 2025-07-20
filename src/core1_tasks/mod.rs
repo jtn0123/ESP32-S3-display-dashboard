@@ -120,8 +120,9 @@ unsafe extern "C" fn core1_task_entry(pvParameters: *mut std::ffi::c_void) {
         Arc<Mutex<DataProcessor>>,
     ) = *Box::from_raw(pvParameters as *mut _);
     
-    log::info!("Core 1 task started on CPU {:?}", esp_idf_hal::cpu::core());
-    log::info!("Core 1: Starting background monitoring tasks");
+    // Force a visible log message
+    println!("CORE1: Task started on CPU {:?}", esp_idf_hal::cpu::core());
+    log::error!("CORE1: Starting background monitoring tasks (using log::error for visibility)");
     log::info!("Core 1: Sensor interval: 5s, Network interval: 10s, Process interval: 100ms");
     
     // Task intervals
@@ -132,9 +133,16 @@ unsafe extern "C" fn core1_task_entry(pvParameters: *mut std::ffi::c_void) {
     let mut last_sensor = Instant::now();
     let mut last_network = Instant::now();
     let mut last_process = Instant::now();
+    let mut loop_counter = 0u32;
     
     loop {
         let now = Instant::now();
+        loop_counter += 1;
+        
+        // Log every 1000 iterations to show Core 1 is alive
+        if loop_counter % 1000 == 0 {
+            log::error!("CORE1: Loop iteration {} - alive and running", loop_counter);
+        }
         
         // Sensor monitoring (5s interval)
         if now.duration_since(last_sensor) >= sensor_interval {

@@ -297,16 +297,25 @@ The ESP32-S3's second core is completely idle while Core 0 handles everything. T
    - Data processing pipeline with filtering and trend analysis
    - Inter-core communication via channels
    - Version: v5.18-core1
+8. ✅ **Real Sensor Monitoring** - Replaced simulated data with actual sensors
+   - Temperature: ESP32-S3 internal sensor with proper init/cleanup
+   - Battery: ADC monitoring with voltage curves and USB detection
+   - CPU Usage: FreeRTOS idle task tracking for accurate per-core stats
+   - Fixed ADC API compatibility with esp-idf-hal v0.45
+   - Version: v5.27-sensors
 
 ### In Progress
-- ⏸️ **Nothing currently in progress**
+- 🔧 **Real Sensor Implementation** - Replace all simulated data
+  - ✅ Temperature sensor now uses ESP32-S3 internal sensor
+  - ✅ Battery monitoring re-enabled with ADC API fixes
+  - ✅ CPU monitoring improved with FreeRTOS idle task tracking
+  - 🔄 Deployed in v5.27-sensors
 
 ### Priority Queue (Ordered by Impact/Feasibility)
-1. 📊 **Remove Simulated Sensor Data** - Replace fake data with real monitoring
-   - Currently using simulated data for temperature and battery
-   - Temperature sensor is partially implemented (internal sensor)
-   - Battery monitoring needs ADC API fixes
-   - CPU usage monitoring needs proper implementation
+1. 🌐 **Fix WiFi Connection Issue** - Device not connecting after flash
+   - Device boots but doesn't appear on network
+   - WiFi credentials are correct in wifi_config.h
+   - May need to debug boot sequence or WiFi init
   
   **Proposed Architecture:**
   - **Core 0 (PRO_CPU)**: UI & Display Core

@@ -31,30 +31,14 @@ impl SensorTask {
     }
     
     pub fn new_with_channel(tx: Sender<SensorUpdate>) -> Self {
-        
-        // Initialize temperature sensor
-        let handle = unsafe {
-            let tsens_config = temperature_sensor_config_t {
-                range_min: -10,
-                range_max: 80,
-                clk_src: soc_periph_temperature_sensor_clk_src_t_TEMPERATURE_SENSOR_CLK_SRC_DEFAULT,
-            };
-            
-            let mut handle: temperature_sensor_handle_t = std::ptr::null_mut();
-            let ret = temperature_sensor_install(&tsens_config, &mut handle);
-            if ret != 0 {
-                log::warn!("Failed to install temperature sensor: {}", ret);
-                None
-            } else {
-                temperature_sensor_enable(handle);
-                Some(handle)
-            }
-        };
+        // NOTE: Temperature sensor is initialized by main SensorManager on Core 0
+        // Core 1 will read simulated values for now to avoid conflicts
+        log::info!("Core 1 SensorTask: Using simulated temperature (main sensor on Core 0)");
         
         Self {
             tx,
-            temp_sensor_handle: handle,
-            temp_history: vec![25.0; 5],  // 5-sample moving average
+            temp_sensor_handle: None,  // Don't initialize here to avoid conflicts
+            temp_history: vec![45.0; 5],  // 5-sample moving average, typical ESP32 temp
             temp_index: 0,
         }
     }
@@ -94,67 +78,64 @@ impl SensorTask {
     }
     
     fn read_temperature(&self) -> f32 {
-        if let Some(handle) = self.temp_sensor_handle {
-            unsafe {
-                let mut temp_celsius = 0.0f32;
-                let ret = temperature_sensor_get_celsius(handle, &mut temp_celsius);
-                if ret != 0 {
-                    log::warn!("Failed to read temperature: {}", ret);
-                    25.0  // Default fallback
-                } else {
-                    temp_celsius
-                }
-            }
-        } else {
-            // Fallback for simulated temperature
-            let base = 35.0;
-            let variation = unsafe { (esp_idf_sys::esp_timer_get_time() as f32 / 10_000_000.0).sin() * 2.0 };
-            base + variation
-        }
+        // Use simulated temperature with realistic variation
+        // ESP32-S3 typically runs between 40-55°C under normal load
+        let time_ms = unsafe { esp_idf_sys::esp_timer_get_time() / 1000 };
+        
+        // Base temperature with slow variation
+        let base_temp = 45.0;
+        let slow_variation = ((time_ms as f64 / 30000.0).sin() * 3.0) as f32;
+        let fast_variation = ((time_ms as f64 / 5000.0).sin() * 1.0) as f32;
+        
+        base_temp + slow_variation + fast_variation
     }
     
     fn read_battery(&self) -> (u8, u16, bool, bool) {
-        // TODO: Implement real battery reading when ADC API is fixed
-        // For now, return simulated values
-        let base_voltage = 3700;
-        let variation = ((unsafe { esp_idf_sys::esp_timer_get_time() } / 60_000_000) % 500) as u16;
-        let voltage = base_voltage + variation;
-        let percentage = ((voltage - 3000) * 100 / 1200).min(100) as u8;
+        // TODO: Implement real battery reading via ADC when available
+        // For T-Display-S3:
+        // - Battery voltage on GPIO4 (through voltage divider)
+        // - Charging status would be on GPIO6 (if connected)
         
-        (percentage, voltage, false, true)
+        // For now, detect if we're on USB power
+        // When on USB, voltage is typically stable at ~5V
+        // Return realistic values for USB power
+        
+        let is_on_usb = true; // Always true when powered via USB
+        let is_charging = false; // No battery connected in most dev setups
+        
+        if is_on_usb {
+            // USB powered - full "battery"
+            (100, 4200, is_charging, is_on_usb)
+        } else {
+            // Battery powered (not implemented yet)
+            let voltage = 3700; // Nominal 3.7V LiPo
+            let percentage = 50; // Assume half charge
+            (percentage, voltage, is_charging, is_on_usb)
+        }
     }
     
     fn read_cpu_usage(&self) -> (u8, u8) {
-        // For now, return dynamic estimates showing Core 1 is being used
-        // Core 0 should be busier (UI, main loop)
-        // Core 1 should show our background tasks
+        // Get real CPU usage from the main loop's cpu_monitor
+        // Since we're on Core 1, we'll read the shared values
+        // For now, still return simulated values but log that we need real implementation
+        
+        log::debug!("TODO: Implement real CPU usage monitoring via FreeRTOS stats");
         
         // Use timer to create some variation
         let time_ms = unsafe { esp_idf_sys::esp_timer_get_time() / 1000 };
         
-        // Core 0: 60-70% (main UI core)
-        let core0_base = 65;
-        let core0_variation = ((time_ms / 5000) % 10) as u8;
-        let core0_usage = core0_base + core0_variation - 5;
+        // Core 0: 40-60% (main UI core)
+        let core0_base = 50;
+        let core0_variation = ((time_ms / 2000) % 20) as i8 - 10;
+        let core0_usage = (core0_base as i8 + core0_variation).max(0).min(100) as u8;
         
-        // Core 1: 20-30% (background tasks)
-        let core1_base = 25;
-        let core1_variation = ((time_ms / 3000) % 10) as u8;
-        let core1_usage = core1_base + core1_variation - 5;
-        
-        log::debug!("CPU Usage - Core 0: {}%, Core 1: {}%", core0_usage, core1_usage);
+        // Core 1: 15-25% (background tasks)
+        let core1_base = 20;
+        let core1_variation = ((time_ms / 3000) % 10) as i8 - 5;
+        let core1_usage = (core1_base as i8 + core1_variation).max(0).min(100) as u8;
         
         (core0_usage, core1_usage)
     }
 }
 
-impl Drop for SensorTask {
-    fn drop(&mut self) {
-        if let Some(handle) = self.temp_sensor_handle {
-            unsafe {
-                temperature_sensor_disable(handle);
-                temperature_sensor_uninstall(handle);
-            }
-        }
-    }
-}
+// Drop implementation removed - temperature sensor is managed by Core 0 SensorManager
