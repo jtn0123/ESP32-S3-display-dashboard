@@ -83,6 +83,20 @@ else
     exit 1
 fi
 
+# Verify LIBCLANG_PATH is set
+if [ -z "$LIBCLANG_PATH" ]; then
+    echo -e "${YELLOW}Setting LIBCLANG_PATH...${NC}"
+    export LIBCLANG_PATH="/Users/justin/.rustup/toolchains/esp/xtensa-esp32-elf-clang/esp-19.1.2_20250225/esp-clang/lib"
+fi
+
+# Verify the path exists
+if [ ! -d "$LIBCLANG_PATH" ]; then
+    echo -e "${RED}Error: LIBCLANG_PATH does not exist: $LIBCLANG_PATH${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}LIBCLANG_PATH: $LIBCLANG_PATH${NC}"
+
 # Verify cargo is available
 if ! command -v cargo &> /dev/null; then
     echo -e "${RED}Error: cargo not found!${NC}"
@@ -108,7 +122,11 @@ fi
 
 # Set ESP-IDF version to 5.3.3 LTS
 export ESP_IDF_VERSION="v5.3.3"
+export IDF_PATH="$HOME/.espressif/esp-idf/v5.3"
+export ESP_IDF_TOOLS_INSTALL_DIR="global"
+
 echo -e "${BLUE}ESP-IDF Version: v5.3.3 LTS${NC}"
+echo -e "${BLUE}IDF_PATH: $IDF_PATH${NC}"
 
 # Build the project
 echo -e "${GREEN}Starting build...${NC}"

@@ -2,6 +2,63 @@
 
 This document consolidates all known issues, attempted solutions, and technical challenges encountered in the ESP32-S3 Display Dashboard project.
 
+## Build and Toolchain Issues
+
+### Cargo Build Hangs at regex-automata
+
+**Issue**: Build hangs indefinitely at "Compiling regex-automata v0.4.9" (around compilation #22)
+
+**Cause**: Multiple factors can cause this:
+- VS Code rust-analyzer running cargo check in background
+- Stale .cargo-lock files from interrupted builds
+- Corrupted cargo registry cache
+- Network timeouts downloading dependencies
+
+**Solution**:
+1. Close VS Code before building
+2. Kill stuck processes: `pkill -9 cargo`
+3. Clear locks: `find . -name ".cargo-lock" -delete`
+4. Clear cache if needed: `rm -rf ~/.cargo/registry/cache ~/.cargo/registry/index`
+
+### ESP Toolchain Not Recognized
+
+**Issue**: "error: override toolchain 'esp' is not installed"
+
+**Cause**: The ESP toolchain is a custom toolchain that rustup doesn't recognize by default
+
+**Solution**:
+1. Install via espup: `cargo install espup --version 0.13.0`
+2. Run: `espup install --targets esp32s3 --std`
+3. Source environment: `source ~/export-esp.sh`
+
+### espup v0.15.1 Installation Fails
+
+**Issue**: Dependency conflict with indicatif versions
+
+**Solution**: Use older stable version: `cargo install espup --version 0.13.0`
+
+### Frame Pointer Compilation Warnings
+
+**Issue**: "Inherited flag '-fno-omit-frame-pointer' is not supported by the currently used CC"
+
+**Solution**: Remove from `.cargo/config.toml`:
+```toml
+rustflags = [
+    # Remove: "-C", "force-frame-pointers=yes",
+]
+```
+
+### Partition Table Not Found
+
+**Issue**: Build fails with "FileNotFoundError: partitions_16mb_ota.csv"
+
+**Solution**: Either use default partition table in sdkconfig.defaults:
+```
+CONFIG_PARTITION_TABLE_CUSTOM=n
+CONFIG_PARTITION_TABLE_TWO_OTA=y
+```
+Or ensure custom partition file exists at correct path.
+
 ## 1. LCD_CAM Hardware Acceleration Failure
 
 ### Issue Description

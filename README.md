@@ -9,19 +9,16 @@ A modern, high-performance dashboard implementation for the LilyGo T-Display-S3,
 
 ```bash
 # One-time setup
-./setup-toolchain.sh            # Install complete toolchain
-source ~/esp-env.sh             # Load environment
-
-# Configure WiFi (required for OTA and web features)
-cp wifi_config.h.example wifi_config.h
-# Edit wifi_config.h with your WiFi credentials
+cargo install espup --version 0.13.0  # Note: v0.15.1 has issues
+espup install --targets esp32s3 --std
+source ~/export-esp.sh                 # Load environment
 
 # Build and flash
 ./compile.sh                    # Build firmware
-./scripts/flash.sh              # Flash via USB (always works!)
+./scripts/flash.sh              # Flash via USB
 ./scripts/ota.sh find           # Find devices for OTA update
 
-# See scripts/README.md for detailed instructions
+# See SETUP_GUIDE.md for detailed instructions and troubleshooting
 ```
 
 ## 📋 Prerequisites
@@ -33,20 +30,19 @@ This project includes optimized support for Apple Silicon Macs. The toolchain ha
 ### Install Rust ESP32 Toolchain
 
 ```bash
-# Quick setup (recommended)
-./setup-toolchain.sh
-
-# Or manual setup:
-# 1. Install Rust
+# Recommended setup:
+# 1. Install Rust (if not already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# 2. Install ESP toolchain
-cargo install espup
-espup install
+# 2. Install ESP toolchain (use specific version to avoid issues)
+cargo install espup --version 0.13.0
+espup install --targets esp32s3 --std
 
 # 3. Source the environment (add to your shell profile)
 source ~/export-esp.sh
 ```
+
+⚠️ **Important**: Close VS Code before building to avoid lock conflicts. See [SETUP_GUIDE.md](SETUP_GUIDE.md) for common issues and solutions.
 
 ## 🏗️ Project Structure
 

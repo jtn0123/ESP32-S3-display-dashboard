@@ -2,8 +2,7 @@
 runner = "espflash flash --monitor"
 linker = "ldproxy"
 rustflags = [
-    # Enable frame pointers for better debugging in release
-    "-C", "force-frame-pointers=yes",
+    # Removed frame pointers flag due to CC compatibility issues
 ]
 
 [build]

@@ -30,6 +30,8 @@ This is a Rust-based dashboard implementation for the LilyGo T-Display-S3 (ESP32
 2. **Flash Size Detection**: Bootloader shows 4MB instead of 16MB (esp-idf-sys cache issue)
 3. **PSRAM Frame Buffer**: Causes 96% performance degradation when used
 4. **espflash v4.x**: Incompatible, must use v3.3.0
+5. **Build Hangs**: Close VS Code before building to avoid cargo lock conflicts
+6. **espup v0.15.1**: Has dependency conflicts, use v0.13.0 instead
 
 ### Current Features
 - Web configuration interface
@@ -47,7 +49,11 @@ This is a Rust-based dashboard implementation for the LilyGo T-Display-S3 (ESP32
 ./compile.sh                    # Release build
 ./compile.sh --debug            # Debug build
 ./compile.sh --clean            # Clean build
+./scripts/fix-build.sh          # Fix common build issues
+./scripts/fix-build.sh --deep-clean  # Nuclear option - clears all caches
 ```
+
+**Important**: Always close VS Code before building to avoid cargo lock conflicts.
 
 ### Flashing
 ```bash
