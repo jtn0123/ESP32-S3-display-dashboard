@@ -22,6 +22,7 @@ usage() {
     echo "  --debug      Build in debug mode"
     echo "  --clean      Clean before building"
     echo "  --verbose    Verbose output"
+    echo "  --features   Cargo features to enable (e.g., --features esp_lcd_driver)"
     echo "  --help       Show this help message"
     exit 1
 }
@@ -30,6 +31,7 @@ usage() {
 BUILD_MODE="--release"
 CLEAN=false
 VERBOSE=""
+FEATURES=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -48,6 +50,10 @@ while [[ $# -gt 0 ]]; do
         --verbose)
             VERBOSE="--verbose"
             shift
+            ;;
+        --features)
+            FEATURES="--features $2"
+            shift 2
             ;;
         --help|-h)
             usage
@@ -111,6 +117,9 @@ else
     echo "  Mode: Debug"
 fi
 echo "  Target: xtensa-esp32s3-espidf"
+if [ -n "$FEATURES" ]; then
+    echo "  Features: ${FEATURES#--features }"
+fi
 echo ""
 
 # Clean if requested
@@ -132,7 +141,7 @@ echo -e "${BLUE}IDF_PATH: $IDF_PATH${NC}"
 echo -e "${GREEN}Starting build...${NC}"
 START_TIME=$(date +%s)
 
-cargo build $BUILD_MODE $VERBOSE
+cargo build $BUILD_MODE $VERBOSE $FEATURES
 
 BUILD_RESULT=$?
 END_TIME=$(date +%s)

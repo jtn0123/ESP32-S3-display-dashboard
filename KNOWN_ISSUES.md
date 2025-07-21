@@ -156,7 +156,44 @@ esptool.py --chip esp32s3 --flash_size 16MB write_flash 0x10000 [binary]
 
 ---
 
-## 3. Display Performance Limitations
+## 3. ESP_LCD DMA Driver Migration (RESOLVED)
+
+### Issue Description
+Migrating from GPIO bit-banging to ESP-IDF's esp_lcd DMA driver caused BREAK instruction crashes and bootloader compatibility issues.
+
+### Symptoms
+- BREAK instruction crashes in DMA interrupt service routines
+- "Multiple DROM segments" bootloader error preventing app from loading
+- Display stays black with no serial output
+
+### Root Causes
+1. **Struct layout mismatch** between ESP-IDF v5.1-beta1 (esp-idf-sys) and v5.3.3 (actual build)
+2. **DMA descriptor alignment** issues requiring 32-byte boundaries
+3. **Cache coherency** problems with DMA buffers
+4. **Multiple DROM segments** when using SIZE optimization
+
+### Solution
+1. **Update to esp-idf-sys master branch** for ESP-IDF v5.3 compatibility
+2. **Implement four critical fixes**:
+   - Cache writeback using `xthal_dcache_sync()` before DMA operations
+   - 32-byte aligned DMA buffers in internal RAM
+   - ISR in IRAM via `esp_lcd_new_panel_io_i80()` helper
+   - Proper reset GPIO (GPIO5 instead of -1)
+3. **Switch to PERF optimization** in sdkconfig.defaults:
+   ```
+   CONFIG_COMPILER_OPTIMIZATION_PERF=y
+   ```
+
+### Performance Improvement
+- **Before**: ~10 FPS with GPIO bit-banging
+- **After**: 55-65 FPS with DMA acceleration (5-6x improvement)
+
+### Current Status
+**RESOLVED** - ESP_LCD DMA driver working in v5.53-lcdPerf and later
+
+---
+
+## 4. Display Performance Limitations (GPIO Mode)
 
 ### Issue Description
 GPIO bit-banging achieves only 10 FPS due to blocking write operations.
@@ -184,7 +221,7 @@ GPIO bit-banging achieves only 10 FPS due to blocking write operations.
 
 ---
 
-## 4. Watchdog Timer Sensitivity
+## 5. Watchdog Timer Sensitivity
 
 ### Issue Description
 System watchdog triggers during display initialization if not reset frequently.
@@ -199,7 +236,7 @@ System watchdog triggers during display initialization if not reset frequently.
 
 ---
 
-## 5. Display Boundary Offsets
+## 6. Display Boundary Offsets
 
 ### Issue Description
 ST7789 controller memory doesn't align with physical display area.
@@ -217,7 +254,7 @@ const DISPLAY_HEIGHT: u16 = 168;   // Actual visible height
 
 ---
 
-## 6. Power-on Display Initialization
+## 7. Power-on Display Initialization
 
 ### Issue Description
 Display requires specific power sequencing and timing for reliable initialization.
@@ -233,7 +270,7 @@ Display requires specific power sequencing and timing for reliable initializatio
 
 ---
 
-## 7. ESP-IDF Version Compatibility
+## 8. ESP-IDF Version Compatibility
 
 ### Issue Description
 Project requires ESP-IDF v5.3.x for stability but some features designed for v5.1.
@@ -248,7 +285,7 @@ Project requires ESP-IDF v5.3.x for stability but some features designed for v5.
 
 ---
 
-## 8. PSRAM Frame Buffer Performance Degradation
+## 9. PSRAM Frame Buffer Performance Degradation
 
 ### Issue Description
 Implementing a PSRAM-backed frame buffer causes severe performance degradation, reducing FPS from 55 to 1.9 (96% slower).
@@ -304,7 +341,8 @@ GPIO bit-banging cannot efficiently handle full frame buffer updates:
 ## Summary
 
 ### Working Features
-- GPIO-based display driver (10 FPS)
+- ESP_LCD DMA driver (55-65 FPS) with v5.53-lcdPerf and later
+- GPIO-based display driver (10 FPS) as fallback
 - Full dashboard UI rendering
 - Touch buttons (GPIO 0 and 14)
 - Battery monitoring
@@ -314,15 +352,12 @@ GPIO bit-banging cannot efficiently handle full frame buffer updates:
 - PSRAM support
 
 ### Not Working
-- LCD_CAM hardware acceleration
-- High-performance display updates (>10 FPS)
-- PSRAM frame buffer (too slow with GPIO bit-banging)
+- Raw LCD_CAM register manipulation (shadow register sync issues)
+- PSRAM frame buffer (96% performance degradation)
 
 ### Abandoned Attempts
 - ESP-HAL I8080 implementation
-- ESP-IDF LCD driver wrapper
-- Direct LCD_CAM register manipulation
-- DMA-based display updates
+- Raw LCD_CAM register manipulation
 - PSRAM frame buffer with full screen updates
 
-The project successfully achieves its goal of a functional IoT dashboard despite the LCD_CAM limitations. The 10 FPS performance is adequate for dashboard applications where smooth animations are not required.
+The project successfully achieves high-performance display updates using the ESP_LCD DMA driver (55-65 FPS) after resolving struct alignment and optimization issues. The GPIO fallback mode (10 FPS) remains available if needed.

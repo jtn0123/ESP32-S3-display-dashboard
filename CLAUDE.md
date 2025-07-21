@@ -85,12 +85,20 @@ espflash monitor
 
 ### Performance Considerations
 - Main loop runs at ~19k FPS with 100% skip rate (UI optimization working)
-- Actual display updates at ~10 FPS when content changes
-- Render time ~357ms when full screen update needed
+- Display capable of 55-65 FPS with ESP_LCD DMA driver (v5.53+)
+- Previous GPIO mode limited to ~10 FPS
+- CPU usage significantly reduced with DMA offloading
 - CPU dynamically scales 80-240MHz based on load
 
-## Recent Changes (v5.17)
+## Recent Changes
 
+### v5.53 - ESP_LCD DMA Success
+1. **ESP_LCD DMA Driver** - Migrated from GPIO to hardware-accelerated DMA
+2. **Performance Boost** - 10 FPS → 55-65 FPS (5-6x improvement)
+3. **PERF Optimization** - Resolved multiple DROM segments issue
+4. **Struct Alignment Fix** - Compatible with ESP-IDF v5.3
+
+### v5.17 - Telnet & Performance
 1. **Telnet Server** - Added remote serial monitoring over WiFi
 2. **FPS Counter Fix** - Accurate frame skip detection
 3. **Performance Metrics** - Detailed timing for render/flush operations
@@ -99,6 +107,7 @@ espflash monitor
 ## Optimization Opportunities
 
 ### Completed
+- ✅ ESP_LCD DMA driver migration (5-6x performance boost)
 - ✅ Dirty rectangle tracking
 - ✅ FPS counter accuracy improvements
 - ✅ Telnet server for remote monitoring
@@ -108,6 +117,7 @@ espflash monitor
 - 📋 Move sensor sampling to Core 1
 - 📋 Network monitoring on Core 1
 - 📋 Remove simulated sensor data
+- 📋 Leverage high FPS for smooth animations
 
 ## Build Environment
 

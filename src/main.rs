@@ -137,13 +137,9 @@ fn main() -> Result<()> {
         use esp_idf_hal::delay::Ets;
         Ets::delay_ms(500);  // Longer delay for power stability
         
-        // First run minimal test to check for register access issues
-        log::warn!("Running minimal LCD_CAM register test...");
-        display::lcd_cam_minimal_test::test_lcd_cam_minimal()?;
-        
-        // If that works, try the full test
-        log::warn!("Testing LCD_CAM with shadow register fix...");
-        display::lcd_cam_working::test_lcd_cam_working()?;
+        // Test esp_lcd implementation based on working template
+        log::warn!("Running esp_lcd minimal test based on working template...");
+        display::esp_lcd_minimal_test::test_esp_lcd_minimal()?;
         
         log::warn!("Test complete!");
         
@@ -185,51 +181,180 @@ fn main() -> Result<()> {
     )?;
     info!("Display initialized - LCD power and backlight pins kept alive");
 
+    // ESP_LCD: Fast initialization path
+    #[cfg(feature = "esp_lcd_driver")]
+    {
+        info!("ESP_LCD: Fast initialization path - skipping all boot animations");
+        
+        // Simple startup screen
+        display_manager.clear(colors::BLACK)?;
+        display_manager.draw_text_centered(80, "ESP_LCD DMA", colors::GREEN, None, 2)?;
+        display_manager.draw_text_centered(100, "Starting...", colors::WHITE, None, 1)?;
+        display_manager.flush()?;
+        
+        // Quick init of all components
+        let ui_manager = UiManager::new(&mut display_manager)?;
+        info!("UI manager created");
+        
+        let battery_pin = peripherals.pins.gpio4;
+        let adc1 = peripherals.adc1;
+        let sensor_manager = sensors::SensorManager::new(adc1, battery_pin)?;
+        info!("Sensors initialized");
+        
+        let button1 = peripherals.pins.gpio0;
+        let button2 = peripherals.pins.gpio14;
+        let button_manager = system::ButtonManager::new(button1, button2)?;
+        info!("Buttons initialized");
+        
+        let network_config = config.lock().unwrap();
+        let mut network_manager = NetworkManager::new(
+            peripherals.modem,
+            sys_loop,
+            timer_service,
+            network_config.wifi_ssid.clone(),
+            network_config.wifi_password.clone(),
+            config.clone(),
+        )?;
+        drop(network_config);
+        info!("Network initialized");
+        
+        // Quick connect attempt
+        let wifi_result = match network_manager.connect() {
+            Ok(_) => {
+                info!("WiFi connected");
+                Ok(network_manager)
+            }
+            Err(e) => {
+                log::warn!("WiFi failed: {:?}", e);
+                Err(network_manager)
+            }
+        };
+        
+        let network_manager = match wifi_result {
+            Ok(mgr) => mgr,
+            Err(mgr) => mgr,
+        };
+        
+        // Initialize OTA
+        let ota_manager = match ota::OtaManager::new() {
+            Ok(manager) => Some(Arc::new(Mutex::new(manager))),
+            Err(e) => {
+                log::warn!("OTA init failed: {:?}", e);
+                None
+            }
+        };
+        
+        // Start servers if connected
+        let web_server = if network_manager.is_connected() {
+            network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()).ok()
+        } else {
+            None
+        };
+        
+        let telnet_server = if network_manager.is_connected() {
+            let server = Arc::new(TelnetLogServer::new(23));
+            logging::set_telnet_server(Arc::clone(&server));
+            if Arc::clone(&server).start().is_ok() {
+                Some(server)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        // Start Core 1 tasks
+        let (mut core1_manager, core1_channels) = core1_tasks::Core1Manager::new()?;
+        core1_manager.start()?;
+        info!("Core 1 tasks started");
+        
+        // Clear and go to main loop
+        display_manager.clear(colors::BLACK)?;
+        display_manager.flush()?;
+        
+        info!("ESP_LCD: Fast init complete, entering main loop");
+        
+        // Print initial memory stats
+        #[cfg(feature = "esp_lcd_driver")]
+        {
+            use crate::display::diagnostics;
+            diagnostics::print_memory_stats("ESP_LCD Init Complete");
+            diagnostics::print_stack_watermark("ESP_LCD Init");
+            diagnostics::check_dma_capable_memory();
+        }
+        
+        // Jump directly to main loop
+        return run_app(
+            ui_manager,
+            display_manager,
+            sensor_manager,
+            button_manager,
+            network_manager,
+            config,
+            web_server,
+            ota_manager,
+            telnet_server,
+            core1_channels,
+        );
+    }
+
     // Initialize boot manager for animated boot experience
-    info!("Starting enhanced boot sequence...");
+    #[cfg(not(feature = "esp_lcd_driver"))]
+    {
+        info!("Starting enhanced boot sequence...");
+        let mut boot_manager = BootManager::new();
+        
+        // Show initial boot screen
+        boot_manager.set_stage(BootStage::DisplayInit);
+        log::info!("Boot: Setting stage to DisplayInit");
+        boot_manager.render_boot_screen(&mut display_manager)?;
+        display_manager.flush()?;
+        log::info!("Boot: Initial boot screen rendered");
+        
+        // Animate for a moment while display stabilizes
+        for i in 0..10 {
+            boot_manager.render_boot_screen(&mut display_manager)?;
+            display_manager.flush()?;
+            
+            // Reset watchdog every few frames
+            if i % 3 == 0 {
+                unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+            }
+            
+            Ets::delay_ms(50);
+        }
+    }
+    
+    // Create boot manager for both paths
     let mut boot_manager = BootManager::new();
     
-    // Show initial boot screen
-    boot_manager.set_stage(BootStage::DisplayInit);
-    log::info!("Boot: Setting stage to DisplayInit");
-    boot_manager.render_boot_screen(&mut display_manager)?;
-    display_manager.flush()?;
-    log::info!("Boot: Initial boot screen rendered");
-    
-    // Animate for a moment while display stabilizes
-    for i in 0..10 {
-        boot_manager.render_boot_screen(&mut display_manager)?;
-        display_manager.flush()?;
-        
-        // Reset watchdog every few frames
-        if i % 3 == 0 {
-            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
-        }
-        
-        Ets::delay_ms(50);
-    }
-    
     // Memory initialization with progress
-    boot_manager.set_stage(BootStage::MemoryInit);
-    log::info!("Boot: Setting stage to MemoryInit");
-    for i in 0..5 {
-        boot_manager.render_boot_screen(&mut display_manager)?;
-        display_manager.flush()?;
-        
-        // Reset watchdog
-        if i % 2 == 0 {
-            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+    #[cfg(not(feature = "esp_lcd_driver"))]
+    {
+        boot_manager.set_stage(BootStage::MemoryInit);
+        log::info!("Boot: Setting stage to MemoryInit");
+        for i in 0..5 {
+            boot_manager.render_boot_screen(&mut display_manager)?;
+            display_manager.flush()?;
+            
+            // Reset watchdog
+            if i % 2 == 0 {
+                unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+            }
+            
+            Ets::delay_ms(100);
         }
-        
-        Ets::delay_ms(100);
+        log::info!("Boot: Memory init animation complete");
     }
-    log::info!("Boot: Memory init animation complete");
     
     // Initialize UI
     info!("Creating UI manager...");
-    boot_manager.set_stage(BootStage::UISetup);
-    boot_manager.render_boot_screen(&mut display_manager)?;
-    display_manager.flush()?;
+    #[cfg(not(feature = "esp_lcd_driver"))]
+    {
+        boot_manager.set_stage(BootStage::UISetup);
+        boot_manager.render_boot_screen(&mut display_manager)?;
+        display_manager.flush()?;
+    }
     
     let ui_manager = UiManager::new(&mut display_manager)?;
     info!("UI manager created");
@@ -525,6 +650,12 @@ fn run_app(
     let mut last_cpu0_usage = 0u8;
     let mut last_cpu1_usage = 0u8;
     
+    // Memory diagnostics tracking (ESP_LCD only)
+    #[cfg(feature = "esp_lcd_driver")]
+    let mut last_memory_check = Instant::now();
+    #[cfg(feature = "esp_lcd_driver")]
+    let memory_check_interval = Duration::from_secs(30);
+    
     log::info!("Main render loop started - entering infinite loop");
 
     loop {
@@ -692,6 +823,15 @@ fn run_app(
             
             // Reset report timer
             last_fps_report = Instant::now();
+        }
+        
+        // Periodic memory diagnostics (ESP_LCD only)
+        #[cfg(feature = "esp_lcd_driver")]
+        if last_memory_check.elapsed() >= memory_check_interval {
+            use crate::display::diagnostics;
+            diagnostics::print_memory_stats("Periodic Check");
+            diagnostics::print_stack_watermark("Main Loop");
+            last_memory_check = Instant::now();
         }
         
         // Frame rate limiting - toggleable for performance testing

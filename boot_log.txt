@@ -1,0 +1,3 @@
+Monitoring ESP32-S3 - Press RESET button to see boot output
+Press Ctrl+C to exit
+----------------------------------------

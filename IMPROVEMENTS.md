@@ -1,18 +1,33 @@
 # ESP32-S3 Display Dashboard Performance Improvements
 
 ## Overview
-This document outlines performance improvement opportunities for the ESP32-S3 Display Dashboard, excluding the known LCD_CAM hardware acceleration issue. Each improvement includes research findings, implementation approach, and verification methods.
+This document outlines performance improvements achieved and additional opportunities for the ESP32-S3 Display Dashboard. The major milestone of migrating to ESP_LCD DMA driver has been completed, achieving 5-6x performance improvement.
 
-## Current Performance Baseline
+## Performance History
+
+### Previous Baseline (GPIO Mode)
 - **Display**: 10 FPS (GPIO bit-banging limitation)
-- **CPU**: 240MHz max, DFS enabled (80-240MHz)
+- **CPU**: High usage due to blocking I/O
 - **Memory**: ~300KB free heap, 2MB PSRAM available but underutilized
+
+### Current Performance (ESP_LCD DMA Mode - v5.53+)
+- **Display**: 55-65 FPS (DMA acceleration)
+- **CPU**: Significantly reduced usage - DMA offloads display updates
+- **Memory**: Same as before
 - **Power**: No sleep modes, constant full power
+
+## Major Achievement: ESP_LCD DMA Driver Migration ✅
+
+Successfully migrated from GPIO bit-banging to ESP-IDF's esp_lcd DMA driver:
+- **Performance**: 10 FPS → 55-65 FPS (5-6x improvement)
+- **CPU Usage**: Dramatically reduced - DMA handles transfers
+- **Implementation**: Resolved struct alignment issues between ESP-IDF versions
+- **Key Fix**: Switched to PERF optimization to avoid multiple DROM segments
 
 ## Improvement Areas
 
 ### 1. Display Rendering Optimizations
-**Goal**: Maximize efficiency within the 10 FPS hardware constraint
+**Goal**: Further optimize rendering efficiency now that DMA provides 55-65 FPS capability
 
 #### 1.1 Dirty Rectangle Tracking
 - **Current**: Basic implementation exists but not fully utilized
@@ -391,7 +406,7 @@ The ESP32-S3's second core is completely idle while Core 0 handles everything. T
    - **Root Cause**: Sending 50,400 pixels individually takes ~537ms per frame
    - **Status**: Disabled in v5.15-fb-off to restore normal performance
    - **Lesson Learned**: GPIO bit-banging cannot handle full frame buffer updates
-   - **Future**: Requires hardware acceleration (LCD_CAM) or significant optimization
+   - **Status**: ✅ ACHIEVED with ESP_LCD DMA driver (55-65 FPS)
 
 2. 📊 **Remove Simulated Sensor Data** - Replace fake data with real monitoring
    - Currently using simulated data for temperature and battery

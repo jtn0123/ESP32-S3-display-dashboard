@@ -18,6 +18,10 @@ opt-level = "s"  # Optimize for size in debug too
 lto = false
 debug = true     # Keep debug info for better crash diagnostics
 
+[features]
+default = []
+esp_lcd_driver = []  # Enable ESP_LCD DMA driver instead of GPIO bit-bang
+
 [dependencies]
 # ESP-IDF Support (with std)
 esp-idf-sys = { version = "0.36.1", features = ["binstart", "native"] }
@@ -55,6 +59,12 @@ libm = "0.2.15"
 [build-dependencies]
 embuild = { version = "0.33.0", features = ["espidf"] }
 anyhow = "=1.0.95"
+
+[patch.crates-io]
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git", branch = "master" }
+
+[package.metadata.esp-idf-sys]
+esp_idf_version = "v5.3"
 
 [[package.metadata.esp-idf-sys.extra_components]]
 remote_component = { name = "espressif/mdns", version = "1.2" }

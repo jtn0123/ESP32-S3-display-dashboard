@@ -28,6 +28,24 @@ pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
 pub mod lcd_cam_minimal_test; // Minimal test to debug register access
 pub mod dirty_rect_manager; // Enhanced dirty rectangle management
 pub mod psram_frame_buffer; // PSRAM-backed frame buffer with differential updates
+pub mod esp_lcd_minimal_test; // Minimal esp_lcd test based on working template
+pub mod esp_lcd_display_manager; // ESP_LCD DMA-based display manager
+pub mod esp_lcd_display_manager_fixed; // ESP_LCD with memory fixes
+pub mod esp_lcd_display_manager_day1; // Day 1: DMA descriptor & cache fixes
+pub mod esp_lcd_display_manager_day1_simple; // Day 1 simplified: minimal test
+pub mod esp_lcd_display_manager_optimized; // Optimized progressive implementation
+pub mod benchmark; // Performance benchmark for display implementations
+pub mod traits; // Common display traits
+pub mod diagnostics; // Memory and stack diagnostics
+pub mod gpio_display_manager; // GPIO-based display manager as fallback
+pub mod esp_lcd_display_manager_final_fix; // Final fix with all four BREAK solutions
+
+// Export the appropriate DisplayManager based on feature flag
+// Testing final fix with all four BREAK solutions
+#[cfg(feature = "esp_lcd_driver")]
+pub use esp_lcd_display_manager_final_fix::EspLcdDisplayManager as DisplayManager;
+
+// The default DisplayManager is already defined below
 
 // Color type not used - colors are defined as u16 constants
 
@@ -113,6 +131,7 @@ const CMD_VDVS: u8 = 0xC4;
 const CMD_FRCTRL2: u8 = 0xC6;
 const CMD_PWRCTRL1: u8 = 0xD0;
 
+#[cfg(not(feature = "esp_lcd_driver"))]
 pub struct DisplayManager {
     lcd_bus: LcdBus,
     backlight_pin: Option<PinDriver<'static, AnyIOPin, Output>>, // Keep backlight alive
@@ -127,6 +146,7 @@ pub struct DisplayManager {
     // metrics: DisplayMetrics, // Performance tracking
 }
 
+#[cfg(not(feature = "esp_lcd_driver"))]
 impl DisplayManager {
     pub fn new(
         d0: impl Into<AnyIOPin> + 'static,
