@@ -25,6 +25,9 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        feature: [lcd-gpio, lcd-dma]
     steps:
     - uses: actions/checkout@v3
     
@@ -65,10 +68,10 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-index-
     
-    - name: Check
+    - name: Check (${{ matrix.feature }})
       run: |
         source $HOME/export-esp.sh
-        cargo check --target xtensa-esp32s3-none-elf
+        cargo check --target xtensa-esp32s3-none-elf --no-default-features --features ${{ matrix.feature }}
 
   test:
     name: Test Suite
@@ -126,6 +129,7 @@ jobs:
     strategy:
       matrix:
         profile: [dev, release]
+        feature: [lcd-gpio, lcd-dma]
     steps:
     - uses: actions/checkout@v3
     
@@ -150,13 +154,13 @@ jobs:
         ./espup install
         source $HOME/export-esp.sh
     
-    - name: Build
+    - name: Build (${{ matrix.feature }})
       run: |
         source $HOME/export-esp.sh
         if [ "${{ matrix.profile }}" = "release" ]; then
-          cargo build --target xtensa-esp32s3-none-elf --release
+          cargo build --target xtensa-esp32s3-none-elf --release --no-default-features --features ${{ matrix.feature }}
         else
-          cargo build --target xtensa-esp32s3-none-elf
+          cargo build --target xtensa-esp32s3-none-elf --no-default-features --features ${{ matrix.feature }}
         fi
     
     - name: Check binary size
