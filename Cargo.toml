@@ -52,6 +52,11 @@ heapless = "=0.8.0"  # Still useful for fixed-size collections
 static_cell = "2.1"
 libm = "0.2.15"
 
+[features]
+default = ["lcd-gpio"]
+lcd-gpio = []
+lcd-dma = []
+
 [build-dependencies]
 embuild = { version = "0.33.0", features = ["espidf"] }
 anyhow = "=1.0.95"
