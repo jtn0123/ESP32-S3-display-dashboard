@@ -8,7 +8,10 @@ use log::info;
 use std::time::Instant;
 
 pub fn test_esp_lcd_black_screen() -> Result<()> {
-    info!("[ESP_LCD_TEST] Starting black screen test...");
+    info!("[ESP_LCD_TEST] ========================================");
+    info!("[ESP_LCD_TEST] ESP LCD DMA Hardware Test v5.37-dma");
+    info!("[ESP_LCD_TEST] ========================================");
+    info!("[ESP_LCD_TEST] Starting test sequence...");
     
     let peripherals = Peripherals::take().unwrap();
     

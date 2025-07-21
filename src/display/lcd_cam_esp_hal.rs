@@ -64,6 +64,9 @@ impl LcdCamDisplay {
     ) -> Result<Self> {
         unsafe {
             info!("Initializing LCD_CAM with ESP-IDF driver...");
+            info!("Pin configuration:");
+            info!("  Data: D0-D7 = GPIO 39,40,41,42,45,46,47,48");
+            info!("  Control: WR={}, DC={}, CS={}, RST={}", wr.pin(), dc.pin(), cs.pin(), rst.pin());
             
             // Configure I80 bus
             let bus_config = esp_lcd_i80_bus_config_t {
@@ -90,11 +93,12 @@ impl LcdCamDisplay {
             };
             
             let mut bus_handle: esp_lcd_i80_bus_handle_t = ptr::null_mut();
+            info!("Creating I80 bus with {} MHz clock...", config.clock_speed.as_hz() / 1_000_000);
             let ret = esp_lcd_new_i80_bus(&bus_config, &mut bus_handle);
             if ret != ESP_OK {
-                return Err(anyhow::anyhow!("Failed to create I80 bus: {:?}", ret));
+                return Err(anyhow::anyhow!("Failed to create I80 bus: error code {}", ret));
             }
-            info!("I80 bus created successfully");
+            info!("I80 bus created successfully - handle: {:?}", bus_handle);
             
             // Configure panel for I80 interface
             let io_config = esp_lcd_panel_io_i80_config_t {

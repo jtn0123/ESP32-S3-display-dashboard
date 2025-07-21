@@ -131,7 +131,7 @@ fn main() -> Result<()> {
     
     // ESP LCD test flag - set to true to run ESP LCD DMA test
     #[cfg(feature = "lcd-dma")]
-    const RUN_ESP_LCD_TEST: bool = false; // Set to true to test ESP LCD
+    const RUN_ESP_LCD_TEST: bool = true; // TESTING ESP LCD DMA
     
     // Run ESP LCD test if enabled and feature is active
     #[cfg(feature = "lcd-dma")]
