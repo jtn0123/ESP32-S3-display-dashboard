@@ -2,7 +2,7 @@
 
 // Display version - this is what users see on screen
 // Update this when making significant changes
-pub const DISPLAY_VERSION: &str = "v5.53-lcdPerf";
+pub const DISPLAY_VERSION: &str = "v5.36-modern";
 
 // Cargo package version from Cargo.toml
 pub const CARGO_VERSION: &str = env!("CARGO_PKG_VERSION");
