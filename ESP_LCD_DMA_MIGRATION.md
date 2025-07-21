@@ -75,14 +75,14 @@ lcd-dma = []
 
 ---
 
-## Phase 2: Minimal Pixel Push (Est: 2 hrs)
+## Phase 2: Minimal Pixel Push (Est: 2 hrs) [IN PROGRESS]
 
 ### Tasks
-- [ ] Configure with reference values:
-  - pclk_hz = 17 MHz
-  - max_transfer_bytes = 32768
-  - trans_queue_depth = 5
-- [ ] Implement black screen smoke test
+- [x] Configure with reference values:
+  - pclk_hz = 17 MHz ✅
+  - max_transfer_bytes = 32768 ✅ (using 320*100*2)
+  - trans_queue_depth = 10 ✅ (kept at 10 for better throughput)
+- [x] Implement black screen smoke test
 - [ ] Monitor serial for LCD initialization messages
 - [ ] **Checkpoint A**: Verify any pixels rendered
 
@@ -92,10 +92,23 @@ I (xxx) lcd_panel: new I80 bus(iomux), clk=17MHz ...
 ```
 
 ### Implementation Log
-[TO BE COMPLETED]
+
+#### Test Implementation
+1. Created `esp_lcd_test.rs` with comprehensive test:
+   - Black screen test
+   - Color cycle (Red, Green, Blue, White)
+   - Rectangle drawing test
+   - Text rendering test
+2. Added test flag `RUN_ESP_LCD_TEST` in main.rs
+3. Test builds successfully with `--features lcd-dma`
+
+#### Next Steps
+1. Flash device with: `./compile.sh --no-default-features --features lcd-dma && ./scripts/flash.sh`
+2. Monitor serial output for ESP LCD messages
+3. Verify display shows test pattern
 
 ### Status
-⏸️ Not Started
+🟡 Ready to flash and test - Checkpoint A pending
 
 ---
 

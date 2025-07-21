@@ -25,6 +25,8 @@ pub mod lcd_cam_dma_fixed_test; // LCD_CAM with DMA and proper configuration
 pub mod lcd_cam_esp_hal; // LCD_CAM using ESP-IDF LCD driver
 #[cfg(feature = "lcd-dma")]
 pub mod lcd_cam_display_manager; // Hardware-accelerated DisplayManager
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_test; // ESP LCD test module
 pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
 // pub mod lcd_cam_pac_test; // LCD_CAM using PAC approach - needs proper bindings
 pub mod lcd_cam_minimal_test; // Minimal test to debug register access

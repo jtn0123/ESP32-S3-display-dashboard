@@ -129,6 +129,41 @@ fn main() -> Result<()> {
     // Change this to true and recompile to run baseline performance test
     const RUN_DISPLAY_DEBUG_TEST: bool = false;
     
+    // ESP LCD test flag - set to true to run ESP LCD DMA test
+    #[cfg(feature = "lcd-dma")]
+    const RUN_ESP_LCD_TEST: bool = true;
+    
+    // Run ESP LCD test if enabled and feature is active
+    #[cfg(feature = "lcd-dma")]
+    if RUN_ESP_LCD_TEST {
+        log::warn!("Running ESP LCD DMA test - normal boot disabled");
+        log::warn!("Set RUN_ESP_LCD_TEST to false for normal operation");
+        
+        // CRITICAL: Wait for power to stabilize before initializing display
+        use esp_idf_hal::delay::Ets;
+        Ets::delay_ms(500);
+        
+        // Run the ESP LCD test
+        match display::esp_lcd_test::test_esp_lcd_black_screen() {
+            Ok(_) => {
+                log::info!("ESP LCD test completed successfully!");
+                log::info!("The display should have shown colors and text.");
+                log::info!("Entering infinite loop - reset to exit");
+                loop {
+                    Ets::delay_ms(1000);
+                    unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+                }
+            }
+            Err(e) => {
+                log::error!("ESP LCD test failed: {:?}", e);
+                log::error!("Check serial output for 'I (xxx) lcd_panel' messages");
+                log::error!("Restarting in 5 seconds...");
+                Ets::delay_ms(5000);
+                unsafe { esp_idf_sys::esp_restart(); }
+            }
+        }
+    }
+    
     if RUN_DISPLAY_DEBUG_TEST {
         log::warn!("Running display debug tests - normal boot disabled");
         log::warn!("Set RUN_DISPLAY_DEBUG_TEST to false for normal operation");
