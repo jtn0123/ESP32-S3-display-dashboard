@@ -13,8 +13,8 @@ pub struct LcdDisplayManager {
     backlight_pin: PinDriver<'static, Gpio38, Output>,
     lcd_power_pin: PinDriver<'static, Gpio15, Output>,
     _rd_pin: PinDriver<'static, Gpio9, Output>,
-    width: u16,
-    height: u16,
+    pub width: u16,
+    pub height: u16,
     last_activity: Instant,
 }
 

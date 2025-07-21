@@ -1,5 +1,7 @@
 /// Performance benchmark for ESP LCD implementation
 use super::lcd_cam_display_manager::LcdDisplayManager;
+use super::lcd_cam_esp_hal::LcdCamDisplay;
+use super::esp_lcd_config::{OptimizedLcdConfig, LcdClockSpeed};
 use super::colors;
 use anyhow::Result;
 use esp_idf_hal::peripherals::Peripherals;

@@ -8,6 +8,7 @@ use esp_idf_hal::delay::FreeRtos;
 use core::ptr;
 use core::slice;
 use log::info;
+use super::esp_lcd_config::{OptimizedLcdConfig, LcdClockSpeed};
 
 // Display configuration for T-Display-S3
 const DISPLAY_WIDTH: u16 = 320;
@@ -23,6 +24,9 @@ pub struct LcdCamDisplay {
     width: u16,
     height: u16,
     frame_buffer: Vec<u16>,
+    double_buffer: Option<Vec<u16>>,
+    active_buffer: u8,
+    config: OptimizedLcdConfig,
 }
 
 impl LcdCamDisplay {
@@ -39,6 +43,24 @@ impl LcdCamDisplay {
         dc: Gpio7,
         cs: Gpio6,
         rst: Gpio5,
+    ) -> Result<Self> {
+        Self::with_config(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst, OptimizedLcdConfig::default())
+    }
+    
+    pub fn with_config(
+        d0: Gpio39,
+        d1: Gpio40,
+        d2: Gpio41,
+        d3: Gpio42,
+        d4: Gpio45,
+        d5: Gpio46,
+        d6: Gpio47,
+        d7: Gpio48,
+        wr: Gpio8,
+        dc: Gpio7,
+        cs: Gpio6,
+        rst: Gpio5,
+        config: OptimizedLcdConfig,
     ) -> Result<Self> {
         unsafe {
             info!("Initializing LCD_CAM with ESP-IDF driver...");
@@ -60,7 +82,7 @@ impl LcdCamDisplay {
                     -1, -1, -1, -1, -1, -1, -1, -1, // Only using 8-bit mode
                 ],
                 bus_width: 8,
-                max_transfer_bytes: (DISPLAY_WIDTH as usize * 100) * 2, // 100 lines at a time
+                max_transfer_bytes: config.transfer_size.bytes(DISPLAY_WIDTH as usize),
                 __bindgen_anon_1: esp_lcd_i80_bus_config_t__bindgen_ty_1 {
                     psram_trans_align: 64,
                 },
@@ -77,8 +99,8 @@ impl LcdCamDisplay {
             // Configure panel for I80 interface
             let io_config = esp_lcd_panel_io_i80_config_t {
                 cs_gpio_num: cs.pin() as i32,
-                pclk_hz: 17_000_000, // Start with 17 MHz like reference
-                trans_queue_depth: 10,
+                pclk_hz: config.clock_speed.as_hz(),
+                trans_queue_depth: config.queue_depth,
                 dc_levels: esp_lcd_panel_io_i80_config_t__bindgen_ty_1 {
                     _bitfield_1: esp_lcd_panel_io_i80_config_t__bindgen_ty_1::new_bitfield_1(
                         0, // dc_idle_level
@@ -151,12 +173,26 @@ impl LcdCamDisplay {
             // Allocate frame buffer
             let frame_buffer = vec![0u16; DISPLAY_WIDTH as usize * DISPLAY_HEIGHT as usize];
             
+            // Allocate double buffer if enabled
+            let double_buffer = if config.double_buffer.enabled {
+                info!("Allocating double buffer: {} bytes", config.double_buffer.buffer_size);
+                Some(vec![0u16; config.double_buffer.buffer_size / 2])
+            } else {
+                None
+            };
+            
+            info!("LCD initialized with {} clock, {} lines transfer", 
+                  config.clock_speed.name(), config.transfer_size.lines());
+            
             Ok(Self {
                 bus_handle,
                 panel_handle,
                 width: DISPLAY_WIDTH,
                 height: DISPLAY_HEIGHT,
                 frame_buffer,
+                double_buffer,
+                active_buffer: 0,
+                config,
             })
         }
     }
