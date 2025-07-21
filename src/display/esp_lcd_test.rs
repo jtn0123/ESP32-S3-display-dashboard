@@ -5,6 +5,7 @@ use anyhow::Result;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::delay::Ets;
 use log::info;
+use std::time::Instant;
 
 pub fn test_esp_lcd_black_screen() -> Result<()> {
     info!("[ESP_LCD_TEST] Starting black screen test...");
@@ -90,6 +91,22 @@ pub fn test_esp_lcd_black_screen() -> Result<()> {
     info!("[ESP_LCD_TEST] Expected serial output:");
     info!("[ESP_LCD_TEST] - 'I (xxx) lcd_panel: new I80 bus(iomux), clk=17MHz ...'");
     info!("[ESP_LCD_TEST] - Display should show colors and text");
+    
+    // Run performance benchmarks if test passed
+    info!("[ESP_LCD_TEST] Starting performance benchmarks...");
+    Ets::delay_ms(2000);
+    
+    // Can't run full benchmark here since we already took peripherals
+    // Just measure current performance
+    let start = std::time::Instant::now();
+    for _ in 0..100 {
+        display.clear(colors::BLACK)?;
+        display.flush()?;
+    }
+    let elapsed = start.elapsed();
+    let fps = 100.0 / elapsed.as_secs_f32();
+    
+    info!("[ESP_LCD_TEST] Quick benchmark: {:.1} FPS (target: >25 FPS)", fps);
     
     Ok(())
 }

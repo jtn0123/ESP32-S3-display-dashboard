@@ -27,11 +27,14 @@ pub mod lcd_cam_esp_hal; // LCD_CAM using ESP-IDF LCD driver
 pub mod lcd_cam_display_manager; // Hardware-accelerated DisplayManager
 #[cfg(feature = "lcd-dma")]
 pub mod esp_lcd_test; // ESP LCD test module
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_benchmark; // ESP LCD performance benchmarks
 pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
 // pub mod lcd_cam_pac_test; // LCD_CAM using PAC approach - needs proper bindings
 pub mod lcd_cam_minimal_test; // Minimal test to debug register access
 pub mod dirty_rect_manager; // Enhanced dirty rectangle management
 pub mod psram_frame_buffer; // PSRAM-backed frame buffer with differential updates
+pub mod display_backend; // Display backend trait for GPIO/DMA abstraction
 
 // Color type not used - colors are defined as u16 constants
 

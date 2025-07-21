@@ -112,9 +112,10 @@ I (xxx) lcd_panel: new I80 bus(iomux), clk=17MHz ...
 
 ---
 
-## Phase 3: Performance Optimization (Est: 2.5 hrs)
+## Phase 3: Performance Optimization (Est: 2.5 hrs) [PREPARED]
 
 ### Tasks
+- [x] Create FPS benchmark suite
 - [ ] Baseline FPS measurement (target: >25 FPS)
 - [ ] Clock stepping: 24→30→40→48 MHz
 - [ ] Tune max_transfer_bytes & queue depth
@@ -124,34 +125,52 @@ I (xxx) lcd_panel: new I80 bus(iomux), clk=17MHz ...
 ### Performance Tracking
 | Clock (MHz) | FPS | CPU % | Notes |
 |-------------|-----|-------|-------|
-| 17          | TBD | TBD   |       |
+| 17          | TBD | TBD   | Awaiting hardware test |
 | 24          | TBD | TBD   |       |
 | 30          | TBD | TBD   |       |
 | 40          | TBD | TBD   |       |
 | 48          | TBD | TBD   |       |
 
 ### Implementation Log
-[TO BE COMPLETED]
+
+#### Benchmark Suite Created
+1. `esp_lcd_benchmark.rs` with tests for:
+   - Full screen clear operations
+   - Rectangle drawing
+   - Text rendering
+   - Clock speed comparisons
+2. Added quick FPS test to `esp_lcd_test.rs`
+3. Benchmarks measure against 10 FPS GPIO baseline
 
 ### Status
-⏸️ Not Started
+🟡 Ready for performance testing after Checkpoint A
 
 ---
 
-## Phase 4: Integration (Est: 1.5 hrs)
+## Phase 4: Integration (Est: 1.5 hrs) [STARTED]
 
 ### Tasks
-- [ ] Implement DisplayBackend trait for DMA
+- [x] Create DisplayBackend trait
+- [ ] Implement DisplayBackend for GPIO DisplayManager
+- [ ] Implement DisplayBackend for LcdDisplayManager
 - [ ] Runtime selection via feature flags
 - [ ] OTA update testing (5 cycles)
 - [ ] Deep sleep testing
 - [ ] WiFi coexistence testing
 
 ### Implementation Log
-[TO BE COMPLETED]
+
+#### DisplayBackend Trait Created
+1. `display_backend.rs` defines common interface for:
+   - Drawing operations (clear, pixel, rect, text)
+   - Flush operations
+   - Power management (auto-dim, activity timer)
+   - Backend identification
+2. Trait allows runtime switching between implementations
+3. Ready for implementation by both GPIO and DMA backends
 
 ### Status
-⏸️ Not Started
+🟡 Backend trait created, awaiting implementations
 
 ---
 
