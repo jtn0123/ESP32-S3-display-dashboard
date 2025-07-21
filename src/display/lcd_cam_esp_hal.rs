@@ -60,8 +60,10 @@ impl LcdCamDisplay {
                     -1, -1, -1, -1, -1, -1, -1, -1, // Only using 8-bit mode
                 ],
                 bus_width: 8,
-                max_transfer_bytes: (DISPLAY_WIDTH as usize * DISPLAY_HEIGHT as usize * 2) as i32,
-                psram_trans_align: 64,
+                max_transfer_bytes: (DISPLAY_WIDTH as usize * 100) * 2, // 100 lines at a time
+                __bindgen_anon_1: esp_lcd_i80_bus_config_t__bindgen_ty_1 {
+                    psram_trans_align: 64,
+                },
                 sram_trans_align: 4,
             };
             
@@ -75,16 +77,21 @@ impl LcdCamDisplay {
             // Configure panel for I80 interface
             let io_config = esp_lcd_panel_io_i80_config_t {
                 cs_gpio_num: cs.pin() as i32,
-                pclk_hz: 20_000_000, // 20MHz for reliable operation
+                pclk_hz: 17_000_000, // Start with 17 MHz like reference
                 trans_queue_depth: 10,
                 dc_levels: esp_lcd_panel_io_i80_config_t__bindgen_ty_1 {
-                    dc_idle_level: 0,
-                    dc_cmd_level: 0,
-                    dc_dummy_level: 0,
-                    dc_data_level: 1,
+                    _bitfield_1: esp_lcd_panel_io_i80_config_t__bindgen_ty_1::new_bitfield_1(
+                        0, // dc_idle_level
+                        0, // dc_cmd_level  
+                        0, // dc_dummy_level
+                        1, // dc_data_level
+                    ),
+                    ..Default::default()
                 },
                 flags: esp_lcd_panel_io_i80_config_t__bindgen_ty_2 {
                     _bitfield_1: esp_lcd_panel_io_i80_config_t__bindgen_ty_2::new_bitfield_1(
+                        0, // cs_active_high
+                        0, // reverse_color_bits
                         0, // swap_color_bytes
                         0, // pclk_active_neg
                         0, // pclk_idle_low
@@ -108,10 +115,13 @@ impl LcdCamDisplay {
             // Create ST7789 panel driver
             let panel_config = esp_lcd_panel_dev_config_t {
                 reset_gpio_num: rst.pin() as i32,
-                color_space: esp_lcd_color_space_t_ESP_LCD_COLOR_SPACE_RGB,
+                __bindgen_anon_1: esp_lcd_panel_dev_config_t__bindgen_ty_1 {
+                    rgb_ele_order: lcd_rgb_element_order_t_LCD_RGB_ELEMENT_ORDER_RGB,
+                },
+                data_endian: lcd_rgb_data_endian_t_LCD_RGB_DATA_ENDIAN_BIG,
                 bits_per_pixel: 16,
-                flags: esp_lcd_panel_dev_config_t__bindgen_ty_1 {
-                    _bitfield_1: esp_lcd_panel_dev_config_t__bindgen_ty_1::new_bitfield_1(
+                flags: esp_lcd_panel_dev_config_t__bindgen_ty_2 {
+                    _bitfield_1: esp_lcd_panel_dev_config_t__bindgen_ty_2::new_bitfield_1(
                         0, // reset_active_high
                     ),
                     ..Default::default()

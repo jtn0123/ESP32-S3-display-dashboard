@@ -21,8 +21,10 @@ pub mod lcd_cam_output_test; // LCD_CAM with output enable configuration
 pub mod lcd_cam_logic_analyzer_test; // LCD_CAM test for logic analyzer
 pub mod lcd_cam_fixed_test; // LCD_CAM with proper LCD_MISC configuration
 pub mod lcd_cam_dma_fixed_test; // LCD_CAM with DMA and proper configuration
-// pub mod lcd_cam_esp_hal; // LCD_CAM using ESP-IDF LCD driver - needs fixing
-// pub mod lcd_cam_display_manager; // Hardware-accelerated DisplayManager
+#[cfg(feature = "lcd-dma")]
+pub mod lcd_cam_esp_hal; // LCD_CAM using ESP-IDF LCD driver
+#[cfg(feature = "lcd-dma")]
+pub mod lcd_cam_display_manager; // Hardware-accelerated DisplayManager
 pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
 // pub mod lcd_cam_pac_test; // LCD_CAM using PAC approach - needs proper bindings
 pub mod lcd_cam_minimal_test; // Minimal test to debug register access
