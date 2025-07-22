@@ -10,16 +10,16 @@ pub unsafe fn apply_flicker_fix(
 ) -> Result<()> {
     info!("=== Applying ESP LCD Anti-Flicker Configuration ===");
     
-    // 1. Increase clock speed for smoother updates
-    // 5 MHz is too slow and causes visible flickering
-    // 24-40 MHz provides good balance of stability and performance
-    io_config.pclk_hz = 24_000_000; // 24 MHz for smooth updates
-    info!("Clock speed set to 24 MHz (was 5 MHz)");
+    // 1. Set optimal clock speed for smooth updates
+    // Now that byte swapping is fixed, we can use higher speeds
+    // 30-40 MHz provides good balance of stability and performance
+    io_config.pclk_hz = 30_000_000; // 30 MHz for smooth updates
+    info!("Clock speed set to 30 MHz for optimal performance");
     
-    // 2. Reduce transaction queue depth to 1 for synchronous transfers
-    // This prevents tearing and ensures frame completion before next update
-    io_config.trans_queue_depth = 1;
-    info!("Transaction queue depth set to 1 (synchronous mode)");
+    // 2. Set reasonable queue depth for performance
+    // With proper byte ordering, we can use async transfers
+    io_config.trans_queue_depth = 4;
+    info!("Transaction queue depth set to 4 for better performance");
     
     // 3. Optimize transfer size for full frame updates
     // The DMA descriptor buffer has a maximum size limit
@@ -31,20 +31,11 @@ pub unsafe fn apply_flicker_fix(
     // Transfer full width to avoid partial line updates
     let line_size = panel_width * bytes_per_pixel;
     
-    // Maximum safe transfer size based on ESP-IDF DMA limits
-    // DMA_DESCRIPTOR_BUFFER_MAX_SIZE is typically 4092 bytes
-    // With multiple descriptors, safe limit is around 32KB
-    let max_safe_transfer = 32768;
-    
-    // Calculate lines that fit within safe transfer size
-    let lines_per_transfer = max_safe_transfer / line_size;
-    let lines_per_transfer = lines_per_transfer.min(20); // Cap at 20 lines for safety
-    let transfer_size = line_size * lines_per_transfer;
-    
-    // Align to 64-byte boundary for DMA efficiency
-    let aligned_size = ((transfer_size + 63) / 64) * 64;
-    bus_config.max_transfer_bytes = aligned_size as usize;
-    info!("Transfer size set to {} bytes ({} lines per transfer)", aligned_size, lines_per_transfer);
+    // Set a large enough buffer for all tests
+    // 64KB allows for 16 DMA descriptors (16 * 4092 bytes)
+    // This is enough for 320x100 pixel transfers
+    bus_config.max_transfer_bytes = 64 * 1024;
+    info!("Transfer size set to 64KB (supports up to 320x100 pixel transfers)");
     
     // 4. These fields are already set in the caller
     // Just log what we're changing
@@ -61,10 +52,10 @@ pub unsafe fn apply_flicker_fix(
     
     info!("Anti-flicker configuration applied successfully");
     info!("Expected improvements:");
-    info!("  - Smoother display updates (24 MHz vs 5 MHz)");
-    info!("  - No tearing (synchronous transfers)");
-    info!("  - Reduced overhead ({} lines per transfer)", lines_per_transfer);
-    info!("  - DMA-safe transfer size (within 32KB limit)");
+    info!("  - Smoother display updates (30 MHz optimized)");
+    info!("  - Better async performance (queue depth 4)");
+    info!("  - Large DMA buffer (64KB for big transfers)");
+    info!("  - DMA-safe for all test patterns");
     
     Ok(())
 }

@@ -9,9 +9,10 @@ pub fn log_display_performance_metrics() {
     {
         info!("Display Driver: ESP LCD DMA (Hardware Accelerated)");
         info!("Expected Performance:");
-        info!("  - Clock Speed: 24 MHz (was 5 MHz)");
-        info!("  - Queue Depth: 1 (synchronous transfers)");
-        info!("  - Transfer Size: ~6.8KB (20 lines per transfer)");
+        info!("  - Clock Speed: 30 MHz (optimized)");
+        info!("  - Queue Depth: 4 (async transfers)");
+        info!("  - Transfer Size: 64KB DMA buffer (16 descriptors)");
+        info!("  - Byte Swapping: Handled by ST7789 (MADCTL=0x68)");
         info!("  - Frame Rate Cap: 60 FPS");
         info!("  - Theoretical Max FPS: ~40 FPS");
         

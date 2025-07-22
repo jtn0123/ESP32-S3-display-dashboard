@@ -9,6 +9,11 @@ struct DualLogger;
 
 impl log::Log for DualLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
+        // Filter out debug messages from display module
+        if metadata.target().starts_with("esp32_s3_dashboard::display") 
+            && metadata.level() == Level::Debug {
+            return false;
+        }
         metadata.level() <= Level::Debug
     }
 
@@ -24,6 +29,14 @@ impl log::Log for DualLogger {
             };
             
             let message = format!("{}", record.args());
+            
+            // Filter out display debug spam
+            if message.contains("[ST7789] COLOR") || 
+               message.contains("0xFFFFFFFF") ||
+               message.contains("Chunking large transfer") ||
+               message.contains("Successfully completed chunked transfer") {
+                return;
+            }
             
             // Print to console (ESP-IDF serial)
             println!("[{}] {}", level_str, message);

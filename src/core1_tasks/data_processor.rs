@@ -50,6 +50,11 @@ pub struct DataProcessor {
     // Last known values
     last_sensor: Option<SensorUpdate>,
     last_network: Option<NetworkUpdate>,
+    
+    // Track when we last sent data to avoid spam
+    last_sent: Option<Instant>,
+    has_new_sensor_data: bool,
+    has_new_network_data: bool,
 }
 
 impl DataProcessor {
@@ -73,6 +78,9 @@ impl DataProcessor {
             battery_history: Vec::with_capacity(30),
             last_sensor: None,
             last_network: None,
+            last_sent: None,
+            has_new_sensor_data: false,
+            has_new_network_data: false,
         }
     }
     
@@ -83,6 +91,7 @@ impl DataProcessor {
                 Ok(update) => {
                     self.update_sensor_history(&update);
                     self.last_sensor = Some(update);
+                    self.has_new_sensor_data = true;
                 },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -97,6 +106,7 @@ impl DataProcessor {
             match self.network_rx.try_recv() {
                 Ok(update) => {
                     self.last_network = Some(update);
+                    self.has_new_network_data = true;
                 },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -106,25 +116,46 @@ impl DataProcessor {
             }
         }
         
-        // Generate processed data if we have both sensor and network data
-        if let (Some(sensor), Some(network)) = (&self.last_sensor, &self.last_network) {
-            let processed = ProcessedData {
-                temperature: sensor.temperature,
-                temperature_trend: self.calculate_temp_trend(),
-                battery_percentage: sensor.battery_percentage,
-                battery_voltage: sensor.battery_voltage,
-                battery_trend: self.calculate_battery_trend(),
-                is_charging: sensor.is_charging,
-                is_on_usb: sensor.is_on_usb,
-                rssi: network.rssi,
-                network_quality: Self::rssi_to_quality(network.rssi),
-                cpu_usage_core0: sensor.cpu_usage_core0,
-                cpu_usage_core1: sensor.cpu_usage_core1,
-                timestamp: Instant::now(),
-            };
-            
-            // Send processed data (will block if channel is full)
-            let _ = self.tx.send(processed);
+        // Only send if we have new data (not just cached data)
+        let should_send = if self.has_new_sensor_data || self.has_new_network_data {
+            // We have new data, check if enough time has passed since last send
+            if let Some(last_sent) = self.last_sent {
+                // Rate limit to once per second even with new data
+                last_sent.elapsed() >= Duration::from_secs(1)
+            } else {
+                // Never sent before
+                true
+            }
+        } else {
+            false
+        };
+        
+        // Generate processed data if we have both sensor and network data AND should send
+        if should_send {
+            if let (Some(sensor), Some(network)) = (&self.last_sensor, &self.last_network) {
+                let processed = ProcessedData {
+                    temperature: sensor.temperature,
+                    temperature_trend: self.calculate_temp_trend(),
+                    battery_percentage: sensor.battery_percentage,
+                    battery_voltage: sensor.battery_voltage,
+                    battery_trend: self.calculate_battery_trend(),
+                    is_charging: sensor.is_charging,
+                    is_on_usb: sensor.is_on_usb,
+                    rssi: network.rssi,
+                    network_quality: Self::rssi_to_quality(network.rssi),
+                    cpu_usage_core0: sensor.cpu_usage_core0,
+                    cpu_usage_core1: sensor.cpu_usage_core1,
+                    timestamp: Instant::now(),
+                };
+                
+                // Send processed data (will block if channel is full)
+                if self.tx.send(processed).is_ok() {
+                    self.last_sent = Some(Instant::now());
+                    self.has_new_sensor_data = false;
+                    self.has_new_network_data = false;
+                    log::info!("Core 1: Sent updated sensor data to main task");
+                }
+            }
         }
     }
     

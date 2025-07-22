@@ -274,6 +274,9 @@ impl UiManager {
     }
 
     fn render_system_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
+        // Reset watchdog at start of render
+        unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        
         // Early exit if nothing needs updating
         if !screen_changed && self.system_screen_initialized {
             // Check if any values actually changed
@@ -302,8 +305,31 @@ impl UiManager {
         // Only clear screen when switching to this screen
         if screen_changed {
             log::info!("render_system_screen: Clearing screen for new screen");
-            display.clear(BLACK)?;
-            display.flush()?; // Flush immediately to clear old content
+            
+            // Add error handling for clear operation
+            match display.clear(BLACK) {
+                Ok(_) => log::debug!("Screen cleared successfully"),
+                Err(e) => {
+                    log::error!("Failed to clear screen: {:?}", e);
+                    // Dump diagnostics on error
+                    #[cfg(feature = "lcd-dma")]
+                    crate::display::error_diagnostics::dump_display_diagnostics();
+                    return Err(e);
+                }
+            }
+            
+            // Reset watchdog before flush
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+            
+            match display.flush() {
+                Ok(_) => log::debug!("Screen flush successful"),
+                Err(e) => {
+                    log::error!("Failed to flush screen: {:?}", e);
+                    #[cfg(feature = "lcd-dma")]
+                    crate::display::error_diagnostics::dump_display_diagnostics();
+                    return Err(e);
+                }
+            }
             
             // Draw static elements that don't change
             // Header (using actual display width)

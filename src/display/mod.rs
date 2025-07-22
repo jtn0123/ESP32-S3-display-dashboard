@@ -52,6 +52,10 @@ pub mod backend_factory; // Factory for creating display backends
 pub mod runtime_check; // Runtime driver verification
 pub mod flicker_diagnostic; // Display flicker diagnostics
 #[cfg(feature = "lcd-dma")]
+pub mod gpio39_diagnostic; // GPIO39 (D0) diagnostic for vertical striping
+#[cfg(feature = "lcd-dma")]
+pub mod d0_test_pattern; // D0 test patterns for vertical striping diagnosis
+#[cfg(feature = "lcd-dma")]
 pub mod comprehensive_test; // Comprehensive display test
 #[cfg(feature = "lcd-dma")]
 pub mod gpio_debug; // GPIO debugging utilities
@@ -75,6 +79,12 @@ pub mod esp_lcd_timing_debug; // ESP LCD timing debug
 pub mod esp_lcd_6block_fix; // ESP LCD 6-block pattern fix
 #[cfg(feature = "lcd-dma")]
 pub mod esp_lcd_flicker_fix; // ESP LCD flicker fix
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_chunk_wrapper; // ESP LCD chunking for large transfers
+#[cfg(feature = "lcd-dma")]
+pub mod safe_draw; // Safe drawing wrappers
+#[cfg(feature = "lcd-dma")]
+pub mod error_diagnostics; // Error diagnostics and logging
 
 // Color type not used - colors are defined as u16 constants
 

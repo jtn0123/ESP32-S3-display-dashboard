@@ -2,6 +2,7 @@ use anyhow::Result;
 use esp_idf_sys::*;
 use log::info;
 use esp_idf_hal::delay::Ets;
+use super::esp_lcd_chunk_wrapper::safe_draw_bitmap;
 
 /// Test different I80 clock speeds
 pub unsafe fn test_clock_speeds(
@@ -27,27 +28,30 @@ pub unsafe fn test_clock_speeds(
         
         // Clear display to black
         let black_buffer = vec![0u16; 320 * 170];
-        esp_lcd_panel_draw_bitmap(
+        safe_draw_bitmap(
             panel_handle,
             0, 0,
             320, 170,
             black_buffer.as_ptr() as *const _,
-        );
+        )?;
         
         Ets::delay_ms(100);
         
         // Draw red fill
         info!("Drawing red fill pattern...");
-        esp_lcd_panel_draw_bitmap(
+        safe_draw_bitmap(
             panel_handle,
             0, 0,
             320, 170,
             red_buffer.as_ptr() as *const _,
-        );
+        )?;
         
         info!("Pattern drawn. Display should show red screen.");
         info!("Waiting 2 seconds...");
         Ets::delay_ms(2000);
+        
+        // Reset watchdog to prevent timeout
+        esp_task_wdt_reset();
     }
     
     info!("\n=== CLOCK SPEED TEST COMPLETE ===");

@@ -11,6 +11,7 @@ use core::slice;
 use log::{info, error};
 use super::esp_lcd_config::{OptimizedLcdConfig, LcdClockSpeed};
 use super::debug_trace::{traced_lcd_panel_io_tx_param, traced_lcd_panel_io_tx_color};
+use super::error_diagnostics::{log_display_error, log_i80_config, check_display_health, log_memory_diagnostics};
 
 // Display configuration for T-Display-S3
 // The visible area is 170x320, but positioned at row 35 in the ST7789's GRAM
@@ -98,7 +99,8 @@ impl LcdCamDisplay {
                     -1, -1, -1, -1, -1, -1, -1, -1, // Only using 8-bit mode
                 ],
                 bus_width: 8,
-                max_transfer_bytes: config.transfer_size.bytes(PANEL_WIDTH as usize),
+                // Fix: Use max of width/height to support both orientations
+                max_transfer_bytes: config.transfer_size.bytes(PANEL_WIDTH.max(PANEL_HEIGHT) as usize),
                 __bindgen_anon_1: esp_lcd_i80_bus_config_t__bindgen_ty_1 {
                     psram_trans_align: 64,
                 },
@@ -123,7 +125,7 @@ impl LcdCamDisplay {
                     _bitfield_1: esp_lcd_panel_io_i80_config_t__bindgen_ty_2::new_bitfield_1(
                         0, // cs_active_high
                         0, // reverse_color_bits
-                        1, // swap_color_bytes - FIX FOR JUMBLED DISPLAY!
+                        0, // swap_color_bytes - Let ST7789 handle byte swapping
                         0, // pclk_active_neg
                         0, // pclk_idle_low
                     ),
@@ -143,6 +145,10 @@ impl LcdCamDisplay {
             info!("Applying anti-flicker configuration...");
             super::esp_lcd_flicker_fix::apply_flicker_fix(&mut bus_config, &mut io_config)?;
             
+            // Log configuration and memory state
+            log_i80_config(&bus_config, &io_config);
+            log_memory_diagnostics();
+            
             // Now create the bus with fixed configuration
             let mut bus_handle: esp_lcd_i80_bus_handle_t = ptr::null_mut();
             info!("Creating I80 bus with fixed configuration...");
@@ -154,18 +160,29 @@ impl LcdCamDisplay {
             
             let ret = esp_lcd_new_i80_bus(&bus_config, &mut bus_handle);
             if ret != ESP_OK {
-                error!("Failed to create I80 bus: error code {} (0x{:X})", ret, ret);
-                error!("ESP_ERR_INVALID_ARG=-258, ESP_ERR_NO_MEM=-257");
+                log_display_error("esp_lcd_new_i80_bus", "Failed to create I80 bus", ret);
+                error!("Hint: ESP_ERR_INVALID_ARG=-258, ESP_ERR_NO_MEM=-257");
                 return Err(anyhow::anyhow!("Failed to create I80 bus: error code {}", ret));
             }
             info!("✓ I80 bus created successfully with 6-block fix");
             info!("  Time elapsed: {:?}", start_time.elapsed());
             
+            // Check GPIO39 (D0) for stuck HIGH condition
+            info!("Checking GPIO39 (D0) for stuck HIGH condition...");
+            if let Err(e) = super::gpio39_diagnostic::test_gpio39_stuck_high() {
+                error!("GPIO39 diagnostic failed: {}", e);
+            }
+            
+            // Check all data pins
+            if let Err(e) = super::gpio39_diagnostic::check_all_data_pins() {
+                error!("Data pin check failed: {}", e);
+            }
+            
             let mut io_handle: esp_lcd_panel_io_handle_t = ptr::null_mut();
             info!("Creating panel IO with CS={}, {}Hz clock (fixed)", cs.pin(), io_config.pclk_hz);
             let ret = esp_lcd_new_panel_io_i80(bus_handle, &io_config, &mut io_handle);
             if ret != ESP_OK {
-                error!("Failed to create panel IO: error {} (0x{:X})", ret, ret);
+                log_display_error("esp_lcd_new_panel_io_i80", "Failed to create panel IO", ret);
                 esp_lcd_del_i80_bus(bus_handle);
                 return Err(anyhow::anyhow!("Failed to create panel IO: {:?}", ret));
             }
@@ -196,7 +213,7 @@ impl LcdCamDisplay {
             info!("  Bits per pixel: 16");
             let ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &mut panel_handle);
             if ret != ESP_OK {
-                error!("Failed to create ST7789 panel: error {} (0x{:X})", ret, ret);
+                log_display_error("esp_lcd_new_panel_st7789", "Failed to create ST7789 panel", ret);
                 esp_lcd_panel_io_del(io_handle);
                 esp_lcd_del_i80_bus(bus_handle);
                 return Err(anyhow::anyhow!("Failed to create ST7789 panel: {:?}", ret));
@@ -275,8 +292,9 @@ impl LcdCamDisplay {
             traced_lcd_panel_io_tx_param(io_handle, 0x13, ptr::null(), 0); // NORON (Normal display on)
             esp_idf_hal::delay::FreeRtos::delay_ms(10);
             
-            // Explicitly set MADCTL for landscape (matching working GPIO code)
-            let madctl_data: [u8; 1] = [0x60]; // MY=0, MX=1, MV=1, ML=0, BGR=0 (RGB)
+            // Explicitly set MADCTL for landscape with byte swapping enabled
+            // MX=1, MV=1, BGR=1, ML=1 (byte swap) = 0x60 | 0x08 = 0x68
+            let madctl_data: [u8; 1] = [0x68]; // Landscape + BGR + byte-swap
             traced_lcd_panel_io_tx_param(io_handle, 0x36, madctl_data.as_ptr() as *const _, 1);
             
             // Clear the display memory by setting a window and filling with black
@@ -284,8 +302,9 @@ impl LcdCamDisplay {
             let caset_data: [u8; 4] = [0, 0, 0, 169];
             traced_lcd_panel_io_tx_param(io_handle, 0x2A, caset_data.as_ptr() as *const _, 4);
             
-            // RASET - Row address set (35-354 = 320 pixels with 35 offset)
-            let raset_data: [u8; 4] = [0, 35, 1, 98]; // 35 to 354 (0x23 to 0x162)
+            // RASET - Row address set (35 to 204 = 170 pixels with 35 offset)
+            // Fixed calculation: 35 + 169 = 204 (not 354!)
+            let raset_data: [u8; 4] = [0, 35, 0, 204]; // 35 to 204 (0x23 to 0xCC)
             traced_lcd_panel_io_tx_param(io_handle, 0x2B, raset_data.as_ptr() as *const _, 4);
             
             // Turn on display with delay before and after
@@ -305,84 +324,121 @@ impl LcdCamDisplay {
             // Print command trace summary
             super::debug_trace::print_command_summary();
             
-            // Test the 6-block fix
-            info!("=== Testing 6-Block Fix ===");
-            
-            // Analyze the pattern first
-            super::esp_lcd_6block_fix::analyze_6block_pattern(panel_handle, io_handle)?;
-            esp_idf_hal::delay::FreeRtos::delay_ms(2000);
-            
-            // Test different clock speeds
-            super::esp_lcd_6block_fix::test_clock_speeds(panel_handle)?;
-            esp_idf_hal::delay::FreeRtos::delay_ms(2000);
-            
-            info!("=== 6-Block Fix Test Complete ===");
-            info!("If you still see blocky output:");
-            info!("- The pattern analysis will show which pixels are visible");
-            info!("- Try even slower clock speeds");
-            info!("- Check the alignment test results");
-            
-            // Try a simple pixel test
-            info!("=== Starting pixel test ===");
-            info!("Drawing test pattern directly...");
-            
-            // Try to draw a simple red rectangle
-            let test_color: [u16; 100] = [0xF800; 100]; // Red pixels
-            let ret = esp_lcd_panel_draw_bitmap(
-                panel_handle,
-                0, 0,     // Start position
-                10, 10,   // End position
-                test_color.as_ptr() as *const _
-            );
-            if ret != ESP_OK {
-                error!("Failed to draw test bitmap: error {} (0x{:X})", ret, ret);
-            } else {
-                info!("✓ Test bitmap drawn at (0,0) to (10,10)");
+            #[cfg(feature = "display-tests")]
+            {
+                info!("=== Running Display Tests (disable with --no-default-features) ===");
+                
+                // Extend watchdog timeout for tests
+                esp_task_wdt_deinit();
+                esp_task_wdt_init(15000, false); // 15 second timeout for tests
+                esp_task_wdt_add(ptr::null_mut());
+                
+                // Test the 6-block fix
+                info!("=== Testing 6-Block Fix ===");
+                
+                // Analyze the pattern first
+                super::esp_lcd_6block_fix::analyze_6block_pattern(panel_handle, io_handle)?;
+                esp_idf_hal::delay::FreeRtos::delay_ms(2000);
+                esp_task_wdt_reset();
+                
+                // Test different clock speeds
+                super::esp_lcd_6block_fix::test_clock_speeds(panel_handle)?;
+                esp_idf_hal::delay::FreeRtos::delay_ms(2000);
+                esp_task_wdt_reset();
+                
+                info!("=== 6-Block Fix Test Complete ===");
+                info!("If you still see blocky output:");
+                info!("- The pattern analysis will show which pixels are visible");
+                info!("- Try even slower clock speeds");
+                info!("- Check the alignment test results");
             }
             
-            // Run comprehensive test
-            info!("Running comprehensive display test...");
-            if let Err(e) = super::comprehensive_test::run_comprehensive_test(panel_handle) {
-                error!("Comprehensive test failed: {}", e);
+            #[cfg(not(feature = "display-tests"))]
+            {
+                info!("Display tests disabled. Enable with: --features display-tests");
             }
             
-            // Run debug test to try raw commands
-            info!("Running debug test with raw commands...");
-            if let Err(e) = super::esp_lcd_debug_test::debug_esp_lcd_raw_commands(io_handle) {
-                error!("Debug test failed: {}", e);
-            }
-            
-            // Run pixel format test
-            info!("Running pixel format test...");
-            if let Err(e) = super::esp_lcd_pixel_test::test_pixel_formats(panel_handle, io_handle) {
-                error!("Pixel format test failed: {}", e);
-            }
-            
-            // Run MADCTL configuration test
-            info!("Running MADCTL configuration test...");
-            if let Err(e) = super::esp_lcd_madctl_test::test_madctl_configurations(panel_handle, io_handle) {
-                error!("MADCTL test failed: {}", e);
-            }
-            
-            // Run clock speed test
-            info!("Running clock speed test...");
-            if let Err(e) = super::esp_lcd_clock_test::test_clock_speeds(panel_handle) {
-                error!("Clock speed test failed: {}", e);
-            }
-            
-            // Run direct I80 test
-            info!("Running direct I80 test...");
-            if let Err(e) = super::esp_lcd_direct_test::test_direct_i80(io_handle) {
-                error!("Direct I80 test failed: {}", e);
-            }
-            
-            // Compare init sequences
-            super::esp_lcd_direct_test::compare_init_sequences();
-            
-            // Run reset sequence test
-            info!("Running reset sequence test...");
-            if let Err(e) = super::esp_lcd_clock_test::test_reset_sequence(rst.pin() as i32, panel_handle) {
-                error!("Reset sequence test failed: {}", e);
+            #[cfg(feature = "display-tests")]
+            {
+                // Try a simple pixel test
+                info!("=== Starting pixel test ===");
+                info!("Drawing test pattern directly...");
+                
+                // Try to draw a simple red rectangle
+                let test_color: [u16; 100] = [0xF800; 100]; // Red pixels
+                if let Err(e) = super::esp_lcd_chunk_wrapper::safe_draw_bitmap(
+                    panel_handle,
+                    0, 0,     // Start position
+                    10, 10,   // End position
+                    test_color.as_ptr() as *const _
+                ) {
+                    error!("Failed to draw test bitmap: {}", e);
+                } else {
+                    info!("✓ Test bitmap drawn at (0,0) to (10,10)");
+                }
+                esp_task_wdt_reset();
+                
+                // Run comprehensive test
+                info!("Running comprehensive display test...");
+                if let Err(e) = super::comprehensive_test::run_comprehensive_test(panel_handle) {
+                    error!("Comprehensive test failed: {}", e);
+                }
+                esp_task_wdt_reset();
+                
+                // Run debug test to try raw commands
+                info!("Running debug test with raw commands...");
+                if let Err(e) = super::esp_lcd_debug_test::debug_esp_lcd_raw_commands(io_handle) {
+                    error!("Debug test failed: {}", e);
+                }
+                esp_task_wdt_reset();
+                
+                // Run MADCTL configuration test
+                info!("Running MADCTL configuration test...");
+                if let Err(e) = super::esp_lcd_madctl_test::test_madctl_configurations(panel_handle, io_handle) {
+                    error!("MADCTL test failed: {}", e);
+                }
+                esp_task_wdt_reset();
+                
+                // Run clock speed test
+                info!("Running clock speed test...");
+                if let Err(e) = super::esp_lcd_clock_test::test_clock_speeds(panel_handle) {
+                    error!("Clock speed test failed: {}", e);
+                }
+                esp_task_wdt_reset();
+                
+                // Run direct I80 test
+                info!("Running direct I80 test...");
+                if let Err(e) = super::esp_lcd_direct_test::test_direct_i80(io_handle) {
+                    error!("Direct I80 test failed: {}", e);
+                }
+                
+                // Compare init sequences
+                super::esp_lcd_direct_test::compare_init_sequences();
+                
+                // Run D0 test pattern for vertical striping diagnosis
+                info!("Running D0 test pattern for vertical striping diagnosis...");
+                if let Err(e) = super::d0_test_pattern::draw_d0_test_pattern(panel_handle) {
+                    error!("D0 test pattern failed: {}", e);
+                }
+                esp_task_wdt_reset();
+                
+                // Analyze D0 symptoms
+                if let Err(e) = super::d0_test_pattern::analyze_d0_symptoms(panel_handle) {
+                    error!("D0 symptom analysis failed: {}", e);
+                }
+                esp_task_wdt_reset();
+                
+                // Run reset sequence test
+                info!("Running reset sequence test...");
+                if let Err(e) = super::esp_lcd_clock_test::test_reset_sequence(rst.pin() as i32, panel_handle) {
+                    error!("Reset sequence test failed: {}", e);
+                }
+                esp_task_wdt_reset();
+                
+                // Restore normal watchdog timeout
+                esp_task_wdt_deinit();
+                esp_task_wdt_init(5000, false); // Back to 5 second timeout
+                esp_task_wdt_add(ptr::null_mut());
             }
             
             info!("=== ESP LCD Initialization Complete ===");
@@ -407,7 +463,7 @@ impl LcdCamDisplay {
                   config.clock_speed.as_hz() / 1_000_000,
                   config.transfer_size.lines());
             
-            Ok(Self {
+            let mut display = Self {
                 bus_handle,
                 panel_handle,
                 width: display_width,
@@ -416,7 +472,39 @@ impl LcdCamDisplay {
                 double_buffer,
                 active_buffer: 0,
                 config,
-            })
+            };
+            
+            // Draw a simple test pattern to verify display is working
+            info!("Drawing initial test pattern to verify display...");
+            
+            // Fill with white to test
+            display.frame_buffer.fill(0xFFFF);
+            display.flush()?;
+            info!("Test: Display should be WHITE");
+            esp_idf_hal::delay::FreeRtos::delay_ms(1000);
+            
+            // Then fill with red
+            display.frame_buffer.fill(0xF800);
+            display.flush()?;
+            info!("Test: Display should be RED");
+            esp_idf_hal::delay::FreeRtos::delay_ms(1000);
+            
+            // Finally clear to black
+            display.frame_buffer.fill(0x0000);
+            display.flush()?;
+            info!("Test: Display should be BLACK");
+            
+            info!("Test pattern complete - display should have flashed white->red->black");
+            
+            // Perform health check
+            if let Err(e) = check_display_health(panel_handle) {
+                error!("Display health check failed: {}", e);
+                error!("Display may not be responding correctly!");
+            } else {
+                info!("Display health check passed - communication verified");
+            }
+            
+            Ok(display)
         }
     }
     
@@ -455,26 +543,42 @@ impl LcdCamDisplay {
     
     pub fn flush(&mut self) -> Result<()> {
         unsafe {
+            // Log flush operation
+            log::debug!("ESP LCD flush: frame buffer size = {} pixels, {} bytes", 
+                self.frame_buffer.len(), self.frame_buffer.len() * 2);
+            
+            // Check if frame buffer has any non-black content
+            let has_content = self.frame_buffer.iter().any(|&pixel| pixel != 0x0000);
+            log::debug!("Frame buffer has content: {}", has_content);
+            
             // Convert u16 buffer to u8 for transmission
             let byte_slice = slice::from_raw_parts(
                 self.frame_buffer.as_ptr() as *const u8,
                 self.frame_buffer.len() * 2
             );
             
-            // Use hardware-accelerated draw
+            // Use hardware-accelerated draw with safe chunking
             // IMPORTANT: Coordinates are in landscape mode after swap_xy
             // Drawing from (0,0) to (width,height) which is (0,0) to (320,170)
-            let ret = esp_lcd_panel_draw_bitmap(
+            log::debug!("Calling safe_draw_bitmap with dimensions: {}x{}", self.width, self.height);
+            
+            match super::esp_lcd_chunk_wrapper::safe_draw_bitmap(
                 self.panel_handle,
                 0,                      // x_start  
                 0,                      // y_start
                 self.width as i32,      // x_end (320)
                 self.height as i32,     // y_end (170)
                 byte_slice.as_ptr() as *const _
-            );
-            
-            if ret != ESP_OK {
-                return Err(anyhow::anyhow!("Failed to draw bitmap: {:?}", ret));
+            ) {
+                Ok(()) => {
+                    log::debug!("safe_draw_bitmap completed successfully");
+                }
+                Err(e) => {
+                    error!("safe_draw_bitmap failed: {:?}", e);
+                    // Try to analyze the error
+                    super::error_diagnostics::analyze_crash_pattern();
+                    return Err(e);
+                }
             }
         }
         Ok(())

@@ -66,6 +66,7 @@ default = ["lcd-dma"]
 lcd-gpio = []
 lcd-dma = []
 defmt = ["dep:defmt", "dep:defmt-rtt", "dep:panic-probe"]
+display-tests = []
 
 [build-dependencies]
 embuild = { version = "0.33.0", features = ["espidf"] }

@@ -665,6 +665,11 @@ fn run_app(
         let rendered = ui_manager.render(&mut display_manager)?;
         let render_time = render_start.elapsed();
         
+        // Reset watchdog after render to prevent timeout during heavy rendering
+        if render_time > Duration::from_millis(100) {
+            unsafe { esp_idf_sys::esp_task_wdt_reset(); }
+        }
+        
         // Track whether frame was actually rendered or skipped
         if rendered {
             perf_metrics.record_render_time(render_time);

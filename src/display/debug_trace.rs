@@ -208,8 +208,10 @@ pub unsafe fn traced_lcd_panel_io_tx_color(
     color_data: *const c_void,
     color_size: usize,
 ) -> esp_err_t {
-    if *TRACE_ENABLED.lock().unwrap() {
-        debug!("[ST7789] COLOR: 0x{:02X} (RAMWR) - {} bytes", lcd_cmd, color_size);
+    // Skip logging RAMWR (0x2C) color data to reduce spam
+    // These are pixel writes that happen thousands of times per frame
+    if *TRACE_ENABLED.lock().unwrap() && lcd_cmd != 0x2C {
+        // debug!("[ST7789] COLOR: 0x{:02X} - {} bytes", lcd_cmd, color_size);
     }
     
     // Call the actual function

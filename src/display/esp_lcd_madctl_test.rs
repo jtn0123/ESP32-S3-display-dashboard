@@ -2,6 +2,7 @@ use anyhow::Result;
 use esp_idf_sys::*;
 use log::info;
 use esp_idf_hal::delay::Ets;
+use super::esp_lcd_chunk_wrapper::safe_draw_bitmap;
 
 /// Test different MADCTL (Memory Access Control) configurations
 pub unsafe fn test_madctl_configurations(
@@ -87,12 +88,13 @@ pub unsafe fn test_madctl_configurations(
 fn clear_screen(panel_handle: esp_lcd_panel_handle_t) -> Result<()> {
     let black_buffer = vec![0u16; 320 * 170];
     unsafe {
-        esp_lcd_panel_draw_bitmap(
+        // Use safe chunking wrapper for large transfers
+        safe_draw_bitmap(
             panel_handle,
             0, 0,
             320, 170,
             black_buffer.as_ptr() as *const _,
-        );
+        )?;
     }
     Ok(())
 }
@@ -196,9 +198,9 @@ fn draw_final_test_pattern(panel_handle: esp_lcd_panel_handle_t) -> Result<()> {
         // Draw frame around entire display
         let white = vec![0xFFFFu16; 320 * 5];
         // Top
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, 320, 5, white.as_ptr() as *const _);
+        safe_draw_bitmap(panel_handle, 0, 0, 320, 5, white.as_ptr() as *const _)?;
         // Bottom
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, 165, 320, 170, white.as_ptr() as *const _);
+        safe_draw_bitmap(panel_handle, 0, 165, 320, 170, white.as_ptr() as *const _)?;
         // Left
         for y in 0..170 {
             let white_vert = vec![0xFFFFu16; 5];

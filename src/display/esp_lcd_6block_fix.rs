@@ -8,59 +8,12 @@ pub unsafe fn apply_6block_fix(
     bus_config: &mut esp_lcd_i80_bus_config_t,
     io_config: &mut esp_lcd_panel_io_i80_config_t,
 ) -> Result<()> {
-    info!("=== Applying 6-Block Pattern Fix ===");
+    info!("=== 6-Block Pattern Fix DISABLED ===");
+    info!("The 6-block issue was caused by incorrect byte swapping configuration.");
+    info!("With swap_color_bytes=0 and MADCTL=0x68, the issue should be resolved.");
     
-    // Fix 1: Reduce clock speed significantly
-    // 17 MHz might be too fast, causing every 6th transfer to succeed
-    let original_clock = io_config.pclk_hz;
-    io_config.pclk_hz = 5_000_000; // 5 MHz - much slower
-    info!("  Reduced clock speed from {} to {} Hz", original_clock, io_config.pclk_hz);
-    
-    // Fix 2: Adjust transfer alignment
-    // Force transfers to be multiples of 12 bytes (6 pixels in RGB565)
-    // This aligns with the 6-block pattern observed
-    let original_max = bus_config.max_transfer_bytes;
-    
-    // Calculate aligned transfer size - multiple of 12 bytes
-    let base_size = 170 * 2; // One line of pixels in bytes
-    let aligned_size = ((base_size + 11) / 12) * 12; // Round up to 12-byte boundary
-    
-    // Also ensure it's aligned to cache line (64 bytes for PSRAM)
-    let cache_aligned = ((aligned_size + 63) / 64) * 64;
-    
-    bus_config.max_transfer_bytes = cache_aligned as usize;
-    info!("  Adjusted max transfer from {} to {} bytes (12-byte aligned)", 
-          original_max, bus_config.max_transfer_bytes);
-    
-    // Fix 3: Reduce queue depth to ensure each transfer completes
-    let original_queue = io_config.trans_queue_depth;
-    io_config.trans_queue_depth = 1; // Single transfer at a time
-    info!("  Reduced queue depth from {} to {}", original_queue, io_config.trans_queue_depth);
-    
-    // Fix 4: Adjust DC signal timing
-    // The 6-pattern might be related to DC signal timing
-    io_config.dc_levels._bitfield_1 = esp_lcd_panel_io_i80_config_t__bindgen_ty_1::new_bitfield_1(
-        0, // dc_idle_level
-        0, // dc_cmd_level  
-        0, // dc_dummy_level
-        1, // dc_data_level
-    );
-    info!("  DC levels configured for stable timing");
-    
-    // Fix 5: Ensure proper byte alignment in memory
-    // PSRAM requires 64-byte alignment, SRAM requires 4-byte
-    bus_config.__bindgen_anon_1.psram_trans_align = 64;
-    bus_config.sram_trans_align = 12; // Changed from 4 to 12 for 6-pixel alignment
-    info!("  Memory alignment: PSRAM={}, SRAM={}", 
-          bus_config.__bindgen_anon_1.psram_trans_align,
-          bus_config.sram_trans_align);
-    
-    info!("=== 6-Block Fix Applied ===");
-    info!("Key changes:");
-    info!("- Clock: {} MHz", io_config.pclk_hz / 1_000_000);
-    info!("- Transfer size: {} bytes (aligned to 12-byte boundary)", bus_config.max_transfer_bytes);
-    info!("- Queue depth: 1 (synchronous transfers)");
-    info!("- SRAM alignment: 12 bytes (matches 6-pixel pattern)");
+    // Don't modify any settings - let the flicker fix handle optimization
+    // The real fix is in the byte order configuration
     
     Ok(())
 }

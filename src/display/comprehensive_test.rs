@@ -4,6 +4,7 @@ use esp_idf_sys::*;
 use log::{info, error};
 use esp_idf_hal::delay::Ets;
 use super::colors;
+use super::esp_lcd_chunk_wrapper::safe_draw_bitmap;
 
 pub fn run_comprehensive_test(panel_handle: esp_lcd_panel_handle_t) -> Result<()> {
     info!("=== COMPREHENSIVE DISPLAY TEST ===");
@@ -24,26 +25,28 @@ pub fn run_comprehensive_test(panel_handle: esp_lcd_panel_handle_t) -> Result<()
         // Test 2a: Small rectangle at origin
         info!("  2a: Drawing 10x10 red square at (0,0)");
         let red_pixels: Vec<u16> = vec![colors::RED; 100];
-        let ret = esp_lcd_panel_draw_bitmap(
+        safe_draw_bitmap(
             panel_handle,
             0, 0,
             10, 10,
             red_pixels.as_ptr() as *const _
-        );
-        info!("  Result: {} (0x{:X})", ret, ret);
+        )?;
+        info!("  ✓ Red square drawn");
         Ets::delay_ms(500);
+        esp_task_wdt_reset();
         
         // Test 2b: Rectangle with offset
         info!("  2b: Drawing 20x20 green square at (50,50)");
         let green_pixels: Vec<u16> = vec![colors::GREEN; 400];
-        let ret = esp_lcd_panel_draw_bitmap(
+        safe_draw_bitmap(
             panel_handle,
             50, 50,
             70, 70,
             green_pixels.as_ptr() as *const _
-        );
-        info!("  Result: {} (0x{:X})", ret, ret);
+        )?;
+        info!("  ✓ Green square drawn");
         Ets::delay_ms(500);
+        esp_task_wdt_reset();
         
         // Test 2c: Full width line
         info!("  2c: Drawing full width blue line at y=100");
