@@ -26,31 +26,12 @@ pub fn create_display_backend(
     {
         info!("Creating ESP LCD DMA display backend");
         
-        // Convert to specific pin types for LCD DMA
-        use esp_idf_hal::gpio::*;
-        use super::lcd_cam_display_manager::LcdDisplayManager;
+        // For LCD DMA, we need specific pin types which are not available from AnyIOPin
+        // This is a limitation of the current architecture
+        // The LCD DMA backend should be created directly in main.rs, not through the factory
         
-        // Note: This requires the pins to be the correct types
-        // In real implementation, you'd need proper type conversion
-        let display = LcdDisplayManager::new(
-            unsafe { Gpio39::new() },
-            unsafe { Gpio40::new() },
-            unsafe { Gpio41::new() },
-            unsafe { Gpio42::new() },
-            unsafe { Gpio45::new() },
-            unsafe { Gpio46::new() },
-            unsafe { Gpio47::new() },
-            unsafe { Gpio48::new() },
-            unsafe { Gpio8::new() },
-            unsafe { Gpio7::new() },
-            unsafe { Gpio6::new() },
-            unsafe { Gpio5::new() },
-            unsafe { Gpio38::new() },
-            unsafe { Gpio15::new() },
-            unsafe { Gpio9::new() },
-        )?;
-        
-        Ok(Box::new(display))
+        // For now, return an error indicating this limitation
+        anyhow::bail!("LCD DMA backend cannot be created through the factory due to pin type constraints. Create LcdDisplayManager directly in main.rs instead.");
     }
     
     #[cfg(not(feature = "lcd-dma"))]

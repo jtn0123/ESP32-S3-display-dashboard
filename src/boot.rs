@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
-use crate::display::{DisplayManager, colors::*};
+use crate::display::{DisplayImpl as DisplayManager, colors::*};
 
 #[derive(Clone, Copy, Debug)]
 pub enum BootStage {

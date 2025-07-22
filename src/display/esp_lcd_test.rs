@@ -1,45 +1,60 @@
 /// Test module for ESP LCD implementation
 use super::lcd_cam_display_manager::LcdDisplayManager;
 use super::colors;
+use super::esp_lcd_aggressive_debug;
+use super::esp_lcd_config::OptimizedLcdConfig;
 use anyhow::Result;
-use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::delay::Ets;
 use log::info;
-use std::time::Instant;
+use esp_idf_hal::gpio::{Gpio5, Gpio6, Gpio7, Gpio8, Gpio9, Gpio15, Gpio38, Gpio39, Gpio40, Gpio41, Gpio42, Gpio45, Gpio46, Gpio47, Gpio48};
 
-pub fn test_esp_lcd_black_screen() -> Result<()> {
+pub fn test_esp_lcd_black_screen(
+    d0: Gpio39,
+    d1: Gpio40,
+    d2: Gpio41,
+    d3: Gpio42,
+    d4: Gpio45,
+    d5: Gpio46,
+    d6: Gpio47,
+    d7: Gpio48,
+    wr: Gpio8,
+    dc: Gpio7,
+    cs: Gpio6,
+    rst: Gpio5,
+    backlight: Gpio38,
+    lcd_power: Gpio15,
+    rd: Gpio9,
+) -> Result<()> {
     info!("[ESP_LCD_TEST] ========================================");
     info!("[ESP_LCD_TEST] ESP LCD DMA Hardware Test v5.37-dma");
     info!("[ESP_LCD_TEST] ========================================");
     info!("[ESP_LCD_TEST] Starting test sequence...");
     
-    let peripherals = Peripherals::take().unwrap();
+    // First run aggressive debug to test backlight
+    info!("[ESP_LCD_TEST] Running aggressive hardware debug first...");
+    info!("[ESP_LCD_TEST] NOTE: This will use the backlight and LCD power pins");
+    info!("[ESP_LCD_TEST] The main test will need to be modified to work without them");
     
-    // Create display manager with ESP LCD
-    let mut display = LcdDisplayManager::new(
-        peripherals.pins.gpio39, // D0
-        peripherals.pins.gpio40, // D1
-        peripherals.pins.gpio41, // D2
-        peripherals.pins.gpio42, // D3
-        peripherals.pins.gpio45, // D4
-        peripherals.pins.gpio46, // D5
-        peripherals.pins.gpio47, // D6
-        peripherals.pins.gpio48, // D7
-        peripherals.pins.gpio8,  // WR
-        peripherals.pins.gpio7,  // DC
-        peripherals.pins.gpio6,  // CS
-        peripherals.pins.gpio5,  // RST
-        peripherals.pins.gpio38, // Backlight
-        peripherals.pins.gpio15, // LCD Power
-        peripherals.pins.gpio9,  // RD
+    // For now, let's skip the aggressive test and focus on other debugging
+    // esp_lcd_aggressive_debug::aggressive_esp_lcd_debug(backlight, lcd_power)?;
+    
+    // Create display manager with ESP LCD using slower speed for debug
+    info!("[ESP_LCD_TEST] Using debug_slow configuration (5 MHz)");
+    let mut display = LcdDisplayManager::with_config(
+        d0, d1, d2, d3, d4, d5, d6, d7,
+        wr, dc, cs, rst,
+        backlight, lcd_power, rd,
+        OptimizedLcdConfig::debug_slow(),
     )?;
     
     info!("[ESP_LCD_TEST] Display initialized successfully!");
     
     // Test 1: Fill screen black
     info!("[ESP_LCD_TEST] Test 1: Filling screen black...");
+    info!("[ESP_LCD_TEST] Display dimensions: {}x{}", display.width(), display.height());
     display.clear(colors::BLACK)?;
     display.flush()?;
+    info!("[ESP_LCD_TEST] Black fill complete - display should turn dark");
     Ets::delay_ms(1000);
     
     // Test 2: Fill screen with different colors
@@ -73,11 +88,12 @@ pub fn test_esp_lcd_black_screen() -> Result<()> {
     info!("[ESP_LCD_TEST] Test 3: Drawing rectangles...");
     display.clear(colors::BLACK)?;
     
-    // Draw test pattern
+    // Draw test pattern - adjusted for 320x170 landscape display
     display.fill_rect(10, 10, 50, 50, colors::RED)?;
     display.fill_rect(70, 10, 50, 50, colors::GREEN)?;
     display.fill_rect(130, 10, 50, 50, colors::BLUE)?;
     display.fill_rect(190, 10, 50, 50, colors::YELLOW)?;
+    display.fill_rect(250, 10, 50, 50, colors::WHITE)?;  // Added 5th rectangle
     
     display.flush()?;
     Ets::delay_ms(2000);

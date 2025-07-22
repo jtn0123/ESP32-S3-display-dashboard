@@ -3,6 +3,8 @@ use esp_idf_sys::*;
 
 /// LCD clock speeds for performance testing
 pub enum LcdClockSpeed {
+    Mhz5,   // Very slow for testing
+    Mhz10,  // Slow for debugging
     Mhz17,  // Conservative - reference speed
     Mhz24,  // Moderate increase
     Mhz30,  // Good balance
@@ -13,6 +15,8 @@ pub enum LcdClockSpeed {
 impl LcdClockSpeed {
     pub fn as_hz(&self) -> u32 {
         match self {
+            LcdClockSpeed::Mhz5 => 5_000_000,
+            LcdClockSpeed::Mhz10 => 10_000_000,
             LcdClockSpeed::Mhz17 => 17_000_000,
             LcdClockSpeed::Mhz24 => 24_000_000,
             LcdClockSpeed::Mhz30 => 30_000_000,
@@ -23,6 +27,8 @@ impl LcdClockSpeed {
     
     pub fn name(&self) -> &'static str {
         match self {
+            LcdClockSpeed::Mhz5 => "5 MHz",
+            LcdClockSpeed::Mhz10 => "10 MHz",
             LcdClockSpeed::Mhz17 => "17 MHz",
             LcdClockSpeed::Mhz24 => "24 MHz",
             LcdClockSpeed::Mhz30 => "30 MHz",
@@ -126,6 +132,16 @@ impl OptimizedLcdConfig {
             clock_speed: LcdClockSpeed::Mhz24,
             transfer_size: TransferSize::Lines50,
             queue_depth: 8,
+            double_buffer: DoubleBufferConfig::default(),
+        }
+    }
+    
+    /// Get debug configuration with very slow speed
+    pub fn debug_slow() -> Self {
+        Self {
+            clock_speed: LcdClockSpeed::Mhz5,
+            transfer_size: TransferSize::Lines50,
+            queue_depth: 5,
             double_buffer: DoubleBufferConfig::default(),
         }
     }

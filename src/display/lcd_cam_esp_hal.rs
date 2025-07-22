@@ -4,17 +4,20 @@ use anyhow::Result;
 use esp_idf_sys::*;
 use esp_idf_hal::gpio::{Pin, Gpio39, Gpio40, Gpio41, Gpio42, Gpio45, Gpio46, Gpio47, Gpio48};
 use esp_idf_hal::gpio::{Gpio5, Gpio6, Gpio7, Gpio8};
+use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use core::ptr;
 use core::slice;
-use log::info;
+use log::{info, error};
 use super::esp_lcd_config::{OptimizedLcdConfig, LcdClockSpeed};
+use super::debug_trace::{traced_lcd_panel_io_tx_param, traced_lcd_panel_io_tx_color};
 
 // Display configuration for T-Display-S3
-const DISPLAY_WIDTH: u16 = 320;
-const DISPLAY_HEIGHT: u16 = 170;
-const DISPLAY_X_OFFSET: u16 = 0;  // No offset needed with proper initialization
-const DISPLAY_Y_OFFSET: u16 = 35; // ST7789 offset for 170-pixel height
+// The visible area is 170x320, but positioned at row 35 in the ST7789's GRAM
+const PANEL_WIDTH: u16 = 170;   // Visible width (portrait mode)
+const PANEL_HEIGHT: u16 = 320;  // Visible height (portrait mode)
+const X_GAP: i32 = 0;           // Column offset in GRAM
+const Y_GAP: i32 = 35;          // Row offset in GRAM (critical for T-Display-S3!)
 
 // Display offsets are handled by esp_lcd_panel_set_gap
 
@@ -63,13 +66,23 @@ impl LcdCamDisplay {
         config: OptimizedLcdConfig,
     ) -> Result<Self> {
         unsafe {
-            info!("Initializing LCD_CAM with ESP-IDF driver...");
+            info!("=== ESP LCD Initialization Debug Start ===");
+            info!("Display dimensions: {}x{} (portrait)", PANEL_WIDTH, PANEL_HEIGHT);
+            info!("Display offsets: X_GAP={}, Y_GAP={}", X_GAP, Y_GAP);
+            
+            // Add timing measurement
+            let start_time = std::time::Instant::now();
+            
             info!("Pin configuration:");
             info!("  Data: D0-D7 = GPIO 39,40,41,42,45,46,47,48");
             info!("  Control: WR={}, DC={}, CS={}, RST={}", wr.pin(), dc.pin(), cs.pin(), rst.pin());
             
+            // Verify pin states
+            info!("Verifying GPIO initial states...");
+            super::gpio_debug::verify_gpio_states();
+            
             // Configure I80 bus
-            let bus_config = esp_lcd_i80_bus_config_t {
+            let mut bus_config = esp_lcd_i80_bus_config_t {
                 dc_gpio_num: dc.pin() as i32,
                 wr_gpio_num: wr.pin() as i32,
                 clk_src: soc_periph_lcd_clk_src_t_LCD_CLK_SRC_DEFAULT,
@@ -85,23 +98,15 @@ impl LcdCamDisplay {
                     -1, -1, -1, -1, -1, -1, -1, -1, // Only using 8-bit mode
                 ],
                 bus_width: 8,
-                max_transfer_bytes: config.transfer_size.bytes(DISPLAY_WIDTH as usize),
+                max_transfer_bytes: config.transfer_size.bytes(PANEL_WIDTH as usize),
                 __bindgen_anon_1: esp_lcd_i80_bus_config_t__bindgen_ty_1 {
                     psram_trans_align: 64,
                 },
                 sram_trans_align: 4,
             };
             
-            let mut bus_handle: esp_lcd_i80_bus_handle_t = ptr::null_mut();
-            info!("Creating I80 bus with {} MHz clock...", config.clock_speed.as_hz() / 1_000_000);
-            let ret = esp_lcd_new_i80_bus(&bus_config, &mut bus_handle);
-            if ret != ESP_OK {
-                return Err(anyhow::anyhow!("Failed to create I80 bus: error code {}", ret));
-            }
-            info!("I80 bus created successfully - handle: {:?}", bus_handle);
-            
             // Configure panel for I80 interface
-            let io_config = esp_lcd_panel_io_i80_config_t {
+            let mut io_config = esp_lcd_panel_io_i80_config_t {
                 cs_gpio_num: cs.pin() as i32,
                 pclk_hz: config.clock_speed.as_hz(),
                 trans_queue_depth: config.queue_depth,
@@ -118,7 +123,7 @@ impl LcdCamDisplay {
                     _bitfield_1: esp_lcd_panel_io_i80_config_t__bindgen_ty_2::new_bitfield_1(
                         0, // cs_active_high
                         0, // reverse_color_bits
-                        0, // swap_color_bytes
+                        1, // swap_color_bytes - FIX FOR JUMBLED DISPLAY!
                         0, // pclk_active_neg
                         0, // pclk_idle_low
                     ),
@@ -130,19 +135,48 @@ impl LcdCamDisplay {
                 lcd_param_bits: 8,
             };
             
+            // Apply 6-block pattern fix BEFORE creating the bus
+            info!("Detected 6-block pattern issue - applying targeted fix...");
+            super::esp_lcd_6block_fix::apply_6block_fix(&mut bus_config, &mut io_config)?;
+            
+            // Also apply anti-flicker fixes
+            info!("Applying anti-flicker configuration...");
+            super::esp_lcd_flicker_fix::apply_flicker_fix(&mut bus_config, &mut io_config)?;
+            
+            // Now create the bus with fixed configuration
+            let mut bus_handle: esp_lcd_i80_bus_handle_t = ptr::null_mut();
+            info!("Creating I80 bus with fixed configuration...");
+            info!("  Max transfer bytes: {}", bus_config.max_transfer_bytes);
+            info!("  Bus width: 8-bit");
+            info!("  PSRAM align: {}, SRAM align: {}", 
+                  bus_config.__bindgen_anon_1.psram_trans_align,
+                  bus_config.sram_trans_align);
+            
+            let ret = esp_lcd_new_i80_bus(&bus_config, &mut bus_handle);
+            if ret != ESP_OK {
+                error!("Failed to create I80 bus: error code {} (0x{:X})", ret, ret);
+                error!("ESP_ERR_INVALID_ARG=-258, ESP_ERR_NO_MEM=-257");
+                return Err(anyhow::anyhow!("Failed to create I80 bus: error code {}", ret));
+            }
+            info!("✓ I80 bus created successfully with 6-block fix");
+            info!("  Time elapsed: {:?}", start_time.elapsed());
+            
             let mut io_handle: esp_lcd_panel_io_handle_t = ptr::null_mut();
+            info!("Creating panel IO with CS={}, {}Hz clock (fixed)", cs.pin(), io_config.pclk_hz);
             let ret = esp_lcd_new_panel_io_i80(bus_handle, &io_config, &mut io_handle);
             if ret != ESP_OK {
+                error!("Failed to create panel IO: error {} (0x{:X})", ret, ret);
                 esp_lcd_del_i80_bus(bus_handle);
                 return Err(anyhow::anyhow!("Failed to create panel IO: {:?}", ret));
             }
-            info!("Panel IO created successfully");
+            info!("✓ Panel IO created successfully");
+            info!("  Time elapsed: {:?}", start_time.elapsed());
             
             // Create ST7789 panel driver
             let panel_config = esp_lcd_panel_dev_config_t {
                 reset_gpio_num: rst.pin() as i32,
                 __bindgen_anon_1: esp_lcd_panel_dev_config_t__bindgen_ty_1 {
-                    rgb_ele_order: lcd_rgb_element_order_t_LCD_RGB_ELEMENT_ORDER_RGB,
+                    color_space: lcd_rgb_element_order_t_LCD_RGB_ELEMENT_ORDER_RGB, // T-Display-S3 uses RGB order
                 },
                 data_endian: lcd_rgb_data_endian_t_LCD_RGB_DATA_ENDIAN_BIG,
                 bits_per_pixel: 16,
@@ -156,26 +190,209 @@ impl LcdCamDisplay {
             };
             
             let mut panel_handle: esp_lcd_panel_handle_t = ptr::null_mut();
+            info!("Creating ST7789 panel driver...");
+            info!("  Reset pin: GPIO{}", rst.pin());
+            info!("  Color space: RGB");
+            info!("  Bits per pixel: 16");
             let ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &mut panel_handle);
             if ret != ESP_OK {
+                error!("Failed to create ST7789 panel: error {} (0x{:X})", ret, ret);
                 esp_lcd_panel_io_del(io_handle);
                 esp_lcd_del_i80_bus(bus_handle);
                 return Err(anyhow::anyhow!("Failed to create ST7789 panel: {:?}", ret));
             }
-            info!("ST7789 panel created successfully");
+            info!("✓ ST7789 panel created successfully");
+            info!("  Time elapsed: {:?}", start_time.elapsed());
             
             // Initialize the panel
-            esp_lcd_panel_reset(panel_handle);
-            esp_lcd_panel_init(panel_handle);
+            info!("Resetting panel...");
+            let ret = esp_lcd_panel_reset(panel_handle);
+            if ret != ESP_OK {
+                error!("Panel reset failed: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Panel reset complete");
+            }
             
-            // Configure for our specific display
-            Self::configure_display(panel_handle)?;
+            esp_idf_hal::delay::FreeRtos::delay_ms(10);
             
-            // Turn on display
-            esp_lcd_panel_disp_on_off(panel_handle, true);
+            info!("Initializing panel...");
+            let ret = esp_lcd_panel_init(panel_handle);
+            if ret != ESP_OK {
+                error!("Panel init failed: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Panel init complete");
+            }
+            info!("  Time elapsed: {:?}", start_time.elapsed());
             
-            // Allocate frame buffer
-            let frame_buffer = vec![0u16; DISPLAY_WIDTH as usize * DISPLAY_HEIGHT as usize];
+            // Add delay to ensure init is complete
+            esp_idf_hal::delay::FreeRtos::delay_ms(100);
+            
+            // Configure the panel for T-Display-S3 specifics
+            // CRITICAL: These must be called AFTER init but BEFORE any drawing
+            info!("Configuring panel for T-Display-S3...");
+            
+            // Add delay after init
+            info!("Adding 200ms delay after panel init for stabilization...");
+            esp_idf_hal::delay::FreeRtos::delay_ms(200);
+            
+            let ret = esp_lcd_panel_set_gap(panel_handle, X_GAP, Y_GAP);
+            if ret != ESP_OK {
+                error!("Failed to set gap: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Set display gap: X={}, Y={} (maps visible window)", X_GAP, Y_GAP);
+            }
+            esp_idf_hal::delay::FreeRtos::delay_ms(10);
+            
+            let ret = esp_lcd_panel_swap_xy(panel_handle, true);
+            if ret != ESP_OK {
+                error!("Failed to swap XY: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Swapped X/Y for landscape orientation");
+            }
+            esp_idf_hal::delay::FreeRtos::delay_ms(10);
+            
+            let ret = esp_lcd_panel_mirror(panel_handle, false, true);
+            if ret != ESP_OK {
+                error!("Failed to mirror: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Mirrored Y axis for correct orientation");
+            }
+            esp_idf_hal::delay::FreeRtos::delay_ms(10);
+            
+            let ret = esp_lcd_panel_invert_color(panel_handle, true);
+            if ret != ESP_OK {
+                error!("Failed to invert colors: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Inverted colors (required for ST7789)");
+            }
+            esp_idf_hal::delay::FreeRtos::delay_ms(10);
+            
+            // Add explicit initialization commands as fallback
+            // Some ST7789 batches need these extra commands
+            info!("Sending additional init commands with delays...");
+            traced_lcd_panel_io_tx_param(io_handle, 0x21, ptr::null(), 0); // INVON
+            esp_idf_hal::delay::FreeRtos::delay_ms(10);
+            traced_lcd_panel_io_tx_param(io_handle, 0x13, ptr::null(), 0); // NORON (Normal display on)
+            esp_idf_hal::delay::FreeRtos::delay_ms(10);
+            
+            // Explicitly set MADCTL for landscape (matching working GPIO code)
+            let madctl_data: [u8; 1] = [0x60]; // MY=0, MX=1, MV=1, ML=0, BGR=0 (RGB)
+            traced_lcd_panel_io_tx_param(io_handle, 0x36, madctl_data.as_ptr() as *const _, 1);
+            
+            // Clear the display memory by setting a window and filling with black
+            // CASET - Column address set (0-169 after rotation)
+            let caset_data: [u8; 4] = [0, 0, 0, 169];
+            traced_lcd_panel_io_tx_param(io_handle, 0x2A, caset_data.as_ptr() as *const _, 4);
+            
+            // RASET - Row address set (35-354 = 320 pixels with 35 offset)
+            let raset_data: [u8; 4] = [0, 35, 1, 98]; // 35 to 354 (0x23 to 0x162)
+            traced_lcd_panel_io_tx_param(io_handle, 0x2B, raset_data.as_ptr() as *const _, 4);
+            
+            // Turn on display with delay before and after
+            info!("Waiting 100ms before turning display on...");
+            esp_idf_hal::delay::FreeRtos::delay_ms(100);
+            
+            let ret = esp_lcd_panel_disp_on_off(panel_handle, true);
+            if ret != ESP_OK {
+                error!("Failed to turn on display: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Display turned on");
+            }
+            
+            info!("Waiting 100ms after display on...");
+            esp_idf_hal::delay::FreeRtos::delay_ms(100);
+            
+            // Print command trace summary
+            super::debug_trace::print_command_summary();
+            
+            // Test the 6-block fix
+            info!("=== Testing 6-Block Fix ===");
+            
+            // Analyze the pattern first
+            super::esp_lcd_6block_fix::analyze_6block_pattern(panel_handle, io_handle)?;
+            esp_idf_hal::delay::FreeRtos::delay_ms(2000);
+            
+            // Test different clock speeds
+            super::esp_lcd_6block_fix::test_clock_speeds(panel_handle)?;
+            esp_idf_hal::delay::FreeRtos::delay_ms(2000);
+            
+            info!("=== 6-Block Fix Test Complete ===");
+            info!("If you still see blocky output:");
+            info!("- The pattern analysis will show which pixels are visible");
+            info!("- Try even slower clock speeds");
+            info!("- Check the alignment test results");
+            
+            // Try a simple pixel test
+            info!("=== Starting pixel test ===");
+            info!("Drawing test pattern directly...");
+            
+            // Try to draw a simple red rectangle
+            let test_color: [u16; 100] = [0xF800; 100]; // Red pixels
+            let ret = esp_lcd_panel_draw_bitmap(
+                panel_handle,
+                0, 0,     // Start position
+                10, 10,   // End position
+                test_color.as_ptr() as *const _
+            );
+            if ret != ESP_OK {
+                error!("Failed to draw test bitmap: error {} (0x{:X})", ret, ret);
+            } else {
+                info!("✓ Test bitmap drawn at (0,0) to (10,10)");
+            }
+            
+            // Run comprehensive test
+            info!("Running comprehensive display test...");
+            if let Err(e) = super::comprehensive_test::run_comprehensive_test(panel_handle) {
+                error!("Comprehensive test failed: {}", e);
+            }
+            
+            // Run debug test to try raw commands
+            info!("Running debug test with raw commands...");
+            if let Err(e) = super::esp_lcd_debug_test::debug_esp_lcd_raw_commands(io_handle) {
+                error!("Debug test failed: {}", e);
+            }
+            
+            // Run pixel format test
+            info!("Running pixel format test...");
+            if let Err(e) = super::esp_lcd_pixel_test::test_pixel_formats(panel_handle, io_handle) {
+                error!("Pixel format test failed: {}", e);
+            }
+            
+            // Run MADCTL configuration test
+            info!("Running MADCTL configuration test...");
+            if let Err(e) = super::esp_lcd_madctl_test::test_madctl_configurations(panel_handle, io_handle) {
+                error!("MADCTL test failed: {}", e);
+            }
+            
+            // Run clock speed test
+            info!("Running clock speed test...");
+            if let Err(e) = super::esp_lcd_clock_test::test_clock_speeds(panel_handle) {
+                error!("Clock speed test failed: {}", e);
+            }
+            
+            // Run direct I80 test
+            info!("Running direct I80 test...");
+            if let Err(e) = super::esp_lcd_direct_test::test_direct_i80(io_handle) {
+                error!("Direct I80 test failed: {}", e);
+            }
+            
+            // Compare init sequences
+            super::esp_lcd_direct_test::compare_init_sequences();
+            
+            // Run reset sequence test
+            info!("Running reset sequence test...");
+            if let Err(e) = super::esp_lcd_clock_test::test_reset_sequence(rst.pin() as i32, panel_handle) {
+                error!("Reset sequence test failed: {}", e);
+            }
+            
+            info!("=== ESP LCD Initialization Complete ===");
+            info!("Total initialization time: {:?}", start_time.elapsed());
+            
+            // Allocate frame buffer for the actual visible area
+            // Note: After swap_xy, width and height are swapped for landscape
+            let display_width = PANEL_HEIGHT;  // 320 in landscape
+            let display_height = PANEL_WIDTH;  // 170 in landscape
+            let frame_buffer = vec![0u16; display_width as usize * display_height as usize];
             
             // Allocate double buffer if enabled
             let double_buffer = if config.double_buffer.enabled {
@@ -185,14 +402,16 @@ impl LcdCamDisplay {
                 None
             };
             
-            info!("LCD initialized with {} clock, {} lines transfer", 
-                  config.clock_speed.name(), config.transfer_size.lines());
+            info!("LCD initialized: {}x{} landscape, {} MHz clock, {} lines transfer", 
+                  display_width, display_height,
+                  config.clock_speed.as_hz() / 1_000_000,
+                  config.transfer_size.lines());
             
             Ok(Self {
                 bus_handle,
                 panel_handle,
-                width: DISPLAY_WIDTH,
-                height: DISPLAY_HEIGHT,
+                width: display_width,
+                height: display_height,
                 frame_buffer,
                 double_buffer,
                 active_buffer: 0,
@@ -201,21 +420,7 @@ impl LcdCamDisplay {
         }
     }
     
-    fn configure_display(panel: esp_lcd_panel_handle_t) -> Result<()> {
-        unsafe {
-            // The panel driver handles most initialization, but we need to set specific modes
-            
-            // Set to landscape mode
-            esp_lcd_panel_swap_xy(panel, false);
-            esp_lcd_panel_mirror(panel, true, false);
-            
-            // Set gaps for our specific display
-            esp_lcd_panel_set_gap(panel, DISPLAY_X_OFFSET as i32, DISPLAY_Y_OFFSET as i32);
-            
-            info!("Display configuration complete");
-            Ok(())
-        }
-    }
+    // Remove configure_display - we handle everything in new() now
     
     pub fn clear(&mut self, color: u16) -> Result<()> {
         // Fill frame buffer with color
@@ -257,12 +462,14 @@ impl LcdCamDisplay {
             );
             
             // Use hardware-accelerated draw
+            // IMPORTANT: Coordinates are in landscape mode after swap_xy
+            // Drawing from (0,0) to (width,height) which is (0,0) to (320,170)
             let ret = esp_lcd_panel_draw_bitmap(
                 self.panel_handle,
-                0,                      // x_start
-                0,                      // y_start  
-                self.width as i32,      // x_end
-                self.height as i32,     // y_end
+                0,                      // x_start  
+                0,                      // y_start
+                self.width as i32,      // x_end (320)
+                self.height as i32,     // y_end (170)
                 byte_slice.as_ptr() as *const _
             );
             

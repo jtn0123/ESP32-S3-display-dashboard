@@ -1,21 +1,22 @@
 /// Hardware-accelerated DisplayManager using LCD_CAM
 use super::lcd_cam_esp_hal::LcdCamDisplay;
+use super::esp_lcd_config::OptimizedLcdConfig;
 use super::colors;
 use super::font5x7::{FONT_WIDTH, FONT_HEIGHT, get_char_data};
 use anyhow::Result;
 use esp_idf_hal::gpio::{Gpio39, Gpio40, Gpio41, Gpio42, Gpio45, Gpio46, Gpio47, Gpio48};
-use esp_idf_hal::gpio::{Gpio5, Gpio6, Gpio7, Gpio8, Gpio15, Gpio38, Gpio9};
-use esp_idf_hal::gpio::{PinDriver, Output};
+use esp_idf_hal::gpio::{Gpio5, Gpio6, Gpio7, Gpio8, Gpio15, Gpio38, Gpio9, Pin};
+use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use std::time::Instant;
 
 pub struct LcdDisplayManager {
     display: LcdCamDisplay,
-    backlight_pin: PinDriver<'static, Gpio38, Output>,
-    lcd_power_pin: PinDriver<'static, Gpio15, Output>,
-    _rd_pin: PinDriver<'static, Gpio9, Output>,
     pub width: u16,
     pub height: u16,
     last_activity: Instant,
+    _backlight_pin: PinDriver<'static, AnyIOPin, Output>,
+    _lcd_power_pin: PinDriver<'static, AnyIOPin, Output>,
+    _rd_pin: PinDriver<'static, AnyIOPin, Output>,
 }
 
 impl LcdDisplayManager {
@@ -37,41 +38,125 @@ impl LcdDisplayManager {
         rd: Gpio9,
     ) -> Result<Self> {
         log::info!("Initializing hardware-accelerated LCD display...");
+        log::warn!("=== CONFIRMED: Using ESP LCD DMA Implementation ===");
+        log::warn!("Backend: LcdDisplayManager with ESP-IDF I80 bus");
+        log::warn!("Feature flag lcd-dma is ACTIVE");
         
-        // Set up power pins first
-        let mut lcd_power_pin = PinDriver::output(lcd_power)?;
+        // Initialize power pins
+        let backlight_any: AnyIOPin = backlight.into();
+        let lcd_power_any: AnyIOPin = lcd_power.into();
+        let rd_any: AnyIOPin = rd.into();
+        
+        let mut backlight_pin = PinDriver::output(backlight_any)?;
+        let mut lcd_power_pin = PinDriver::output(lcd_power_any)?;
+        let mut rd_pin = PinDriver::output(rd_any)?;
+        
+        // Enable LCD power and backlight
         lcd_power_pin.set_high()?;
-        log::info!("LCD power enabled");
-        
-        // Set up RD pin (must be high for write mode)
-        let mut rd_pin = PinDriver::output(rd)?;
-        rd_pin.set_high()?;
-        
-        // Set up backlight
-        let mut backlight_pin = PinDriver::output(backlight)?;
         backlight_pin.set_high()?;
-        log::info!("Backlight enabled");
+        rd_pin.set_high()?; // RD pin should be high for write-only mode
         
-        // Initialize LCD_CAM display
-        let display = LcdCamDisplay::new(d0, d1, d2, d3, d4, d5, d6, d7, wr, dc, cs, rst)?;
+        log::info!("Power pins configured - LCD power and backlight enabled");
+        
+        // Add delay for power stabilization
+        esp_idf_hal::delay::FreeRtos::delay_ms(50);
+        
+        // Verify GPIO states after power configuration
+        #[cfg(feature = "lcd-dma")]
+        unsafe {
+            super::gpio_debug::verify_gpio_states();
+        }
+        
+        // Initialize LCD_CAM display without power pins (they're handled here)
+        let display = LcdCamDisplay::new(
+            d0, d1, d2, d3, d4, d5, d6, d7, 
+            wr, dc, cs, rst
+        )?;
         
         let width = display.width();
         let height = display.height();
         
         let mut manager = Self {
             display,
-            backlight_pin,
-            lcd_power_pin,
-            _rd_pin: rd_pin,
             width,
             height,
             last_activity: Instant::now(),
+            _backlight_pin: backlight_pin,
+            _lcd_power_pin: lcd_power_pin,
+            _rd_pin: rd_pin,
         };
         
         // Clear to black
         manager.clear(colors::BLACK)?;
         
         log::info!("LCD display initialized with hardware acceleration!");
+        Ok(manager)
+    }
+    
+    pub fn with_config(
+        d0: Gpio39,
+        d1: Gpio40,
+        d2: Gpio41,
+        d3: Gpio42,
+        d4: Gpio45,
+        d5: Gpio46,
+        d6: Gpio47,
+        d7: Gpio48,
+        wr: Gpio8,
+        dc: Gpio7,
+        cs: Gpio6,
+        rst: Gpio5,
+        backlight: Gpio38,
+        lcd_power: Gpio15,
+        rd: Gpio9,
+        config: OptimizedLcdConfig,
+    ) -> Result<Self> {
+        log::info!("Initializing hardware-accelerated LCD display with custom config...");
+        log::info!("Clock speed: {}", config.clock_speed.name());
+        
+        // Initialize power pins
+        let backlight_any: AnyIOPin = backlight.into();
+        let lcd_power_any: AnyIOPin = lcd_power.into();
+        let rd_any: AnyIOPin = rd.into();
+        
+        let mut backlight_pin = PinDriver::output(backlight_any)?;
+        let mut lcd_power_pin = PinDriver::output(lcd_power_any)?;
+        let mut rd_pin = PinDriver::output(rd_any)?;
+        
+        // Set RD pin high (read disabled)
+        rd_pin.set_high()?;
+        
+        // Power on sequence  
+        lcd_power_pin.set_high()?;
+        backlight_pin.set_high()?;
+        
+        log::info!("Power pins configured - LCD power and backlight enabled");
+        
+        // Add delay for power stabilization
+        esp_idf_hal::delay::FreeRtos::delay_ms(50);
+        
+        // Initialize LCD_CAM display with config
+        let display = LcdCamDisplay::with_config(
+            d0, d1, d2, d3, d4, d5, d6, d7, 
+            wr, dc, cs, rst,
+            config,
+        )?;
+        
+        let width = display.width();
+        let height = display.height();
+        
+        let mut manager = Self {
+            display,
+            width,
+            height,
+            last_activity: Instant::now(),
+            _backlight_pin: backlight_pin,
+            _lcd_power_pin: lcd_power_pin,
+            _rd_pin: rd_pin,
+        };
+        
+        manager.ensure_display_on()?;
+        
         Ok(manager)
     }
     
@@ -255,8 +340,14 @@ impl LcdDisplayManager {
         self.last_activity = Instant::now();
     }
     
+    pub fn update_auto_dim(&mut self) -> Result<()> {
+        // Auto-dim functionality not implemented for LCD DMA version
+        // The display stays on at full brightness
+        Ok(())
+    }
+    
     pub fn ensure_display_on(&mut self) -> Result<()> {
-        self.backlight_pin.set_high()?;
+        // Backlight is now managed by LcdCamDisplay
         Ok(())
     }
     

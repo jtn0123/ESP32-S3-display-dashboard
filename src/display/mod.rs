@@ -2,6 +2,9 @@ pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
 pub mod debug_tests;
+pub mod debug_trace;
+pub mod pixel_test_patterns;
+pub mod sequence_validator;
 // pub mod perf_metrics; // Temporarily disabled
 // pub mod lcd_cam; // Commented out - needs esp-hal for proper peripheral access
 pub mod lcd_cam_ll; // Low-level LCD_CAM bindings
@@ -33,6 +36,8 @@ pub mod esp_lcd_benchmark; // ESP LCD performance benchmarks
 pub mod esp_lcd_config; // ESP LCD configuration options
 #[cfg(feature = "lcd-dma")]
 pub mod double_buffer; // Double buffering support
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_debug_test; // Debug test for ESP LCD
 pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
 // pub mod lcd_cam_pac_test; // LCD_CAM using PAC approach - needs proper bindings
 pub mod lcd_cam_minimal_test; // Minimal test to debug register access
@@ -44,6 +49,32 @@ pub mod gpio_display_backend; // GPIO backend implementation
 #[cfg(feature = "lcd-dma")]
 pub mod lcd_dma_display_backend; // DMA backend implementation
 pub mod backend_factory; // Factory for creating display backends
+pub mod runtime_check; // Runtime driver verification
+pub mod flicker_diagnostic; // Display flicker diagnostics
+#[cfg(feature = "lcd-dma")]
+pub mod comprehensive_test; // Comprehensive display test
+#[cfg(feature = "lcd-dma")]
+pub mod gpio_debug; // GPIO debugging utilities
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_aggressive_debug; // Aggressive ESP LCD debugging
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_pixel_test; // ESP LCD pixel format testing
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_madctl_test; // ESP LCD MADCTL configuration testing
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_clock_test; // ESP LCD clock speed testing
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_direct_test; // ESP LCD direct I80 testing
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_byte_swap_fix; // ESP LCD byte swap fix
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_block_debug; // ESP LCD block debug
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_timing_debug; // ESP LCD timing debug
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_6block_fix; // ESP LCD 6-block pattern fix
+#[cfg(feature = "lcd-dma")]
+pub mod esp_lcd_flicker_fix; // ESP LCD flicker fix
 
 // Color type not used - colors are defined as u16 constants
 
@@ -57,6 +88,12 @@ use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
 use std::time::{Instant, Duration};
 
+
+// Type alias for the display manager based on feature flag
+#[cfg(not(feature = "lcd-dma"))]
+pub use self::DisplayManager as DisplayImpl;
+#[cfg(feature = "lcd-dma")]
+pub use self::lcd_cam_display_manager::LcdDisplayManager as DisplayImpl;
 
 // Display boundaries - Discovered values from Arduino testing
 const DISPLAY_X_START: u16 = 10;   // Left boundary offset

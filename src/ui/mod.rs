@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crate::display::{DisplayManager, colors::*};
+use crate::display::{DisplayImpl as DisplayManager, colors::*};
 use crate::sensors::SensorData;
 use crate::system::{ButtonEvent, SystemInfo};
 use crate::ota::OtaStatus;

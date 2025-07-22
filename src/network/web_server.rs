@@ -263,6 +263,60 @@ impl WebConfigServer {
             log::info!("OTA endpoints registered on main web server");
         }
 
+        // Debug endpoints for display state
+        server.fn_handler("/api/debug/display/commands", esp_idf_svc::http::Method::Get, move |req| {
+            use crate::display::debug_trace;
+            
+            let commands = debug_trace::get_command_history();
+            let json = serde_json::json!({
+                "count": commands.len(),
+                "commands": commands.iter().map(|cmd| {
+                    serde_json::json!({
+                        "cmd": format!("0x{:02X}", cmd.cmd),
+                        "name": cmd.cmd_name,
+                        "data": cmd.data.iter().map(|b| format!("0x{:02X}", b)).collect::<Vec<_>>(),
+                    })
+                }).collect::<Vec<_>>()
+            });
+            
+            let mut response = req.into_ok_response()?;
+            response.write_all(serde_json::to_string(&json)?.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+        
+        server.fn_handler("/api/debug/display/state", esp_idf_svc::http::Method::Get, move |req| {
+            // For now, return basic display info
+            // This can be expanded to include frame buffer state, etc.
+            let json = serde_json::json!({
+                "display": {
+                    "width": 320,
+                    "height": 170,
+                    "orientation": "landscape",
+                    "driver": "ESP_LCD_I80"
+                },
+                "debug": {
+                    "trace_enabled": true,
+                    "command_history_size": 100
+                }
+            });
+            
+            let mut response = req.into_ok_response()?;
+            response.write_all(serde_json::to_string(&json)?.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+        
+        server.fn_handler("/api/debug/display/clear", esp_idf_svc::http::Method::Post, move |req| {
+            use crate::display::debug_trace;
+            
+            debug_trace::clear_command_history();
+            
+            let mut response = req.into_ok_response()?;
+            response.write_all(r#"{"status":"cleared"}"#.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        log::info!("Debug endpoints registered: /api/debug/display/commands, /api/debug/display/state, /api/debug/display/clear");
+
         Ok(Self { _server: server })
     }
 }

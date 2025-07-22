@@ -2,7 +2,6 @@ use anyhow::Result;
 use esp_idf_hal::prelude::*;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
-    log::EspLogger,
     timer::EspTaskTimerService,
 };
 use esp_idf_sys as _; // Binstart
@@ -41,7 +40,7 @@ mod core1_tasks;
 mod logging;
 
 use crate::boot::{BootManager, BootStage};
-use crate::display::{DisplayManager, colors};
+use crate::display::{DisplayImpl, colors};
 use crate::network::{NetworkManager, telnet_server::TelnetLogServer};
 use crate::ota::OtaManager;
 use crate::ui::UiManager;
@@ -131,7 +130,7 @@ fn main() -> Result<()> {
     
     // ESP LCD test flag - set to true to run ESP LCD DMA test
     #[cfg(feature = "lcd-dma")]
-    const RUN_ESP_LCD_TEST: bool = true; // TESTING ESP LCD DMA
+    const RUN_ESP_LCD_TEST: bool = false; // Now integrated in main code path
     
     // Run ESP LCD test if enabled and feature is active
     #[cfg(feature = "lcd-dma")]
@@ -144,7 +143,23 @@ fn main() -> Result<()> {
         Ets::delay_ms(500);
         
         // Run the ESP LCD test
-        match display::esp_lcd_test::test_esp_lcd_black_screen() {
+        match display::esp_lcd_test::test_esp_lcd_black_screen(
+            peripherals.pins.gpio39, // D0
+            peripherals.pins.gpio40, // D1
+            peripherals.pins.gpio41, // D2
+            peripherals.pins.gpio42, // D3
+            peripherals.pins.gpio45, // D4
+            peripherals.pins.gpio46, // D5
+            peripherals.pins.gpio47, // D6
+            peripherals.pins.gpio48, // D7
+            peripherals.pins.gpio8,  // WR
+            peripherals.pins.gpio7,  // DC
+            peripherals.pins.gpio6,  // CS
+            peripherals.pins.gpio5,  // RST
+            peripherals.pins.gpio38, // Backlight
+            peripherals.pins.gpio15, // LCD Power
+            peripherals.pins.gpio9,  // RD
+        ) {
             Ok(_) => {
                 log::info!("ESP LCD test completed successfully!");
                 log::info!("The display should have shown colors and text.");
@@ -201,7 +216,7 @@ fn main() -> Result<()> {
     use esp_idf_hal::delay::Ets;
     Ets::delay_ms(500);  // Longer delay for power stability
     
-    let mut display_manager = DisplayManager::new(
+    let mut display_manager = DisplayImpl::new(
         peripherals.pins.gpio39, // D0
         peripherals.pins.gpio40, // D1
         peripherals.pins.gpio41, // D2
@@ -215,10 +230,16 @@ fn main() -> Result<()> {
         peripherals.pins.gpio6,  // CS
         peripherals.pins.gpio5,  // RST
         peripherals.pins.gpio38, // Backlight
-        peripherals.pins.gpio15, // LCD Power - CRITICAL!
+        peripherals.pins.gpio15, // LCD Power
         peripherals.pins.gpio9,  // RD pin
     )?;
     info!("Display initialized - LCD power and backlight pins kept alive");
+    
+    // Log which display driver is active
+    crate::display::runtime_check::log_active_driver();
+    
+    // Log display performance metrics
+    crate::display::flicker_diagnostic::log_display_performance_metrics();
 
     // Initialize boot manager for animated boot experience
     info!("Starting enhanced boot sequence...");
@@ -515,7 +536,7 @@ fn main() -> Result<()> {
 
 fn run_app(
     mut ui_manager: UiManager,
-    mut display_manager: DisplayManager,
+    mut display_manager: DisplayImpl,
     mut sensor_manager: sensors::SensorManager,
     mut button_manager: system::ButtonManager,
     network_manager: NetworkManager,
@@ -730,7 +751,7 @@ fn run_app(
         }
         
         // Frame rate limiting - toggleable for performance testing
-        const ENABLE_FPS_CAP: bool = false; // Set to true for production, false for benchmarking
+        const ENABLE_FPS_CAP: bool = true; // Set to true for production, false for benchmarking
         
         if ENABLE_FPS_CAP {
             let target_60fps = Duration::from_micros(16667); // ~60 FPS

@@ -5,6 +5,7 @@ use anyhow::Result;
 
 impl DisplayBackend for LcdDisplayManager {
     fn clear(&mut self, color: u16) -> Result<()> {
+        // Call the inherent clear method on LcdDisplayManager
         self.clear(color)
     }
     

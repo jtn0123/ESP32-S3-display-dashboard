@@ -1,12 +1,15 @@
-#!/bin/bash
-# Simple network monitor for ESP32 logs
+#\!/bin/bash
 
-IP="${1:-10.27.27.201}"
-PORT="${2:-23}"
+# Simple serial monitor that captures everything
+PORT="/dev/cu.usbmodem101"
+BAUD="115200"
 
-echo "Connecting to ESP32 at $IP:$PORT"
-echo "Press Ctrl+C to exit"
-echo "========================================="
+echo "Simple serial monitor on $PORT..."
+echo "==============================================="
 
-# Use nc (netcat) which is built into macOS
-nc $IP $PORT
+# Configure serial port
+stty -f $PORT $BAUD cs8 -cstopb -parenb
+
+# Just cat the output
+cat $PORT
+EOF < /dev/null

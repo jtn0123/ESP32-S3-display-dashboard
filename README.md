@@ -338,6 +338,116 @@ If the bootloader reports 4MB instead of 16MB:
 - **[WIFI_SETUP.md](WIFI_SETUP.md)** - WiFi configuration instructions
 - **[FLASHING_GUIDE.md](FLASHING_GUIDE.md)** - Detailed flashing procedures
 
+## 🐛 Advanced Debugging Features
+
+This project includes comprehensive debugging infrastructure for development and troubleshooting:
+
+### JTAG Hardware Debugging
+```bash
+# Start OpenOCD (in one terminal)
+openocd -f tools/debug/openocd.cfg
+
+# Start GDB (in another terminal)
+xtensa-esp32s3-elf-gdb target/xtensa-esp32s3-espidf/debug/esp32-s3-dashboard
+
+# Or use VS Code: Press F5 to start debugging
+```
+
+**Features:**
+- Built-in USB-Serial/JTAG (no external hardware needed)
+- Custom GDB commands for display debugging
+- VS Code integration with one-click debugging
+- Memory inspection and register access
+
+### Display Command Tracing
+Monitor every ST7789 command sent to the display:
+
+```bash
+# View command trace via serial
+[ST7789] CMD: 0x36 (MADCTL) - params: [60]
+[ST7789] CMD: 0x2A (CASET) - params: [00, 00, 01, 3F]
+[ST7789] CMD: 0x2B (RASET) - params: [00, 23, 00, CC]
+
+# Access via web API
+curl http://<device-ip>/api/debug/display/commands
+curl http://<device-ip>/api/debug/display/state
+curl -X POST http://<device-ip>/api/debug/display/clear
+```
+
+### Ultra-Low Overhead Logging with defmt
+Binary logging with minimal performance impact:
+
+```bash
+# Build with defmt
+cargo build --features defmt
+
+# Run with probe-rs
+probe-rs run --chip esp32s3
+```
+
+### Unit Testing Infrastructure
+Test hardware-independent logic on your development machine:
+
+```bash
+# Run all tests
+cargo test -p dashboard-core
+
+# Run with miri for undefined behavior detection
+cd dashboard-core
+cargo +nightly miri test
+
+# Run specific test with output
+cargo test -p dashboard-core test_rgb_conversion -- --nocapture
+```
+
+### Code Quality Tools
+```bash
+# Linting (already in CI)
+cargo clippy -- -D warnings
+
+# Format code
+cargo fmt
+
+# Security audit
+cargo audit
+
+# Flash with cargo-espflash
+cargo install cargo-espflash
+cargo espflash flash --monitor
+```
+
+### Pixel Test Patterns
+Built-in test patterns for display verification:
+- Corner pixels (coordinate system check)
+- Grid pattern (alignment verification)
+- Color bars (RGB order validation)
+- Border test (edge detection)
+- Diagonal lines (aspect ratio check)
+
+### Memory Debugging
+```bash
+# Enable in sdkconfig.defaults:
+CONFIG_HEAP_TRACING_STANDALONE=y
+CONFIG_HEAP_POISONING_LIGHT=y
+
+# Monitor heap usage
+[HEAP] Free: 123456 bytes, Min free: 100000 bytes
+```
+
+### Performance Profiling
+- FPS counter with skip rate detection
+- Render time measurement
+- CPU usage per core
+- Command execution timing
+
+### Debug Documentation
+See [tools/Debug.md](tools/Debug.md) for comprehensive debugging guide including:
+- JTAG setup instructions
+- Command reference
+- Troubleshooting tips
+- Memory analysis
+- Performance optimization
+
 ## 🤝 Contributing
 
 1. Fork the repository
