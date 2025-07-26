@@ -2,7 +2,6 @@ use anyhow::Result;
 use esp_idf_hal::prelude::*;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
-    log::EspLogger,
     timer::EspTaskTimerService,
 };
 use esp_idf_sys as _; // Binstart
@@ -25,7 +24,6 @@ mod app_desc {
 mod boot;
 mod config;
 mod display;
-mod hardware;
 mod network;
 mod ota;
 mod sensors;
@@ -34,8 +32,6 @@ mod ui;
 mod version;
 mod dual_core;
 mod psram;
-#[allow(dead_code)]
-mod hardware_timer;
 mod performance;
 mod core1_tasks;
 mod logging;
@@ -137,9 +133,9 @@ fn main() -> Result<()> {
         use esp_idf_hal::delay::Ets;
         Ets::delay_ms(500);  // Longer delay for power stability
         
-        // Test esp_lcd implementation based on working template
-        log::warn!("Running esp_lcd minimal test based on working template...");
-        display::esp_lcd_minimal_test::test_esp_lcd_minimal()?;
+        // LCD_CAM tests disabled - hardware acceleration not currently used
+        log::warn!("LCD_CAM tests have been disabled");
+        log::warn!("Set RUN_DISPLAY_DEBUG_TEST to false for normal operation");
         
         log::warn!("Test complete!");
         
@@ -612,7 +608,7 @@ fn run_app(
     _config: Arc<Mutex<config::Config>>,
     _web_server: Option<network::web_server::WebConfigServer>,
     ota_manager: Option<Arc<Mutex<OtaManager>>>,
-    telnet_server: Option<Arc<TelnetLogServer>>,
+    _telnet_server: Option<Arc<TelnetLogServer>>,
     core1_channels: core1_tasks::Core1Channels,
 ) -> Result<()> {
     use std::time::{Duration, Instant};

@@ -164,3 +164,33 @@ When making changes:
 - `IMPROVEMENTS.md` - Performance optimization tracking
 - `LCD_CAM_FINAL_REPORT.md` - Hardware acceleration investigation
 - `scripts/README.md` - Detailed documentation for all scripts
+
+## MCP Server Integration
+
+The project has access to two MCP (Model Context Protocol) servers that enhance AI assistant capabilities:
+
+### 1. Sequential Thinking Server (`mcp__sequential-thinking`)
+Used for complex problem-solving and iterative analysis:
+- Breaking down multi-step tasks
+- Planning implementations
+- Analyzing performance bottlenecks
+- Debugging complex issues
+- Generating and verifying hypotheses
+
+Example use cases:
+- Planning LCD_CAM hardware acceleration workarounds
+- Analyzing dual-core optimization strategies
+- Debugging display timing issues
+
+### 2. Memory Knowledge Graph Server (`mcp__memory`)
+Used for storing and retrieving project knowledge:
+- Tracking component relationships
+- Storing optimization results
+- Recording bug patterns and solutions
+- Building knowledge about hardware quirks
+
+Example entities to track:
+- Hardware components and their interactions
+- Performance metrics over time
+- Known issues and their solutions
+- Code module dependencies

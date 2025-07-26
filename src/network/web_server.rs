@@ -109,7 +109,250 @@ impl WebConfigServer {
                 let mut response = req.into_ok_response()?;
                 
                 if ota_mgr_clone.is_some() {
-                    response.write_all(crate::ota::web_server::OTA_HTML.as_bytes())?;
+                    const OTA_HTML: &str = r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32-S3 Dashboard OTA Update</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #1a1a1a;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 {
+            color: #2563eb;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 30px;
+        }
+        .file-select {
+            margin: 20px 0;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .file-label {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #f3f4f6;
+            color: #374151;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .file-label:hover {
+            background-color: #e5e7eb;
+        }
+        .file-name {
+            margin-left: 15px;
+            color: #6b7280;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+            margin-top: 20px;
+        }
+        button:hover:not(:disabled) {
+            background-color: #1d4ed8;
+        }
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .progress-container {
+            display: none;
+            margin-top: 30px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background-color: #f3f4f6;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            font-weight: 500;
+            color: #374151;
+            z-index: 10;
+        }
+        .status {
+            margin-top: 15px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .error {
+            color: #dc2626;
+            margin-top: 15px;
+            padding: 12px;
+            background-color: #fee2e2;
+            border-radius: 8px;
+            display: none;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 30px;
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .warning {
+            background-color: #fef3c7;
+            border: 1px solid #f59e0b;
+            color: #92400e;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32-S3 Dashboard</h1>
+        <p class="subtitle">Over-The-Air Firmware Update</p>
+        
+        <div class="warning">
+            ⚠️ Do not disconnect power during update process
+        </div>
+        
+        <div class="file-select">
+            <label for="file" class="file-label">Choose Firmware File</label>
+            <span class="file-name" id="fileName">No file selected</span>
+            <input type="file" id="file" accept=".bin" />
+        </div>
+        
+        <button id="uploadBtn" disabled>Upload Firmware</button>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+            <p class="status" id="status">Uploading...</p>
+        </div>
+        
+        <div class="error" id="error"></div>
+        
+        <a href="/" class="back-link">← Back to Settings</a>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file');
+        const fileName = document.getElementById('fileName');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const status = document.getElementById('status');
+        const error = document.getElementById('error');
+        
+        fileInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                fileName.textContent = this.files[0].name;
+                uploadBtn.disabled = false;
+            }
+        });
+        
+        uploadBtn.addEventListener('click', async function() {
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            // Disable controls
+            uploadBtn.disabled = true;
+            fileInput.disabled = true;
+            error.style.display = 'none';
+            
+            // Show progress
+            progressContainer.style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('firmware', file);
+            
+            try {
+                const xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        progressFill.style.width = percentComplete + '%';
+                        progressText.textContent = percentComplete + '%';
+                    }
+                });
+                
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === XMLHttpRequest.DONE) {
+                        if (xhr.status === 200) {
+                            progressFill.style.width = '100%';
+                            progressText.textContent = '100%';
+                            status.textContent = 'Update successful! Device will restart...';
+                            status.style.color = '#059669';
+                            
+                            setTimeout(() => {
+                                status.textContent = 'Restarting... Please wait 30 seconds then refresh the page.';
+                            }, 2000);
+                        } else {
+                            error.textContent = 'Update failed: ' + (xhr.responseText || 'Unknown error');
+                            error.style.display = 'block';
+                            uploadBtn.disabled = false;
+                            fileInput.disabled = false;
+                            progressContainer.style.display = 'none';
+                        }
+                    }
+                };
+                
+                xhr.open('POST', '/ota/update');
+                xhr.send(file);
+                
+            } catch (err) {
+                error.textContent = 'Upload error: ' + err.message;
+                error.style.display = 'block';
+                uploadBtn.disabled = false;
+                fileInput.disabled = false;
+                progressContainer.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>"#;
+                    response.write_all(OTA_HTML.as_bytes())?;
                 } else {
                     // Show message that OTA will be available after first USB update
                     let msg = r#"<!DOCTYPE html>

@@ -1,7 +1,6 @@
 // OTA (Over-The-Air) update module
 
 pub mod manager;
-pub mod web_server;
 
 pub use manager::{OtaManager, OtaStatus};
 
@@ -11,11 +10,3 @@ pub use manager::{OtaManager, OtaStatus};
 // 3. Verify integrity
 // 4. Set boot partition
 // 5. Restart
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub enum UpdateSource {
-    WebUpload,      // Direct upload via web interface
-    GitHubRelease,  // Download from GitHub releases
-    LocalNetwork,   // mDNS discovery + local transfer
-}

@@ -1,31 +1,6 @@
 pub mod colors;
 pub mod font5x7;
 pub mod lcd_bus;
-pub mod debug_tests;
-// pub mod perf_metrics; // Temporarily disabled
-// pub mod lcd_cam; // Commented out - needs esp-hal for proper peripheral access
-pub mod lcd_cam_ll; // Low-level LCD_CAM bindings
-pub mod lcd_cam_dma; // DMA support for LCD_CAM
-pub mod lcd_cam_display; // Integrated LCD_CAM display driver
-pub mod lcd_cam_test; // LCD_CAM test functions
-pub mod simple_test; // Simple GPIO test
-pub mod lcd_cam_hal; // Safe LCD_CAM HAL
-pub mod lcd_cam_hal_test; // LCD_CAM HAL test
-pub mod lcd_cam_data_test; // LCD_CAM data transfer test
-pub mod lcd_cam_color_test; // LCD_CAM color drawing test
-pub mod lcd_cam_bulk_test; // LCD_CAM bulk transfer test
-pub mod lcd_cam_simple_test; // LCD_CAM simple verification test
-pub mod lcd_cam_debug_test; // LCD_CAM pin debug test
-pub mod lcd_cam_fifo_test; // LCD_CAM with proper FIFO configuration
-pub mod lcd_cam_output_test; // LCD_CAM with output enable configuration
-pub mod lcd_cam_logic_analyzer_test; // LCD_CAM test for logic analyzer
-pub mod lcd_cam_fixed_test; // LCD_CAM with proper LCD_MISC configuration
-pub mod lcd_cam_dma_fixed_test; // LCD_CAM with DMA and proper configuration
-// pub mod lcd_cam_esp_hal; // LCD_CAM using ESP-IDF LCD driver - needs fixing
-// pub mod lcd_cam_display_manager; // Hardware-accelerated DisplayManager
-pub mod lcd_cam_working; // Working LCD_CAM with shadow register fix
-// pub mod lcd_cam_pac_test; // LCD_CAM using PAC approach - needs proper bindings
-pub mod lcd_cam_minimal_test; // Minimal test to debug register access
 pub mod dirty_rect_manager; // Enhanced dirty rectangle management
 pub mod psram_frame_buffer; // PSRAM-backed frame buffer with differential updates
 pub mod esp_lcd_minimal_test; // Minimal esp_lcd test based on working template
