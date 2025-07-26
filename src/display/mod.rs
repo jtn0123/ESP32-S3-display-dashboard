@@ -3,24 +3,6 @@ pub mod font5x7;
 pub mod lcd_bus;
 pub mod dirty_rect_manager; // Enhanced dirty rectangle management
 pub mod psram_frame_buffer; // PSRAM-backed frame buffer with differential updates
-pub mod esp_lcd_minimal_test; // Minimal esp_lcd test based on working template
-pub mod esp_lcd_display_manager; // ESP_LCD DMA-based display manager
-pub mod esp_lcd_display_manager_fixed; // ESP_LCD with memory fixes
-pub mod esp_lcd_display_manager_day1; // Day 1: DMA descriptor & cache fixes
-pub mod esp_lcd_display_manager_day1_simple; // Day 1 simplified: minimal test
-pub mod esp_lcd_display_manager_optimized; // Optimized progressive implementation
-pub mod benchmark; // Performance benchmark for display implementations
-pub mod traits; // Common display traits
-pub mod diagnostics; // Memory and stack diagnostics
-pub mod gpio_display_manager; // GPIO-based display manager as fallback
-pub mod esp_lcd_display_manager_final_fix; // Final fix with all four BREAK solutions
-
-// Export the appropriate DisplayManager based on feature flag
-// Testing final fix with all four BREAK solutions
-#[cfg(feature = "esp_lcd_driver")]
-pub use esp_lcd_display_manager_final_fix::EspLcdDisplayManager as DisplayManager;
-
-// The default DisplayManager is already defined below
 
 // Color type not used - colors are defined as u16 constants
 
