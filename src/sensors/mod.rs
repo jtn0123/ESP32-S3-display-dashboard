@@ -1,9 +1,37 @@
 // Sensor abstraction layer for ESP32-S3 dashboard
 
 use anyhow::Result;
-use crate::hardware::battery::BatteryMonitor;
 use esp_idf_hal::gpio::Gpio4;
 use esp_idf_hal::adc::ADC1;
+
+// Simple battery monitor struct
+struct BatteryMonitor;
+
+impl BatteryMonitor {
+    fn new() -> Self {
+        BatteryMonitor
+    }
+    
+    fn voltage_to_percentage(voltage: u16) -> u8 {
+        // Convert millivolts to volts for calculation
+        let voltage_v = voltage as f32 / 1000.0;
+        // Simple linear approximation: 3.0V = 0%, 4.2V = 100%
+        let percentage = ((voltage_v - 3.0) / 1.2 * 100.0).clamp(0.0, 100.0);
+        percentage as u8
+    }
+    
+    fn is_battery_connected(_adc_raw: u16, voltage: u16) -> bool {
+        voltage > 2500 // Battery connected if voltage > 2.5V (in millivolts)
+    }
+    
+    fn is_on_usb_power(voltage: u16, battery_connected: bool) -> bool {
+        voltage > 4500 || !battery_connected // > 4.5V indicates USB power
+    }
+    
+    fn is_charging(voltage: u16, battery_connected: bool) -> bool {
+        battery_connected && voltage > 4000 // > 4.0V and battery connected = charging
+    }
+}
 
 // Sensor data struct for UI consumption
 #[derive(Debug, Clone)]

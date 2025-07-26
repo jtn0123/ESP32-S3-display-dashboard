@@ -35,6 +35,7 @@ mod psram;
 mod performance;
 mod core1_tasks;
 mod logging;
+mod metrics;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
@@ -176,6 +177,10 @@ fn main() -> Result<()> {
         peripherals.pins.gpio9,  // RD pin
     )?;
     info!("Display initialized - LCD power and backlight pins kept alive");
+    
+    // Initialize metrics system AFTER display is working
+    crate::metrics::init_metrics();
+    info!("Metrics system initialized");
 
     // ESP_LCD: Fast initialization path
     #[cfg(feature = "esp_lcd_driver")]
@@ -691,6 +696,17 @@ fn run_app(
                 processed_data.cpu_usage_core1
             );
             
+            // Update temperature and battery in metrics
+            {
+                let mut metrics = crate::metrics::metrics().lock().unwrap();
+                metrics.update_temperature(processed_data.temperature);
+                metrics.update_battery(
+                    processed_data.battery_voltage,
+                    processed_data.battery_percentage,
+                    processed_data.is_charging
+                );
+            }
+            
             last_sensor_update = Instant::now();
         }
         
@@ -816,6 +832,32 @@ fn run_app(
             
             // Update UI manager with accurate FPS
             ui_manager.update_fps(fps_stats.current_fps);
+            
+            // Update global metrics
+            {
+                let mut metrics = crate::metrics::metrics().lock().unwrap();
+                
+                // FPS and performance metrics
+                metrics.update_fps(fps_stats.current_fps, 30.0); // target 30 fps
+                
+                // CPU metrics - both individual cores and average
+                metrics.update_cpu_cores(cpu0_usage, cpu1_usage);
+                metrics.update_cpu((cpu0_usage + cpu1_usage) / 2, cpu_freq as u16);
+                
+                // Timing metrics
+                let render_ms = (perf_metrics.last_render_time.as_secs_f32() * 1000.0) as u32;
+                let flush_ms = (perf_metrics.last_flush_time.as_secs_f32() * 1000.0) as u32;
+                metrics.update_timings(render_ms, flush_ms);
+                
+                // WiFi signal strength
+                let rssi = network_manager.get_signal_strength();
+                metrics.update_wifi_signal(rssi);
+                
+                // Display brightness (static for now, but available for future use)
+                metrics.update_display(255); // Max brightness
+                
+                // Note: Temperature and battery are updated from Core 1 data elsewhere
+            }
             
             // Reset report timer
             last_fps_report = Instant::now();

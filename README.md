@@ -136,6 +136,32 @@ This build includes several performance enhancements:
 
 See `scripts/README.md` for detailed documentation.
 
+### Performance Monitoring (v5.37+)
+
+The ESP32 now includes built-in Prometheus metrics for monitoring performance:
+
+```bash
+# One-time setup
+./setup-mcp-servers.sh          # Install monitoring tools
+
+# Start monitoring
+./start-monitoring.sh            # Starts Prometheus & Grafana
+
+# View dashboards
+http://localhost:3000/d/esp32-dashboard/   # Grafana (admin/admin)
+
+# Stop monitoring
+./stop-monitoring.sh             # Stops monitoring services
+```
+
+Features:
+- Real-time FPS, CPU, temperature, and memory tracking
+- Historical performance graphs
+- MCP integration for AI-assisted monitoring
+- Zero performance impact on ESP32
+
+See `MONITORING_SETUP.md` for detailed instructions.
+
 #### Important: espflash Version Compatibility
 
 This project requires **espflash v3.3.0** due to compatibility issues with v4.x:

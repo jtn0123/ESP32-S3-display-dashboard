@@ -32,3 +32,17 @@ build/
 target/
 .embuild/
 Cargo.lock
+
+# Component lock files (auto-generated)
+components_esp32s3.lock
+components_*.lock
+
+# MCP Servers (installed separately in ~/mcp-servers)
+mcp-servers/
+mcp-telemetry/
+mcp-monitor/
+
+# Prometheus/Grafana data (if accidentally created in project)
+prometheus.yml
+grafana.db
+*.log

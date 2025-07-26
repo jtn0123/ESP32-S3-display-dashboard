@@ -194,3 +194,27 @@ Example entities to track:
 - Performance metrics over time
 - Known issues and their solutions
 - Code module dependencies
+
+### 3. Performance Monitoring MCP Servers
+
+For enhanced debugging and monitoring, these MCP servers can be integrated:
+
+#### MCP Telemetry (`xprilion/mcp-telemetry`)
+- **Purpose**: OpenTelemetry tracing for performance debugging
+- **Integration**: Connects to ESP32's telnet server (port 23)
+- **Features**: Trace display render times, identify bottlenecks, analyze performance patterns
+- **Setup**: Requires Weights & Biases API key
+
+#### Grafana MCP (`grafana/mcp-grafana`)
+- **Purpose**: Visualize Prometheus metrics from ESP32
+- **Integration**: Queries metrics endpoint at `http://<ESP32-IP>/metrics`
+- **Features**: Historical FPS trends, resource usage graphs, custom dashboards
+- **Requirements**: Grafana 9.0+, Prometheus scraper
+
+#### System Monitor MCP (`seekrays/mcp-monitor`)
+- **Purpose**: Real-time system resource monitoring
+- **Integration**: Reads JSON metrics from telnet stream
+- **Features**: CPU per-core usage, memory stats, network metrics
+- **Usage**: Monitor ESP32 alongside development machine
+
+See `MCP_INTEGRATION_GUIDE.md` for detailed setup instructions.

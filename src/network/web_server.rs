@@ -99,6 +99,113 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
+        // Prometheus metrics endpoint
+        server.fn_handler("/metrics", esp_idf_svc::http::Method::Get, move |req| {
+            // Get system metrics
+            let uptime_seconds = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u64;
+            let heap_free = unsafe { esp_idf_sys::esp_get_free_heap_size() };
+            let heap_total = unsafe { esp_idf_sys::esp_get_minimum_free_heap_size() };
+            
+            // Get metrics data
+            let metrics_data = crate::metrics::metrics().lock().unwrap().clone();
+            
+            // Format all metrics in Prometheus format
+            let metrics = format!(
+                "# HELP esp32_uptime_seconds Total uptime in seconds\n\
+                 # TYPE esp32_uptime_seconds counter\n\
+                 esp32_uptime_seconds {}\n\
+                 \n\
+                 # HELP esp32_heap_free_bytes Current free heap memory in bytes\n\
+                 # TYPE esp32_heap_free_bytes gauge\n\
+                 esp32_heap_free_bytes {}\n\
+                 \n\
+                 # HELP esp32_heap_total_bytes Total heap memory in bytes\n\
+                 # TYPE esp32_heap_total_bytes gauge\n\
+                 esp32_heap_total_bytes {}\n\
+                 \n\
+                 # HELP esp32_fps_actual Current actual frames per second\n\
+                 # TYPE esp32_fps_actual gauge\n\
+                 esp32_fps_actual {:.1}\n\
+                 \n\
+                 # HELP esp32_fps_target Target frames per second\n\
+                 # TYPE esp32_fps_target gauge\n\
+                 esp32_fps_target {:.1}\n\
+                 \n\
+                 # HELP esp32_cpu_usage_percent CPU usage percentage (average)\n\
+                 # TYPE esp32_cpu_usage_percent gauge\n\
+                 esp32_cpu_usage_percent {}\n\
+                 \n\
+                 # HELP esp32_cpu0_usage_percent CPU Core 0 usage percentage\n\
+                 # TYPE esp32_cpu0_usage_percent gauge\n\
+                 esp32_cpu0_usage_percent {}\n\
+                 \n\
+                 # HELP esp32_cpu1_usage_percent CPU Core 1 usage percentage\n\
+                 # TYPE esp32_cpu1_usage_percent gauge\n\
+                 esp32_cpu1_usage_percent {}\n\
+                 \n\
+                 # HELP esp32_cpu_freq_mhz CPU frequency in MHz\n\
+                 # TYPE esp32_cpu_freq_mhz gauge\n\
+                 esp32_cpu_freq_mhz {}\n\
+                 \n\
+                 # HELP esp32_temperature_celsius Internal temperature in Celsius\n\
+                 # TYPE esp32_temperature_celsius gauge\n\
+                 esp32_temperature_celsius {:.1}\n\
+                 \n\
+                 # HELP esp32_wifi_rssi_dbm WiFi signal strength in dBm\n\
+                 # TYPE esp32_wifi_rssi_dbm gauge\n\
+                 esp32_wifi_rssi_dbm {}\n\
+                 \n\
+                 # HELP esp32_display_brightness Display brightness level (0-255)\n\
+                 # TYPE esp32_display_brightness gauge\n\
+                 esp32_display_brightness {}\n\
+                 \n\
+                 # HELP esp32_battery_voltage_mv Battery voltage in millivolts\n\
+                 # TYPE esp32_battery_voltage_mv gauge\n\
+                 esp32_battery_voltage_mv {}\n\
+                 \n\
+                 # HELP esp32_battery_percentage Battery charge percentage\n\
+                 # TYPE esp32_battery_percentage gauge\n\
+                 esp32_battery_percentage {}\n\
+                 \n\
+                 # HELP esp32_battery_charging Battery charging status (0=not charging, 1=charging)\n\
+                 # TYPE esp32_battery_charging gauge\n\
+                 esp32_battery_charging {}\n\
+                 \n\
+                 # HELP esp32_render_time_milliseconds Display render time in milliseconds\n\
+                 # TYPE esp32_render_time_milliseconds gauge\n\
+                 esp32_render_time_milliseconds {}\n\
+                 \n\
+                 # HELP esp32_flush_time_milliseconds Display flush time in milliseconds\n\
+                 # TYPE esp32_flush_time_milliseconds gauge\n\
+                 esp32_flush_time_milliseconds {}\n",
+                uptime_seconds,
+                heap_free,
+                heap_total,
+                metrics_data.fps_actual,
+                metrics_data.fps_target,
+                metrics_data.cpu_usage_percent,
+                metrics_data.cpu0_usage_percent,
+                metrics_data.cpu1_usage_percent,
+                metrics_data.cpu_freq_mhz,
+                metrics_data.temperature_celsius,
+                metrics_data.wifi_rssi_dbm,
+                metrics_data.display_brightness,
+                metrics_data.battery_voltage_mv,
+                metrics_data.battery_percentage,
+                if metrics_data.is_charging { 1 } else { 0 },
+                metrics_data.render_time_ms,
+                metrics_data.flush_time_ms
+            );
+            
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "text/plain; version=0.0.4")]
+            )?;
+            response.write_all(metrics.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
         // Always add OTA endpoints (they'll show error if OTA not available)
         {
             log::info!("Adding OTA endpoints to web server...");
