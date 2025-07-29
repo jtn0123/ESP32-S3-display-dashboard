@@ -32,13 +32,13 @@ impl SensorTask {
     
     pub fn new_with_channel(tx: Sender<SensorUpdate>) -> Self {
         // NOTE: Temperature sensor is initialized by main SensorManager on Core 0
-        // Core 1 will read simulated values for now to avoid conflicts
-        log::info!("Core 1 SensorTask: Using simulated temperature (main sensor on Core 0)");
+        // Core 1 will return N/A values to avoid confusion with fake data
+        log::info!("Core 1 SensorTask: Hardware sensors on Core 0, returning N/A values");
         
         Self {
             tx,
             temp_sensor_handle: None,  // Don't initialize here to avoid conflicts
-            temp_history: vec![45.0; 5],  // 5-sample moving average, typical ESP32 temp
+            temp_history: vec![0.0; 5],  // 0.0 indicates N/A
             temp_index: 0,
         }
     }
@@ -58,12 +58,15 @@ impl SensorTask {
         // Read CPU usage
         let (cpu0, cpu1) = self.read_cpu_usage();
         
-        // Format CPU usage - show "N/A" if 0 (not available)
+        // Format values - show "N/A" if 0 (not available)
+        let temp_str = if temperature == 0.0 { "N/A".to_string() } else { format!("{:.1}°C", temperature) };
+        let battery_str = if battery_percentage == 0 { "N/A".to_string() } else { format!("{}%", battery_percentage) };
+        let voltage_str = if battery_voltage == 0 { "N/A".to_string() } else { format!("{:.2}V", battery_voltage as f32 / 1000.0) };
         let cpu0_str = if cpu0 == 0 { "N/A".to_string() } else { format!("{}%", cpu0) };
         let cpu1_str = if cpu1 == 0 { "N/A".to_string() } else { format!("{}%", cpu1) };
         
-        log::info!("Core 1 Sensor: Temp={:.1}°C (filtered={:.1}°C), Battery={}% ({:.2}V), CPU0={}, CPU1={}", 
-            temperature, filtered_temp, battery_percentage, battery_voltage as f32 / 1000.0, cpu0_str, cpu1_str);
+        log::info!("Core 1 Sensor: Temp={}, Battery={} ({}), CPU0={}, CPU1={}", 
+            temp_str, battery_str, voltage_str, cpu0_str, cpu1_str);
         
         // Send update to Core 0
         let update = SensorUpdate {
@@ -87,40 +90,19 @@ impl SensorTask {
     }
     
     fn read_temperature(&self) -> f32 {
-        // Use simulated temperature with realistic variation
-        // ESP32-S3 typically runs between 40-55°C under normal load
-        let time_ms = unsafe { esp_idf_sys::esp_timer_get_time() / 1000 };
-        
-        // Base temperature with slow variation
-        let base_temp = 45.0;
-        let slow_variation = ((time_ms as f64 / 30000.0).sin() * 3.0) as f32;
-        let fast_variation = ((time_ms as f64 / 5000.0).sin() * 1.0) as f32;
-        
-        base_temp + slow_variation + fast_variation
+        // Core 1 cannot access the temperature sensor (initialized on Core 0)
+        // Return 0.0 to indicate "not available" - Core 0 has the real sensor
+        // This prevents confusion from fake/simulated values
+        log::debug!("Core 1: Temperature reading not available (sensor on Core 0)");
+        0.0
     }
     
     fn read_battery(&self) -> (u8, u16, bool, bool) {
-        // TODO: Implement real battery reading via ADC when available
-        // For T-Display-S3:
-        // - Battery voltage on GPIO4 (through voltage divider)
-        // - Charging status would be on GPIO6 (if connected)
-        
-        // For now, detect if we're on USB power
-        // When on USB, voltage is typically stable at ~5V
-        // Return realistic values for USB power
-        
-        let is_on_usb = true; // Always true when powered via USB
-        let is_charging = false; // No battery connected in most dev setups
-        
-        if is_on_usb {
-            // USB powered - full "battery"
-            (100, 4200, is_charging, is_on_usb)
-        } else {
-            // Battery powered (not implemented yet)
-            let voltage = 3700; // Nominal 3.7V LiPo
-            let percentage = 50; // Assume half charge
-            (percentage, voltage, is_charging, is_on_usb)
-        }
+        // Core 1 cannot access ADC hardware (initialized on Core 0)
+        // Return zeros to indicate "not available" - Core 0 has the real battery monitor
+        // This prevents confusion from fake/simulated values
+        log::debug!("Core 1: Battery reading not available (ADC on Core 0)");
+        (0, 0, false, false)
     }
     
     fn read_cpu_usage(&self) -> (u8, u8) {
