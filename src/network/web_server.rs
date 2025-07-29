@@ -106,12 +106,21 @@ impl WebConfigServer {
             let heap_free = unsafe { esp_idf_sys::esp_get_free_heap_size() };
             let heap_total = unsafe { esp_idf_sys::esp_get_minimum_free_heap_size() };
             
+            // Get device info for labels
+            let version = crate::version::DISPLAY_VERSION;
+            let board_type = "ESP32-S3";
+            let chip_model = "T-Display-S3";
+            
             // Get metrics data
             let metrics_data = crate::metrics::metrics().lock().unwrap().clone();
             
             // Format all metrics in Prometheus format
             let metrics = format!(
-                "# HELP esp32_uptime_seconds Total uptime in seconds\n\
+                "# HELP esp32_device_info Device information\n\
+                 # TYPE esp32_device_info gauge\n\
+                 esp32_device_info{{version=\"{}\",board=\"{}\",model=\"{}\"}} 1\n\
+                 \n\
+                 # HELP esp32_uptime_seconds Total uptime in seconds\n\
                  # TYPE esp32_uptime_seconds counter\n\
                  esp32_uptime_seconds {}\n\
                  \n\
@@ -155,6 +164,10 @@ impl WebConfigServer {
                  # TYPE esp32_wifi_rssi_dbm gauge\n\
                  esp32_wifi_rssi_dbm {}\n\
                  \n\
+                 # HELP esp32_wifi_connected WiFi connection status (0=disconnected, 1=connected)\n\
+                 # TYPE esp32_wifi_connected gauge\n\
+                 esp32_wifi_connected{}{{ssid=\"{}\"}} {}\n\
+                 \n\
                  # HELP esp32_display_brightness Display brightness level (0-255)\n\
                  # TYPE esp32_display_brightness gauge\n\
                  esp32_display_brightness {}\n\
@@ -177,7 +190,34 @@ impl WebConfigServer {
                  \n\
                  # HELP esp32_flush_time_milliseconds Display flush time in milliseconds\n\
                  # TYPE esp32_flush_time_milliseconds gauge\n\
-                 esp32_flush_time_milliseconds {}\n",
+                 esp32_flush_time_milliseconds {}\n\
+                 \n\
+                 # HELP esp32_frame_skip_rate_percent Percentage of frames skipped\n\
+                 # TYPE esp32_frame_skip_rate_percent gauge\n\
+                 esp32_frame_skip_rate_percent {:.1}\n\
+                 \n\
+                 # HELP esp32_total_frames_count Total number of frames processed\n\
+                 # TYPE esp32_total_frames_count counter\n\
+                 esp32_total_frames_count {}\n\
+                 \n\
+                 # HELP esp32_skipped_frames_count Number of frames skipped\n\
+                 # TYPE esp32_skipped_frames_count counter\n\
+                 esp32_skipped_frames_count {}\n\
+                 \n\
+                 # HELP esp32_psram_free_bytes Free PSRAM memory in bytes\n\
+                 # TYPE esp32_psram_free_bytes gauge\n\
+                 esp32_psram_free_bytes {}\n\
+                 \n\
+                 # HELP esp32_psram_total_bytes Total PSRAM memory in bytes\n\
+                 # TYPE esp32_psram_total_bytes gauge\n\
+                 esp32_psram_total_bytes {}\n\
+                 \n\
+                 # HELP esp32_psram_used_percent PSRAM usage percentage\n\
+                 # TYPE esp32_psram_used_percent gauge\n\
+                 esp32_psram_used_percent {:.1}\n",
+                version,
+                board_type,
+                chip_model,
                 uptime_seconds,
                 heap_free,
                 heap_total,
@@ -189,12 +229,29 @@ impl WebConfigServer {
                 metrics_data.cpu_freq_mhz,
                 metrics_data.temperature_celsius,
                 metrics_data.wifi_rssi_dbm,
+                if metrics_data.wifi_connected { "" } else { "_disconnected" },
+                metrics_data.wifi_ssid,
+                if metrics_data.wifi_connected { 1 } else { 0 },
                 metrics_data.display_brightness,
                 metrics_data.battery_voltage_mv,
                 metrics_data.battery_percentage,
                 if metrics_data.is_charging { 1 } else { 0 },
                 metrics_data.render_time_ms,
-                metrics_data.flush_time_ms
+                metrics_data.flush_time_ms,
+                if metrics_data.frame_count > 0 {
+                    (metrics_data.skip_count as f32 / metrics_data.frame_count as f32 * 100.0)
+                } else {
+                    0.0
+                },
+                metrics_data.frame_count,
+                metrics_data.skip_count,
+                metrics_data.psram_free_bytes,
+                metrics_data.psram_total_bytes,
+                if metrics_data.psram_total_bytes > 0 {
+                    ((metrics_data.psram_total_bytes - metrics_data.psram_free_bytes) as f32 / metrics_data.psram_total_bytes as f32 * 100.0)
+                } else {
+                    0.0
+                }
             );
             
             let mut response = req.into_response(

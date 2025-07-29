@@ -7,6 +7,7 @@ pub struct FpsTracker {
     frame_times: Vec<Duration>,
     max_samples: usize,
     last_frame_time: Instant,
+    last_rendered_frame_time: Instant,
     
     // Statistics
     current_fps: f32,
@@ -25,17 +26,19 @@ pub struct FpsTracker {
 
 impl FpsTracker {
     pub fn new() -> Self {
+        let now = Instant::now();
         Self {
             frame_times: Vec::with_capacity(60), // Keep last 60 frames
             max_samples: 60,
-            last_frame_time: Instant::now(),
+            last_frame_time: now,
+            last_rendered_frame_time: now,
             current_fps: 0.0,
             average_fps: 0.0,
             min_fps: f32::MAX,
             max_fps: 0.0,
             total_frames: 0,
             skipped_frames: 0,
-            last_update: Instant::now(),
+            last_update: now,
             update_interval: Duration::from_millis(250), // Update stats 4x per second
         }
     }
@@ -51,6 +54,32 @@ impl FpsTracker {
     /// Call when a frame is skipped (no actual display update)
     pub fn frame_skipped(&mut self) {
         self.skipped_frames += 1;
+    }
+    
+    /// Call when a frame is actually rendered (and flushed to display)
+    pub fn frame_rendered(&mut self, _frame_time: Duration) {
+        let now = Instant::now();
+        
+        // Calculate time since last rendered frame
+        let time_since_last = now.duration_since(self.last_rendered_frame_time);
+        self.last_rendered_frame_time = now;
+        
+        self.total_frames += 1;
+        
+        // Only store frame timing if this isn't the first frame
+        if self.total_frames > 1 {
+            // Store time between frames, not frame render time
+            if self.frame_times.len() >= self.max_samples {
+                self.frame_times.remove(0);
+            }
+            self.frame_times.push(time_since_last);
+        }
+        
+        // Update statistics if interval elapsed
+        if self.last_update.elapsed() >= self.update_interval {
+            self.update_statistics();
+            self.last_update = Instant::now();
+        }
     }
     
     /// Internal: record frame completion
@@ -99,6 +128,14 @@ impl FpsTracker {
             } else {
                 0.0
             };
+            
+            // Debug check for unrealistic FPS
+            if self.current_fps > 100.0 {
+                log::warn!("[FPS] Unrealistic FPS calculated: {:.1} from avg frame time: {:.3}ms", 
+                    self.current_fps, recent_avg.as_secs_f32() * 1000.0);
+                // Cap at a reasonable maximum
+                self.current_fps = self.current_fps.min(60.0);
+            }
         }
         
         // Update min/max
@@ -108,6 +145,10 @@ impl FpsTracker {
     
     /// Get current FPS
     pub fn current_fps(&self) -> f32 {
+        // If we have no data yet, return 0.0 to indicate no frames
+        if self.frame_times.is_empty() && self.total_frames == 0 {
+            return 0.0;
+        }
         self.current_fps
     }
     

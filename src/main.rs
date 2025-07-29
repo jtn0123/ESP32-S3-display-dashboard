@@ -629,7 +629,9 @@ fn run_app(
     // due to thread safety constraints with ESP-IDF HTTP server
 
     // Main UI loop with performance telemetry
-    let _target_frame_time = Duration::from_millis(33); // ~30 FPS
+    // Display hardware limitation: ~10 FPS max with parallel GPIO
+    const DISPLAY_MAX_FPS: f32 = 10.0;
+    let _target_frame_time = Duration::from_millis(100); // ~10 FPS
     let mut last_sensor_update = Instant::now();
     let sensor_update_interval = Duration::from_secs(10); // Reduced from 5s to 10s
     
@@ -651,34 +653,48 @@ fn run_app(
     let mut last_cpu0_usage = 0u8;
     let mut last_cpu1_usage = 0u8;
     
+    // Button polling optimization - only check every 20ms
+    let mut last_button_check = Instant::now();
+    let button_check_interval = Duration::from_millis(20);
+    
     // Memory diagnostics tracking (ESP_LCD only)
     #[cfg(feature = "esp_lcd_driver")]
     let mut last_memory_check = Instant::now();
     #[cfg(feature = "esp_lcd_driver")]
     let memory_check_interval = Duration::from_secs(30);
     
+    // Logging optimization - track previous values to reduce redundant logs
+    let mut last_logged_fps: f32 = 0.0;
+    let mut last_logged_cpu0: u8 = 0;
+    let mut last_logged_cpu1: u8 = 0;
+    const FPS_CHANGE_THRESHOLD: f32 = 5.0;  // Only log if FPS changes by more than 5
+    const CPU_CHANGE_THRESHOLD: u8 = 10;    // Only log if CPU usage changes by more than 10%
+    
     log::info!("Main render loop started - entering infinite loop");
 
     loop {
         // Start frame timing
-        let frame_timer = perf_metrics.fps_tracker.frame_start();
         let frame_start = Instant::now();
         
         // Removed debug logging from hot path
 
-        // Handle button input
-        if let Some(event) = button_manager.poll() {
-            ui_manager.handle_button_event(event)?;
-            // Reset activity timer on button press
-            display_manager.reset_activity_timer();
+        // Handle button input with debounce (only check every 20ms)
+        if last_button_check.elapsed() >= button_check_interval {
+            if let Some(event) = button_manager.poll() {
+                ui_manager.handle_button_event(event)?;
+                // Reset activity timer on button press
+                display_manager.reset_activity_timer();
+            }
+            last_button_check = Instant::now();
         }
 
         // Check for updates from Core 1
         // Process data from Core 1 (non-blocking)
         if let Ok(processed_data) = core1_channels.processed_rx.try_recv() {
-            log::debug!("Main: Received sensor data from Core 1 - Temp={:.1}°C, Battery={}%, CPU0={}%, CPU1={}%",
-                processed_data.temperature, processed_data.battery_percentage, 
-                processed_data.cpu_usage_core0, processed_data.cpu_usage_core1);
+            // Commented out to reduce log spam - this can fire many times per second
+            // log::debug!("Main: Received sensor data from Core 1 - Temp={:.1}°C, Battery={}%, CPU0={}%, CPU1={}%",
+            //     processed_data.temperature, processed_data.battery_percentage, 
+            //     processed_data.cpu_usage_core0, processed_data.cpu_usage_core1);
                 
             // Update UI with processed sensor data
             ui_manager.update_sensor_data(sensors::SensorData {
@@ -755,20 +771,27 @@ fn run_app(
         // Track whether frame was actually rendered or skipped
         if rendered {
             perf_metrics.record_render_time(render_time);
+            
+            // Update auto-dim
+            display_manager.update_auto_dim()?;
+            
+            // Flush to display
+            let flush_start = Instant::now();
+            display_manager.flush()?;
+            let flush_time = flush_start.elapsed();
+            perf_metrics.record_flush_time(flush_time);
         } else {
             // Frame was skipped by UI manager
             perf_metrics.fps_tracker.frame_skipped();
+            
+            // Still update auto-dim even on skipped frames
+            display_manager.update_auto_dim()?;
         }
         
-        // Removed redundant watchdog reset
-        
-        // Update auto-dim
-        display_manager.update_auto_dim()?;
-        
-        let flush_start = Instant::now();
-        display_manager.flush()?;
-        let flush_time = flush_start.elapsed();
-        perf_metrics.record_flush_time(flush_time);
+        // Track ALL loop iterations for accurate main loop FPS
+        // Record every frame (both rendered and skipped) to show effective FPS
+        let loop_time = frame_start.elapsed();
+        perf_metrics.fps_tracker.frame_rendered(loop_time);
 
         // Frame timing and telemetry
         let frame_time = frame_start.elapsed();
@@ -809,36 +832,77 @@ fn run_app(
             // Update UI with core stats
             ui_manager.update_core_stats(cpu0_usage, cpu1_usage, core_stats.core0_tasks, core_stats.core1_tasks);
             
-            let perf_msg = format!("[PERF] FPS: {:.1} (avg: {:.1}) | Skip: {:.1}% | Render: {:.1}ms | Flush: {:.1}ms | CPU: {}MHz | Heap: {}KB",
-                fps_stats.current_fps,
-                fps_stats.average_fps,
-                fps_stats.skip_rate,
-                perf_metrics.last_render_time.as_secs_f32() * 1000.0,
-                perf_metrics.last_flush_time.as_secs_f32() * 1000.0,
-                cpu_freq,
-                perf_metrics.heap_free / 1024
-            );
-            log::info!("{}", perf_msg);
+            // Calculate if we're meeting the target
+            let fps_status = if fps_stats.current_fps >= DISPLAY_MAX_FPS * 0.9 {
+                "MAX"  // At hardware limit
+            } else if fps_stats.current_fps >= DISPLAY_MAX_FPS * 0.5 {
+                "OK"   // Acceptable performance
+            } else {
+                "LOW"  // Below target
+            };
             
-            let cores_msg = format!("[CORES] CPU0: {}% | CPU1: {}% | Tasks: C0={} C1={} Total={} | Avg: {}μs",
-                cpu0_usage,
-                cpu1_usage,
-                core_stats.core0_tasks,
-                core_stats.core1_tasks,
-                core_stats.total_tasks,
-                core_stats.avg_task_time_us
-            );
-            log::info!("{}", cores_msg);
+            // Only log if FPS or CPU usage changed significantly
+            let fps_changed = (fps_stats.current_fps - last_logged_fps).abs() > FPS_CHANGE_THRESHOLD;
+            let cpu0_changed = (cpu0_usage as i16 - last_logged_cpu0 as i16).abs() > CPU_CHANGE_THRESHOLD as i16;
+            let cpu1_changed = (cpu1_usage as i16 - last_logged_cpu1 as i16).abs() > CPU_CHANGE_THRESHOLD as i16;
+            
+            if fps_changed || cpu0_changed || cpu1_changed {
+                let perf_msg = format!("[PERF] FPS: {:.1}/{:.0} [{}] | Skip: {:.1}% | Render: {:.1}ms | Flush: {:.1}ms | CPU: {}MHz | Heap: {}KB",
+                    fps_stats.current_fps,
+                    DISPLAY_MAX_FPS,
+                    fps_status,
+                    fps_stats.skip_rate,
+                    perf_metrics.last_render_time.as_secs_f32() * 1000.0,
+                    perf_metrics.last_flush_time.as_secs_f32() * 1000.0,
+                    cpu_freq,
+                    perf_metrics.heap_free / 1024
+                );
+                log::info!("{}", perf_msg);
+                
+                // Format CPU usage - show "N/A" if 0 (not available)
+                let cpu0_str = if cpu0_usage == 0 { "N/A".to_string() } else { format!("{}%", cpu0_usage) };
+                let cpu1_str = if cpu1_usage == 0 { "N/A".to_string() } else { format!("{}%", cpu1_usage) };
+                
+                let cores_msg = format!("[CORES] CPU0: {} | CPU1: {} | Tasks: C0={} C1={} Total={} | Avg: {}μs",
+                    cpu0_str,
+                    cpu1_str,
+                    core_stats.core0_tasks,
+                    core_stats.core1_tasks,
+                    core_stats.total_tasks,
+                    core_stats.avg_task_time_us
+                );
+                log::info!("{}", cores_msg);
+                
+                // Update last logged values
+                last_logged_fps = fps_stats.current_fps;
+                last_logged_cpu0 = cpu0_usage;
+                last_logged_cpu1 = cpu1_usage;
+            }
             
             // Update UI manager with accurate FPS
             ui_manager.update_fps(fps_stats.current_fps);
+            
+            // Debug log if FPS is very low or zero
+            if fps_stats.current_fps < 1.0 {
+                log::debug!("[FPS] Low/zero FPS detected: {:.1}, frames: {}, skipped: {}", 
+                    fps_stats.current_fps, fps_stats.total_frames, fps_stats.skipped_frames);
+            }
             
             // Update global metrics
             {
                 let mut metrics = crate::metrics::metrics().lock().unwrap();
                 
                 // FPS and performance metrics
-                metrics.update_fps(fps_stats.current_fps, 30.0); // target 30 fps
+                metrics.update_fps(fps_stats.current_fps, DISPLAY_MAX_FPS); // realistic target based on hardware
+                
+                // Frame skip metrics
+                metrics.update_frame_stats(fps_stats.total_frames, fps_stats.skipped_frames);
+                
+                // Debug log what we're storing
+                if fps_stats.current_fps > 100.0 {
+                    log::warn!("[METRICS] Unrealistic FPS being stored: {:.1} (frames: {}, skipped: {})", 
+                        fps_stats.current_fps, fps_stats.total_frames, fps_stats.skipped_frames);
+                }
                 
                 // CPU metrics - both individual cores and average
                 metrics.update_cpu_cores(cpu0_usage, cpu1_usage);
@@ -849,12 +913,23 @@ fn run_app(
                 let flush_ms = (perf_metrics.last_flush_time.as_secs_f32() * 1000.0) as u32;
                 metrics.update_timings(render_ms, flush_ms);
                 
-                // WiFi signal strength
+                // WiFi signal strength and connection status
                 let rssi = network_manager.get_signal_strength();
                 metrics.update_wifi_signal(rssi);
+                metrics.update_wifi_status(
+                    network_manager.is_connected(),
+                    network_manager.get_ssid().to_string()
+                );
                 
                 // Display brightness (static for now, but available for future use)
                 metrics.update_display(255); // Max brightness
+                
+                // PSRAM metrics
+                if crate::psram::PsramAllocator::is_available() {
+                    let psram_free = crate::psram::PsramAllocator::get_free_size() as u32;
+                    let psram_total = crate::psram::PsramAllocator::get_size() as u32;
+                    metrics.update_psram(psram_free, psram_total);
+                }
                 
                 // Note: Temperature and battery are updated from Core 1 data elsewhere
             }
@@ -873,7 +948,7 @@ fn run_app(
         }
         
         // Frame rate limiting - toggleable for performance testing
-        const ENABLE_FPS_CAP: bool = false; // Set to true for production, false for benchmarking
+        const ENABLE_FPS_CAP: bool = true; // Set to true for production, false for benchmarking
         
         if ENABLE_FPS_CAP {
             let target_60fps = Duration::from_micros(16667); // ~60 FPS

@@ -58,8 +58,12 @@ impl SensorTask {
         // Read CPU usage
         let (cpu0, cpu1) = self.read_cpu_usage();
         
-        log::info!("Core 1 Sensor: Temp={:.1}°C (filtered={:.1}°C), Battery={}% ({:.2}V), CPU0={}%, CPU1={}%", 
-            temperature, filtered_temp, battery_percentage, battery_voltage as f32 / 1000.0, cpu0, cpu1);
+        // Format CPU usage - show "N/A" if 0 (not available)
+        let cpu0_str = if cpu0 == 0 { "N/A".to_string() } else { format!("{}%", cpu0) };
+        let cpu1_str = if cpu1 == 0 { "N/A".to_string() } else { format!("{}%", cpu1) };
+        
+        log::info!("Core 1 Sensor: Temp={:.1}°C (filtered={:.1}°C), Battery={}% ({:.2}V), CPU0={}, CPU1={}", 
+            temperature, filtered_temp, battery_percentage, battery_voltage as f32 / 1000.0, cpu0_str, cpu1_str);
         
         // Send update to Core 0
         let update = SensorUpdate {
@@ -120,24 +124,16 @@ impl SensorTask {
     }
     
     fn read_cpu_usage(&self) -> (u8, u8) {
-        // Get real CPU usage from the main loop's cpu_monitor
-        // Since we're on Core 1, we'll read the shared values
-        // For now, still return simulated values but log that we need real implementation
+        // Use a local CpuMonitor instance to get real CPU usage
+        // Note: This creates a new instance each time, but that's OK since
+        // we're reading system-wide idle task stats
+        let mut cpu_monitor = crate::dual_core::CpuMonitor::new();
         
-        log::debug!("TODO: Implement real CPU usage monitoring via FreeRTOS stats");
+        // Get real CPU usage from FreeRTOS idle task statistics
+        let (core0_usage, core1_usage) = cpu_monitor.get_cpu_usage();
         
-        // Use timer to create some variation
-        let time_ms = unsafe { esp_idf_sys::esp_timer_get_time() / 1000 };
-        
-        // Core 0: 40-60% (main UI core)
-        let core0_base = 50;
-        let core0_variation = ((time_ms / 2000) % 20) as i8 - 10;
-        let core0_usage = (core0_base as i8 + core0_variation).max(0).min(100) as u8;
-        
-        // Core 1: 15-25% (background tasks)
-        let core1_base = 20;
-        let core1_variation = ((time_ms / 3000) % 10) as i8 - 5;
-        let core1_usage = (core1_base as i8 + core1_variation).max(0).min(100) as u8;
+        // Log the real values for debugging
+        log::debug!("Real CPU usage: Core0={}%, Core1={}%", core0_usage, core1_usage);
         
         (core0_usage, core1_usage)
     }

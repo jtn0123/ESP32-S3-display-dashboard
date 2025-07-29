@@ -175,8 +175,9 @@ unsafe extern "C" fn core1_task_entry(pvParameters: *mut std::ffi::c_void) {
             last_process = now;
         }
         
-        // Yield to prevent watchdog
-        esp_idf_hal::delay::FreeRtos::delay_ms(10);
+        // Yield to prevent watchdog - increased from 10ms to 50ms to reduce Core 1 CPU usage
+        // This still gives us 20Hz loop rate which is plenty for sensor/network monitoring
+        esp_idf_hal::delay::FreeRtos::delay_ms(50);
     }
 }
 

@@ -48,6 +48,8 @@ pub struct UiManager {
     string_buffer: String,
     // Skip render counter
     skip_renders: u32,
+    // FPS rendering
+    force_fps_render: bool,
     total_renders: u32,
     // Text cache for static labels
     text_cache: Vec<TextCache>,
@@ -115,6 +117,7 @@ impl UiManager {
             cached_battery: 0,
             string_buffer: String::with_capacity(32),
             skip_renders: 0,
+            force_fps_render: false,
             total_renders: 0,
             text_cache: Vec::with_capacity(20),
             cached_ota_time: 0,
@@ -263,6 +266,10 @@ impl UiManager {
         }
         
         // Render FPS counter (always visible in corner)
+        // Force render after screen change to ensure it's visible
+        if screen_changed {
+            self.force_fps_render = true;
+        }
         self.render_fps_counter(display)?;
         
         // Render OTA overlay if OTA is in progress
@@ -926,11 +933,18 @@ impl UiManager {
         static mut LAST_FPS: f32 = -1.0; // Initialize to -1 to force first render
         
         unsafe {
-            if LAST_FPS >= 0.0 && (self.fps - LAST_FPS).abs() < 0.5 {
+            // Always render if:
+            // - Force render is requested (e.g., after screen change)
+            // - FPS is 0.0 (ensures initial display and error states)
+            // - Change is significant
+            if !self.force_fps_render && LAST_FPS >= 0.0 && self.fps > 0.0 && (self.fps - LAST_FPS).abs() < 0.5 {
                 return Ok(()); // Skip update if change is less than 0.5 FPS
             }
             LAST_FPS = self.fps;
         }
+        
+        // Clear the force render flag
+        self.force_fps_render = false;
         
         // Draw FPS in top-right corner, below header
         let fps_text = format!("{:.1} FPS", self.fps);
@@ -945,6 +959,9 @@ impl UiManager {
                     else if self.fps >= 10.0 { YELLOW } 
                     else { PRIMARY_RED };
         display.draw_text(x, y, &fps_text, color, None, 1)?;
+        
+        // Note: The display manager already marks the area as dirty when we draw
+        // so we don't need to explicitly mark it here
         
         Ok(())
     }

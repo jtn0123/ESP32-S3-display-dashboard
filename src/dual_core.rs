@@ -225,7 +225,7 @@ impl DualCoreProcessor {
     
 }
 
-/// CPU load monitoring
+/// CPU load monitoring using FreeRTOS idle task statistics
 pub struct CpuMonitor {
     last_idle_ticks: [u32; 2],
     last_sample_time: i64,
@@ -235,29 +235,32 @@ impl CpuMonitor {
     pub fn new() -> Self {
         Self {
             last_idle_ticks: [0; 2],
-            last_sample_time: 0,
+            last_sample_time: unsafe { esp_timer_get_time() },
         }
     }
     
     /// Get CPU usage percentage for each core
+    /// Returns 0 for both cores since accurate measurement requires
+    /// special FreeRTOS configuration that's not enabled by default
     pub fn get_cpu_usage(&mut self) -> (u8, u8) {
-        // For now, return realistic simulated values
-        // Proper FreeRTOS task stats require runtime stats to be enabled in sdkconfig
-        // which needs menuconfig changes
+        // Accurate CPU usage measurement requires:
+        // - CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS enabled
+        // - CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS enabled
+        // - A high-resolution timer configured for runtime stats
+        // 
+        // Since these aren't enabled by default and require ESP-IDF rebuild,
+        // we'll return 0 to indicate "not available" rather than fake values
         
-        let time_ms = unsafe { esp_timer_get_time() / 1000 };
+        // Log once that real CPU monitoring isn't available
+        static mut LOGGED_ONCE: bool = false;
+        unsafe {
+            if !LOGGED_ONCE {
+                log::info!("CPU usage monitoring not available - requires FreeRTOS runtime stats");
+                LOGGED_ONCE = true;
+            }
+        }
         
-        // Core 0: 40-60% (main UI core, display updates, main loop)
-        let core0_base = 50;
-        let core0_variation = ((time_ms / 2000) % 20) as i8 - 10;
-        let core0_usage = (core0_base as i8 + core0_variation).max(0).min(100) as u8;
-        
-        // Core 1: 15-25% (sensor tasks, network monitoring, data processing)
-        let core1_base = 20;
-        let core1_variation = ((time_ms / 3000) % 10) as i8 - 5;
-        let core1_usage = (core1_base as i8 + core1_variation).max(0).min(100) as u8;
-        
-        (core0_usage, core1_usage)
+        (0, 0) // Return 0 to indicate "not available"
     }
 }
 

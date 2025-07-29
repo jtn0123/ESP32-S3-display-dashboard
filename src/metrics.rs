@@ -30,6 +30,8 @@ pub struct MetricsData {
     pub cpu1_usage_percent: u8,
     pub temperature_celsius: f32,
     pub wifi_rssi_dbm: i8,
+    pub wifi_connected: bool,
+    pub wifi_ssid: String,
     pub display_brightness: u8,
     pub battery_voltage_mv: u16,
     pub battery_percentage: u8,
@@ -38,6 +40,8 @@ pub struct MetricsData {
     pub flush_time_ms: u32,
     pub frame_count: u64,
     pub skip_count: u64,
+    pub psram_free_bytes: u32,
+    pub psram_total_bytes: u32,
 }
 
 impl MetricsData {
@@ -65,6 +69,11 @@ impl MetricsData {
         self.wifi_rssi_dbm = rssi;
     }
     
+    pub fn update_wifi_status(&mut self, connected: bool, ssid: String) {
+        self.wifi_connected = connected;
+        self.wifi_ssid = ssid;
+    }
+    
     pub fn update_display(&mut self, brightness: u8) {
         self.display_brightness = brightness;
     }
@@ -83,6 +92,11 @@ impl MetricsData {
     pub fn update_frame_stats(&mut self, total: u64, skipped: u64) {
         self.frame_count = total;
         self.skip_count = skipped;
+    }
+    
+    pub fn update_psram(&mut self, free: u32, total: u32) {
+        self.psram_free_bytes = free;
+        self.psram_total_bytes = total;
     }
     
     pub fn format_prometheus(&self, uptime_seconds: u64, heap_free: u32, heap_total: u32) -> String {
