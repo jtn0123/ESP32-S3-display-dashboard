@@ -119,11 +119,20 @@ impl BootManager {
     }
     
     pub fn set_stage(&self, stage: BootStage) {
-        *self.current_stage.lock().unwrap() = stage;
+        if let Ok(mut current) = self.current_stage.lock() {
+            *current = stage;
+        } else {
+            log::error!("Failed to acquire boot stage lock");
+        }
     }
     
     pub fn get_stage(&self) -> BootStage {
-        *self.current_stage.lock().unwrap()
+        self.current_stage.lock()
+            .map(|stage| *stage)
+            .unwrap_or_else(|_| {
+                log::error!("Failed to acquire boot stage lock");
+                BootStage::DisplayInit
+            })
     }
     
     pub fn render_boot_screen(&mut self, display: &mut DisplayManager) -> Result<()> {
@@ -199,7 +208,7 @@ impl BootManager {
             
             // Chaotic oscillations for more natural twinkling
             let twinkle = (seed1 * 0.017).sin() * (seed2 * 0.023).cos() + (seed3 * 0.011).sin();
-            let brightness = ((twinkle + 1.5) * 0.4).max(0.0).min(1.0);
+            let brightness = ((twinkle + 1.5) * 0.4).clamp(0.0, 1.0);
             
             // Quick flashes - occasional bright pulses
             let flash_chance = ((seed1 * 0.003).sin() + (seed2 * 0.007).cos()) > 1.85;

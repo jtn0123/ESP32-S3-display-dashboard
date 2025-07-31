@@ -24,9 +24,9 @@ impl SystemInfo {
         let seconds = total_secs % 60;
         
         if hours > 0 {
-            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+            format!("{hours:02}:{minutes:02}:{seconds:02}")
         } else {
-            format!("{:02}:{:02}", minutes, seconds)
+            format!("{minutes:02}:{seconds:02}")
         }
     }
     

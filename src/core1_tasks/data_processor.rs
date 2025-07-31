@@ -23,7 +23,6 @@ pub struct DataProcessor {
     
     // Last known values
     last_sensor: Option<SensorUpdate>,
-    last_network: Option<NetworkUpdate>,
 }
 
 impl DataProcessor {
@@ -38,7 +37,6 @@ impl DataProcessor {
             network_rx,
             tx,
             last_sensor: None,
-            last_network: None,
         }
     }
     

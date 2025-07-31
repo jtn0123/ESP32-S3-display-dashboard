@@ -31,8 +31,6 @@ pub struct UiManager {
     ota_status: OtaStatus,
     // FPS tracking
     fps: f32,
-    frame_count: u32,
-    last_fps_update: Instant,
     // Cached values to avoid redundant updates
     cached_uptime: String,
     cached_heap: String,
@@ -107,8 +105,6 @@ impl UiManager {
             network_mac: String::from("Unknown"),
             ota_status: OtaStatus::Idle,
             fps: 0.0,
-            frame_count: 0,
-            last_fps_update: Instant::now(),
             cached_uptime: String::new(),
             cached_heap: String::new(),
             cached_cpu: String::new(),
@@ -285,9 +281,9 @@ impl UiManager {
         if !screen_changed && self.system_screen_initialized {
             // Check if any values actually changed
             let heap_kb = self.system_info.get_free_heap_kb();
-            let heap_str = format!("{} KB", heap_kb);
+            let heap_str = format!("{heap_kb} KB");
             let cpu_freq = self.system_info.get_cpu_freq_mhz();
-            let cpu_str = format!("{} MHz", cpu_freq);
+            let cpu_str = format!("{cpu_freq} MHz");
             let temp_str = format!("{:.1}°C", self.sensor_data._temperature);
             
             if heap_str == self.cached_heap && 
@@ -358,23 +354,46 @@ impl UiManager {
             display.draw_text(240, 8, &time_str, WHITE, None, 1)?;
         }
         
-        // Battery indicator in header (only update if changed)
+        // Battery indicator in header (moved to right side with icon)
         if self.sensor_data._battery_percentage != self.cached_battery || self.sensor_data._is_charging {
-            display.fill_rect(5, 5, 65, 20, PRIMARY_BLUE)?;
-            let battery_color = if self.sensor_data._is_charging { PRIMARY_BLUE }
+            // Clear battery area on right side
+            display.fill_rect(220, 5, 95, 20, PRIMARY_BLUE)?;
+            
+            // Draw battery icon
+            display.draw_battery_icon(225, 7, self.sensor_data._battery_percentage, 
+                                     self.sensor_data._is_charging, 1)?;
+            
+            // Draw percentage text next to icon
+            let battery_color = if self.sensor_data._is_charging { WHITE }
                                else if self.sensor_data._battery_percentage > 50 { PRIMARY_GREEN } 
                                else if self.sensor_data._battery_percentage > 20 { YELLOW } 
                                else { PRIMARY_RED };
             
             let battery_str = if self.sensor_data._is_charging {
-                format!("{}%+", self.sensor_data._battery_percentage)
+                format!("{}%", self.sensor_data._battery_percentage)
             } else if self.sensor_data._is_on_usb && self.sensor_data._battery_percentage == 0 {
                 "USB".to_string()
             } else {
                 format!("{}%", self.sensor_data._battery_percentage)
             };
-            display.draw_text(10, 8, &battery_str, battery_color, None, 1)?;
+            display.draw_text(255, 8, &battery_str, battery_color, None, 1)?;
+            
+            // Show voltage if charging
+            if self.sensor_data._is_charging {
+                let voltage_str = format!("{:.1}V", self.sensor_data._battery_voltage as f32 / 1000.0);
+                display.draw_text(285, 8, &voltage_str, TEXT_SECONDARY, None, 1)?;
+            }
+            
             self.cached_battery = self.sensor_data._battery_percentage;
+        }
+        
+        // Move time to left side
+        let current_seconds = self.system_info.get_uptime().as_secs();
+        if current_seconds >= self.global_cached_time + 5 || !self.system_screen_initialized {
+            self.global_cached_time = current_seconds;
+            display.fill_rect(5, 5, 65, 20, PRIMARY_BLUE)?;
+            let time_str = self.system_info.format_uptime();
+            display.draw_text(10, 8, &time_str, WHITE, None, 1)?;
         }
         
         // Dynamic content - update values by clearing their areas first
@@ -678,23 +697,26 @@ impl UiManager {
         display.fill_rect(225, y_start, 70, 16, BLACK)?;
         display.draw_text(225, y_start, &format!("{}%", battery_percent), battery_color, None, 1)?;
         
-        // Draw voltage below percentage
+        // Draw voltage below percentage with debug info
         display.fill_rect(100, y_start + 18, 195, 14, BLACK)?;
         if battery_voltage > 0 {
-            let voltage_str = format!("{:.2}V", battery_voltage as f32 / 1000.0);
+            // Show precise voltage for debugging
+            let voltage_str = format!("{:.3}V ({}mV)", battery_voltage as f32 / 1000.0, battery_voltage);
             display.draw_text(100, y_start + 18, &voltage_str, TEXT_SECONDARY, None, 1)?;
             
             // Show charging/USB status
             if is_charging {
-                display.draw_text(150, y_start + 18, "Charging", PRIMARY_BLUE, None, 1)?;
+                display.draw_text(210, y_start + 18, "CHG", PRIMARY_BLUE, None, 1)?;
             } else if is_on_usb {
-                display.draw_text(150, y_start + 18, "USB Power", ACCENT_ORANGE, None, 1)?;
-            } else {
-                display.draw_text(150, y_start + 18, "Battery", TEXT_SECONDARY, None, 1)?;
+                display.draw_text(210, y_start + 18, "USB", ACCENT_ORANGE, None, 1)?;
             }
         } else {
             display.draw_text(100, y_start + 18, "No Battery", TEXT_SECONDARY, None, 1)?;
         }
+        
+        // Add debug box with ADC info (temporary for calibration)
+        display.draw_rect(10, 140, 300, 25, BORDER_COLOR)?;
+        display.draw_text(15, 145, "[DEBUG] Check telnet for ADC raw values", YELLOW, None, 1)?;
         
         // Temperature value (adjusted position due to battery info)
         let temp_y = y_start + line_height + 5;
@@ -785,7 +807,7 @@ impl UiManager {
     fn render_ota_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
         // Early exit if nothing needs updating
         if !screen_changed && 
-           self.cached_ota_status_enum == Some(self.ota_status.clone()) &&
+           self.cached_ota_status_enum == Some(self.ota_status) &&
            self.cached_network_ip == self.network_ip &&
            self.ota_screen_initialized {
             // Only update time every 5 seconds to reduce operations
@@ -848,9 +870,9 @@ impl UiManager {
         }
         
         // OTA Status - only format and update if truly changed
-        let status_changed = self.cached_ota_status_enum != Some(self.ota_status.clone());
+        let status_changed = self.cached_ota_status_enum != Some(self.ota_status);
         if status_changed || !self.ota_screen_initialized {
-            self.cached_ota_status_enum = Some(self.ota_status.clone());
+            self.cached_ota_status_enum = Some(self.ota_status);
             
             let (status_text, status_color) = match &self.ota_status {
                 OtaStatus::Idle => ("Ready", TEXT_SECONDARY),

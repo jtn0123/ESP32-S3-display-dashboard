@@ -53,11 +53,7 @@ impl Screen for HardwareScreen {
     }
     
     fn update(&mut self) {
-        // TODO: Read real sensor values
-        // Simulate temperature changes
-        self.chip_temp += 0.1;
-        if self.chip_temp > 50.0 {
-            self.chip_temp = 40.0;
-        }
+        // Hardware info is updated from main loop via ProcessedData
+        // This screen displays static hardware capabilities
     }
 }

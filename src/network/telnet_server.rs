@@ -108,7 +108,7 @@ impl TelnetLogServer {
                         if let Ok(buffer) = self.log_buffer.lock() {
                             let _ = writeln!(s, "--- Recent log history ---");
                             for msg in buffer.get_all() {
-                                let _ = write!(s, "{}", msg);
+                                let _ = write!(s, "{msg}");
                             }
                             let _ = writeln!(s, "--- End of history ---\r\n");
                         }
@@ -155,7 +155,7 @@ impl TelnetLogServer {
     /// Log a message to buffer and all connected clients
     pub fn log_message(&self, level: &str, message: &str) {
         let timestamp = esp_idf_svc::systime::EspSystemTime.now().as_secs();
-        let formatted = format!("[{:10}] {:5} {}\r\n", timestamp, level, message);
+        let formatted = format!("[{timestamp:10}] {level:5} {message}\r\n");
         
         // Add to buffer
         if let Ok(mut buffer) = self.log_buffer.lock() {

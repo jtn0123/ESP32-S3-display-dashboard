@@ -6,7 +6,6 @@ pub struct FpsTracker {
     // Frame timing
     frame_times: Vec<Duration>,
     max_samples: usize,
-    last_frame_time: Instant,
     last_rendered_frame_time: Instant,
     
     // Statistics
@@ -30,7 +29,6 @@ impl FpsTracker {
         Self {
             frame_times: Vec::with_capacity(60), // Keep last 60 frames
             max_samples: 60,
-            last_frame_time: now,
             last_rendered_frame_time: now,
             current_fps: 0.0,
             average_fps: 0.0,
@@ -40,14 +38,6 @@ impl FpsTracker {
             skipped_frames: 0,
             last_update: now,
             update_interval: Duration::from_millis(250), // Update stats 4x per second
-        }
-    }
-    
-    /// Call at the start of each frame
-    pub fn frame_start(&mut self) -> FrameTimer {
-        FrameTimer {
-            start_time: Instant::now(),
-            tracker: self as *mut Self,
         }
     }
     
@@ -143,41 +133,10 @@ impl FpsTracker {
         self.max_fps = self.max_fps.max(self.current_fps);
     }
     
-    /// Get current FPS
-    pub fn current_fps(&self) -> f32 {
-        // If we have no data yet, return 0.0 to indicate no frames
-        if self.frame_times.is_empty() && self.total_frames == 0 {
-            return 0.0;
-        }
-        self.current_fps
-    }
-    
-    /// Get average FPS over the sample window
-    pub fn average_fps(&self) -> f32 {
-        self.average_fps
-    }
-    
-    /// Get minimum recorded FPS
-    pub fn min_fps(&self) -> f32 {
-        if self.min_fps == f32::MAX {
-            0.0
-        } else {
-            self.min_fps
-        }
-    }
-    
-    /// Get maximum recorded FPS
-    pub fn max_fps(&self) -> f32 {
-        self.max_fps
-    }
-    
     /// Get frame statistics
     pub fn stats(&self) -> FpsStats {
         FpsStats {
             current_fps: self.current_fps,
-            average_fps: self.average_fps,
-            min_fps: self.min_fps(),
-            max_fps: self.max_fps,
             total_frames: self.total_frames,
             skipped_frames: self.skipped_frames,
             skip_rate: if self.total_frames > 0 {
@@ -188,17 +147,6 @@ impl FpsTracker {
         }
     }
     
-    /// Reset all statistics
-    pub fn reset(&mut self) {
-        self.frame_times.clear();
-        self.current_fps = 0.0;
-        self.average_fps = 0.0;
-        self.min_fps = f32::MAX;
-        self.max_fps = 0.0;
-        self.total_frames = 0;
-        self.skipped_frames = 0;
-        self.last_update = Instant::now();
-    }
 }
 
 /// RAII frame timer that automatically records frame time when dropped
@@ -222,9 +170,6 @@ impl Drop for FrameTimer {
 #[derive(Debug, Clone)]
 pub struct FpsStats {
     pub current_fps: f32,
-    pub average_fps: f32,
-    pub min_fps: f32,
-    pub max_fps: f32,
     pub total_frames: u64,
     pub skipped_frames: u64,
     pub skip_rate: f32, // Percentage of frames skipped
@@ -237,8 +182,6 @@ pub struct PerformanceMetrics {
     // Timing breakdown
     pub last_render_time: Duration,
     pub last_flush_time: Duration,
-    pub last_sensor_time: Duration,
-    pub last_network_time: Duration,
     
     // Memory stats
     pub heap_free: usize,
@@ -255,8 +198,6 @@ impl PerformanceMetrics {
             fps_tracker: FpsTracker::new(),
             last_render_time: Duration::ZERO,
             last_flush_time: Duration::ZERO,
-            last_sensor_time: Duration::ZERO,
-            last_network_time: Duration::ZERO,
             heap_free: 0,
             heap_largest_block: 0,
             psram_free: 0,
@@ -294,28 +235,4 @@ impl PerformanceMetrics {
         self.last_flush_time = duration;
     }
     
-    /// Record sensor update time
-    pub fn record_sensor_time(&mut self, duration: Duration) {
-        self.last_sensor_time = duration;
-    }
-    
-    /// Record network operation time
-    pub fn record_network_time(&mut self, duration: Duration) {
-        self.last_network_time = duration;
-    }
-    
-    /// Get a summary of current performance
-    pub fn summary(&self) -> String {
-        let fps_stats = self.fps_tracker.stats();
-        format!(
-            "FPS: {:.1} (avg: {:.1}, min: {:.1}, max: {:.1}) | Skip: {:.1}% | Render: {:.1}ms | Flush: {:.1}ms",
-            fps_stats.current_fps,
-            fps_stats.average_fps,
-            fps_stats.min_fps,
-            fps_stats.max_fps,
-            fps_stats.skip_rate,
-            self.last_render_time.as_secs_f32() * 1000.0,
-            self.last_flush_time.as_secs_f32() * 1000.0
-        )
-    }
 }

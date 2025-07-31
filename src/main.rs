@@ -115,7 +115,7 @@ fn main() -> Result<()> {
     
     // Log WiFi credentials (safely)
     {
-        let cfg = config.lock().unwrap();
+        let cfg = config.lock().map_err(|e| anyhow::anyhow!("Failed to lock config: {}", e))?;
         log::info!("WiFi credentials: SSID='{}', Password={}", 
             cfg.wifi_ssid,
             if cfg.wifi_password.is_empty() { "<empty>" } else { "<set>" }
@@ -144,9 +144,6 @@ fn main() -> Result<()> {
         loop {
             esp_idf_hal::delay::FreeRtos::delay_ms(1000);
         }
-        
-        // If we get here, test was interrupted - shouldn't happen
-        return Ok(());
     }
     
     // Initialize display
@@ -207,7 +204,7 @@ fn main() -> Result<()> {
         let button_manager = system::ButtonManager::new(button1, button2)?;
         info!("Buttons initialized");
         
-        let network_config = config.lock().unwrap();
+        let network_config = config.lock().map_err(|e| anyhow::anyhow!("Failed to lock config: {}", e))?;
         let mut network_manager = NetworkManager::new(
             peripherals.modem,
             sys_loop,
@@ -397,7 +394,7 @@ fn main() -> Result<()> {
     display_manager.flush()?;
     log::info!("Boot: Network init screen rendered - display should still be visible");
     
-    let network_config = config.lock().unwrap();
+    let network_config = config.lock().map_err(|e| anyhow::anyhow!("Failed to lock config: {}", e))?;
     let network_manager = NetworkManager::new(
         peripherals.modem,
         sys_loop,
@@ -658,7 +655,7 @@ fn run_app(
     let button_check_interval = Duration::from_millis(20);
     
     // Button test metrics
-    let mut button_test_start = Instant::now();
+    let button_test_start = Instant::now();
     let mut button_events_count = 0u32;
     let mut max_response_time = Duration::ZERO;
     let mut total_response_time = Duration::ZERO;
@@ -678,11 +675,45 @@ fn run_app(
     
     log::info!("Main render loop started - entering infinite loop");
 
+    // Sensor reading optimization - read all sensors on Core 0
+    let mut last_sensor_reading = Instant::now();
+    let sensor_reading_interval = Duration::from_secs(5); // Read sensors every 5 seconds
+    
     loop {
         // Start frame timing
         let frame_start = Instant::now();
         
         // Removed debug logging from hot path
+        
+        // Read sensors on Core 0 and send to Core 1
+        if last_sensor_reading.elapsed() >= sensor_reading_interval {
+            // Sample all sensors on Core 0
+            let sensor_result = sensor_manager.sample()?;
+            
+            // Get CPU usage
+            let (cpu0_usage, cpu1_usage) = cpu_monitor.get_cpu_usage();
+            
+            // Create sensor update to send to Core 1
+            let sensor_update = core1_tasks::SensorUpdate {
+                temperature: sensor_result._temperature,
+                battery_percentage: sensor_result._battery_percentage,
+                battery_voltage: sensor_result._battery_voltage,
+                is_charging: sensor_result._is_charging,
+                is_on_usb: sensor_result._is_on_usb,
+                cpu_usage_core0: cpu0_usage,
+                cpu_usage_core1: cpu1_usage,
+            };
+            
+            // Send to Core 1 for processing
+            if let Err(e) = core1_channels.sensor_tx.send(sensor_update.clone()) {
+                log::warn!("Failed to send sensor data to Core 1: {}", e);
+            } else {
+                log::info!("Core 0: Sent sensor data to Core 1 - Temp: {:.1}°C, Battery: {}mV ({}%)", 
+                    sensor_update.temperature, sensor_update.battery_voltage, sensor_update.battery_percentage);
+            }
+            
+            last_sensor_reading = Instant::now();
+        }
 
         // Handle button input with debounce (only check every 20ms)
         if last_button_check.elapsed() >= button_check_interval {
@@ -729,7 +760,13 @@ fn run_app(
                 
                 // Update metrics
                 {
-                    let mut metrics = crate::metrics::metrics().lock().unwrap();
+                    let mut metrics = match crate::metrics::metrics().lock() {
+                        Ok(m) => m,
+                        Err(e) => {
+                            log::error!("Failed to lock metrics: {}", e);
+                            continue;
+                        }
+                    };
                     metrics.update_button_metrics(
                         avg_response.as_secs_f32() * 1000.0,
                         max_response_time.as_secs_f32() * 1000.0,
@@ -755,11 +792,10 @@ fn run_app(
         // Check for updates from Core 1
         // Process data from Core 1 (non-blocking)
         if let Ok(processed_data) = core1_channels.processed_rx.try_recv() {
-            // Commented out to reduce log spam - this can fire many times per second
-            // log::debug!("Main: Received sensor data from Core 1 - Temp={:.1}°C, Battery={}%, CPU0={}%, CPU1={}%",
-            //     processed_data.temperature, processed_data.battery_percentage, 
-            //     processed_data.cpu_usage_core0, processed_data.cpu_usage_core1);
-                
+            // Core 1 now receives proper sensor data from Core 0, no override needed
+            log::debug!("Core 0: Received processed data from Core 1 - Temp: {:.1}°C, Battery: {}%", 
+                processed_data.temperature, processed_data.battery_percentage);
+            
             // Update UI with processed sensor data
             ui_manager.update_sensor_data(sensors::SensorData {
                 _temperature: processed_data.temperature,
@@ -778,7 +814,13 @@ fn run_app(
             
             // Update temperature and battery in metrics
             {
-                let mut metrics = crate::metrics::metrics().lock().unwrap();
+                let mut metrics = match crate::metrics::metrics().lock() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        log::error!("Failed to lock metrics: {}", e);
+                        continue;
+                    }
+                };
                 metrics.update_temperature(processed_data.temperature);
                 metrics.update_battery(
                     processed_data.battery_voltage,
@@ -790,12 +832,8 @@ fn run_app(
             last_sensor_update = Instant::now();
         }
         
-        // Fallback: Use old sensor sampling if no Core 1 data (during startup)
+        // Update network status periodically
         if last_sensor_update.elapsed() >= sensor_update_interval {
-            // Sample sensors directly as fallback
-            let sensor_result = sensor_manager.sample()?;
-            ui_manager.update_sensor_data(sensor_result);
-            
             // Update network status
             ui_manager.update_network_status(
                 network_manager.is_connected(),
@@ -812,7 +850,13 @@ fn run_app(
         // Update OTA status periodically (if OTA is available)
         if last_ota_check.elapsed() >= ota_check_interval {
             if let Some(ref ota_mgr) = ota_manager {
-                let ota_status = ota_mgr.lock().unwrap().get_status();
+                let ota_status = match ota_mgr.lock() {
+                    Ok(mgr) => mgr.get_status(),
+                    Err(e) => {
+                        log::error!("Failed to lock OTA manager: {}", e);
+                        continue;
+                    }
+                };
                 ui_manager.update_ota_status(ota_status);
             }
             last_ota_check = Instant::now();
@@ -873,7 +917,7 @@ fn run_app(
             };
             
             // Get PSRAM info if available
-            let psram_free = if crate::psram::PsramAllocator::is_available() {
+            let _psram_free = if crate::psram::PsramAllocator::is_available() {
                 crate::psram::PsramAllocator::get_free_size() / 1024
             } else {
                 0
@@ -954,7 +998,13 @@ fn run_app(
             
             // Update global metrics
             {
-                let mut metrics = crate::metrics::metrics().lock().unwrap();
+                let mut metrics = match crate::metrics::metrics().lock() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        log::error!("Failed to lock metrics: {}", e);
+                        continue;
+                    }
+                };
                 
                 // FPS and performance metrics
                 metrics.update_fps(fps_stats.current_fps, DISPLAY_MAX_FPS); // realistic target based on hardware

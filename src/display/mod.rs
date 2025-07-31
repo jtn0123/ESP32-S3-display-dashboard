@@ -53,16 +53,6 @@ impl DirtyRect {
         self.height = y2 - y1;
     }
     
-    pub fn clear(&mut self) {
-        self.x = 0;
-        self.y = 0;
-        self.width = 0;
-        self.height = 0;
-    }
-    
-    pub fn is_empty(&self) -> bool {
-        self.width == 0 || self.height == 0
-    }
 }
 
 // ST7789 Commands
@@ -545,7 +535,7 @@ impl DisplayManager {
         let start_x = x;
         
         for c in text.chars() {
-            if cursor_x + char_width as u16 > self.width {
+            if cursor_x + char_width > self.width {
                 break; // Don't draw beyond screen
             }
             
@@ -698,15 +688,48 @@ impl DisplayManager {
     }
     
     
-    /// Get display width
-    pub fn width(&self) -> u16 {
-        self.width
+    /// Draw a battery icon with charge level and optional charging indicator
+    pub fn draw_battery_icon(&mut self, x: u16, y: u16, percentage: u8, is_charging: bool, scale: u8) -> Result<()> {
+        let width = 24 * scale as u16;
+        let height = 12 * scale as u16;
+        let terminal_width = 2 * scale as u16;
+        let terminal_height = 6 * scale as u16;
+        
+        // Determine battery color based on percentage
+        let battery_color = if percentage > 50 {
+            colors::PRIMARY_GREEN
+        } else if percentage > 20 {
+            colors::YELLOW
+        } else {
+            colors::PRIMARY_RED
+        };
+        
+        // Draw battery outline
+        self.draw_rect(x, y, width, height, colors::WHITE)?;
+        
+        // Draw battery terminal (positive end)
+        self.fill_rect(x + width, y + (height - terminal_height) / 2, terminal_width, terminal_height, colors::WHITE)?;
+        
+        // Draw battery fill based on percentage
+        let fill_width = ((width - 4) as u32 * percentage as u32 / 100) as u16;
+        if fill_width > 0 {
+            self.fill_rect(x + 2, y + 2, fill_width, height - 4, battery_color)?;
+        }
+        
+        // Draw charging indicator if charging
+        if is_charging {
+            // Draw a simple lightning bolt in the center
+            let cx = x + width / 2;
+            let cy = y + height / 2;
+            
+            // Lightning bolt shape (simplified)
+            self.draw_line(cx - 2, cy - 3, cx + 1, cy, colors::WHITE)?;
+            self.draw_line(cx + 1, cy, cx - 1, cy + 3, colors::WHITE)?;
+            self.draw_pixel(cx, cy - 1, colors::WHITE)?;
+            self.draw_pixel(cx - 1, cy + 1, colors::WHITE)?;
+        }
+        
+        Ok(())
     }
-    
-    /// Get display height
-    pub fn height(&self) -> u16 {
-        self.height
-    }
-    
 
 }

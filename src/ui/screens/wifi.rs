@@ -71,6 +71,6 @@ impl Screen for WiFiScreen {
     }
     
     fn update(&mut self) {
-        // TODO: Get real WiFi status
+        // WiFi status is handled by NetworkManager and displayed via UI state
     }
 }

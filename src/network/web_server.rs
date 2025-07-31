@@ -40,7 +40,15 @@ impl WebConfigServer {
         // Get current configuration
         let config_clone2 = config.clone();
         server.fn_handler("/api/config", esp_idf_svc::http::Method::Get, move |req| {
-            let config = config_clone2.lock().unwrap();
+            let config = match config_clone2.lock() {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    log::error!("Failed to lock config: {}", e);
+                    let mut response = req.into_status_response(503)?;
+                    response.write_all(b"Configuration lock failed")?;
+                    return Ok(());
+                }
+            };
             let json = serde_json::to_string(&*config)?;
             
             let mut response = req.into_ok_response()?;
@@ -76,7 +84,15 @@ impl WebConfigServer {
             
             // Update and save config
             {
-                let mut config = config_clone3.lock().unwrap();
+                let mut config = match config_clone3.lock() {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        log::error!("Failed to lock config: {}", e);
+                        let mut response = req.into_status_response(503)?;
+                    response.write_all(b"Configuration lock failed")?;
+                    return Ok(());
+                    }
+                };
                 *config = new_config;
                 config.save()?;
             }
@@ -112,7 +128,15 @@ impl WebConfigServer {
             let chip_model = "T-Display-S3";
             
             // Get metrics data
-            let metrics_data = crate::metrics::metrics().lock().unwrap().clone();
+            let metrics_data = match crate::metrics::metrics().lock() {
+                Ok(m) => m.clone(),
+                Err(e) => {
+                    log::error!("Failed to lock metrics: {}", e);
+                    let mut response = req.into_status_response(503)?;
+                    response.write_all(b"Service Unavailable")?;
+                    return Ok(());
+                }
+            };
             
             // Format all metrics in Prometheus format
             let metrics = format!(
@@ -223,19 +247,19 @@ impl WebConfigServer {
                 heap_total,
                 metrics_data.fps_actual,
                 metrics_data.fps_target,
-                metrics_data.cpu_usage_percent,
-                metrics_data.cpu0_usage_percent,
-                metrics_data.cpu1_usage_percent,
+                metrics_data.cpu_usage,
+                metrics_data.cpu0_usage,
+                metrics_data.cpu1_usage,
                 metrics_data.cpu_freq_mhz,
-                metrics_data.temperature_celsius,
-                metrics_data.wifi_rssi_dbm,
+                metrics_data.temperature,
+                metrics_data.wifi_rssi,
                 if metrics_data.wifi_connected { "" } else { "_disconnected" },
                 metrics_data.wifi_ssid,
                 if metrics_data.wifi_connected { 1 } else { 0 },
                 metrics_data.display_brightness,
                 metrics_data.battery_voltage_mv,
                 metrics_data.battery_percentage,
-                if metrics_data.is_charging { 1 } else { 0 },
+                if metrics_data.battery_charging { 1 } else { 0 },
                 metrics_data.render_time_ms,
                 metrics_data.flush_time_ms,
                 if metrics_data.frame_count > 0 {
@@ -245,10 +269,10 @@ impl WebConfigServer {
                 },
                 metrics_data.frame_count,
                 metrics_data.skip_count,
-                metrics_data.psram_free_bytes,
-                metrics_data.psram_total_bytes,
-                if metrics_data.psram_total_bytes > 0 {
-                    (metrics_data.psram_total_bytes - metrics_data.psram_free_bytes) as f32 / metrics_data.psram_total_bytes as f32 * 100.0
+                metrics_data.psram_free,
+                metrics_data.psram_total,
+                if metrics_data.psram_total > 0 {
+                    (metrics_data.psram_total - metrics_data.psram_free) as f32 / metrics_data.psram_total as f32 * 100.0
                 } else {
                     0.0
                 }
@@ -563,7 +587,15 @@ impl WebConfigServer {
                 
                 // Perform the OTA update
                 let result = {
-                    let mut ota = ota_mgr.lock().unwrap();
+                    let mut ota = match ota_mgr.lock() {
+                        Ok(mgr) => mgr,
+                        Err(e) => {
+                            log::error!("Failed to lock OTA manager: {}", e);
+                            let mut response = req.into_status_response(503)?;
+                            response.write_all(b"Internal server error")?;
+                            return Ok::<(), anyhow::Error>(());
+                        }
+                    };
                     
                     // Begin OTA update
                     if let Err(e) = ota.begin_update(content_length) {
@@ -632,7 +664,7 @@ impl WebConfigServer {
                     Err(e) => {
                         log::error!("OTA update failed: {:?}", e);
                         let mut response = req.into_status_response(500)?;
-                        let error_msg = format!("OTA update failed: {}", e);
+                        let error_msg = format!("OTA update failed: {e}");
                         response.write_all(error_msg.as_bytes())?;
                         Ok::<(), anyhow::Error>(())
                     }
@@ -643,12 +675,17 @@ impl WebConfigServer {
             let ota_manager_clone3 = ota_manager.clone();
             server.fn_handler("/api/ota/status", esp_idf_svc::http::Method::Get, move |req| {
                 let status_json = if let Some(ref ota_mgr) = ota_manager_clone3 {
-                    let ota = ota_mgr.lock().unwrap();
-                    let status = ota.get_status();
+                    let status = match ota_mgr.lock() {
+                        Ok(mgr) => mgr.get_status(),
+                        Err(e) => {
+                            log::error!("Failed to lock OTA manager: {}", e);
+                            crate::ota::OtaStatus::Failed
+                        }
+                    };
                     match status {
                         crate::ota::OtaStatus::Idle => r#"{"status":"idle"}"#.to_string(),
                         crate::ota::OtaStatus::Downloading { progress } => {
-                            format!(r#"{{"status":"downloading","progress":{}}}"#, progress)
+                            format!(r#"{{"status":"downloading","progress":{progress}}}"#)
                         },
                         crate::ota::OtaStatus::Verifying => r#"{"status":"verifying"}"#.to_string(),
                         crate::ota::OtaStatus::Ready => r#"{"status":"ready"}"#.to_string(),

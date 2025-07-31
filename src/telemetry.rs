@@ -98,7 +98,7 @@ impl TelemetryCollector {
             operation_name,
             start_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                 .as_millis() as u64
                 - duration_ms as u64,
             duration_ms,

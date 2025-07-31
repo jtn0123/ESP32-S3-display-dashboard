@@ -4,7 +4,7 @@ use core::ffi::c_void;
 use esp_idf_sys::{
     esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition,
     esp_ota_handle_t, esp_ota_set_boot_partition, esp_ota_write,
-    esp_partition_t, esp_restart, ESP_ERR_OTA_VALIDATE_FAILED,
+    esp_partition_t, esp_restart,
     esp_partition_find_first, esp_partition_type_t_ESP_PARTITION_TYPE_APP as ESP_PARTITION_TYPE_APP,
     esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_APP_OTA_0 as ESP_PARTITION_SUBTYPE_APP_OTA_0,
 };
@@ -220,10 +220,7 @@ impl OtaManager {
         // End the OTA update
         let result = unsafe { esp_ota_end(handle) };
         
-        if result == ESP_ERR_OTA_VALIDATE_FAILED as i32 {
-            self.status = OtaStatus::Failed;
-            return Err(OtaError::ValidationFailed);
-        } else if result != 0 {
+        if result != 0 {
             self.status = OtaStatus::Failed;
             return Err(OtaError::ValidationFailed);
         }

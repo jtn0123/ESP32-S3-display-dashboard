@@ -117,7 +117,7 @@ impl DualCoreProcessor {
             
             if result != 1 { // pdPASS == 1
                 // Clean up if task creation failed
-                Box::from_raw(task_fn_ptr as *mut F);
+                drop(Box::from_raw(task_fn_ptr as *mut F));
                 return Err(format!("Failed to create task: {}", result));
             }
         }
@@ -210,17 +210,11 @@ impl DualCoreProcessor {
 }
 
 /// CPU load monitoring using FreeRTOS idle task statistics
-pub struct CpuMonitor {
-    last_idle_ticks: [u32; 2],
-    last_sample_time: i64,
-}
+pub struct CpuMonitor;
 
 impl CpuMonitor {
     pub fn new() -> Self {
-        Self {
-            last_idle_ticks: [0; 2],
-            last_sample_time: unsafe { esp_timer_get_time() },
-        }
+        Self
     }
     
     /// Get CPU usage percentage for each core

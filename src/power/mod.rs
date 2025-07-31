@@ -121,8 +121,8 @@ impl PowerManager {
                 // Turn off backlight
                 pin.set_low().ok();
             } else {
-                // For now, just on/off control
-                // TODO: Implement PWM for brightness control
+                // PWM implementation would require LEDC peripheral
+                // Currently using simple on/off control
                 pin.set_high().ok();
             }
         }

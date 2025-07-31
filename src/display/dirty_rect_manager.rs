@@ -146,7 +146,10 @@ impl DirtyRectManager {
             return;
         }
         
-        let mut bounds = self.rects[0].unwrap();
+        let Some(mut bounds) = self.rects[0] else {
+            log::error!("DirtyRectManager: No initial rect found despite count > 0");
+            return;
+        };
         
         for i in 1..self.count {
             if let Some(rect) = self.rects[i] {
@@ -177,13 +180,6 @@ impl DirtyRectManager {
         self.count = write_idx;
     }
     
-    /// Get iterator over dirty rectangles
-    pub fn iter(&self) -> impl Iterator<Item = &DirtyRect> {
-        self.rects[0..self.count]
-            .iter()
-            .filter_map(|r| r.as_ref())
-    }
-    
     /// Check if there are any dirty rectangles
     pub fn is_empty(&self) -> bool {
         self.count == 0
@@ -203,10 +199,4 @@ impl DirtyRectManager {
         (self.count, self.merge_count, self.update_count)
     }
     
-    /// Calculate total area covered by dirty rectangles
-    pub fn total_area(&self) -> u32 {
-        self.iter()
-            .map(|r| r.width as u32 * r.height as u32)
-            .sum()
-    }
 }

@@ -74,6 +74,6 @@ impl Screen for PowerScreen {
     }
     
     fn update(&mut self) {
-        // TODO: Get real battery data from BatteryMonitor
+        // Battery data is updated from main loop via ProcessedData
     }
 }

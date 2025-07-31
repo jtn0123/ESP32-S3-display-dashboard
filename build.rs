@@ -17,10 +17,10 @@ fn main() -> anyhow::Result<()> {
         // Parse SSID
         if let Some(ssid_line) = contents.lines().find(|l| l.contains("#define WIFI_SSID")) {
             if let Some(ssid) = ssid_line.split('"').nth(1) {
-                println!("cargo:rustc-env=WIFI_SSID={}", ssid);
-                println!("cargo:warning=Setting WIFI_SSID={}", ssid);
+                println!("cargo:rustc-env=WIFI_SSID={ssid}");
+                println!("cargo:warning=Setting WIFI_SSID={ssid}");
             } else {
-                println!("cargo:warning=Failed to parse WIFI_SSID from line: {}", ssid_line);
+                println!("cargo:warning=Failed to parse WIFI_SSID from line: {ssid_line}");
             }
         } else {
             println!("cargo:warning=WIFI_SSID not found in wifi_config.h");
@@ -29,10 +29,10 @@ fn main() -> anyhow::Result<()> {
         // Parse Password  
         if let Some(pass_line) = contents.lines().find(|l| l.contains("#define WIFI_PASSWORD")) {
             if let Some(pass) = pass_line.split('"').nth(1) {
-                println!("cargo:rustc-env=WIFI_PASSWORD={}", pass);
+                println!("cargo:rustc-env=WIFI_PASSWORD={pass}");
                 println!("cargo:warning=Setting WIFI_PASSWORD=<hidden>");
             } else {
-                println!("cargo:warning=Failed to parse WIFI_PASSWORD from line: {}", pass_line);
+                println!("cargo:warning=Failed to parse WIFI_PASSWORD from line: {pass_line}");
             }
         } else {
             println!("cargo:warning=WIFI_PASSWORD not found in wifi_config.h");

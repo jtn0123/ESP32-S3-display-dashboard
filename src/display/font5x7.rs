@@ -104,7 +104,7 @@ pub const FONT_5X7: [[u8; 5]; 95] = [
 
 pub fn get_char_data(c: char) -> &'static [u8; 5] {
     let index = c as usize;
-    if index >= 32 && index < 127 {
+    if (32..127).contains(&index) {
         &FONT_5X7[index - 32]
     } else {
         &FONT_5X7[0] // Return space for unsupported characters
