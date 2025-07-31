@@ -2,7 +2,7 @@
 
 // Display version - this is what users see on screen
 // Update this when making significant changes
-pub const DISPLAY_VERSION: &str = "v5.38-metrics";
+pub const DISPLAY_VERSION: &str = "v5.39";
 
 // Cargo package version from Cargo.toml
 pub const CARGO_VERSION: &str = env!("CARGO_PKG_VERSION");
