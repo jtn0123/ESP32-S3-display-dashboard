@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32-S3 Dashboard OTA Update</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #1a1a1a;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 {
+            color: #2563eb;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 30px;
+        }
+        .current-version {
+            background-color: #f3f4f6;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .current-version strong {
+            color: #374151;
+        }
+        .file-select {
+            margin: 20px 0;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .file-label {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #f3f4f6;
+            color: #374151;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .file-label:hover {
+            background-color: #e5e7eb;
+        }
+        .file-info {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .file-name {
+            color: #374151;
+            font-weight: 500;
+        }
+        .file-size {
+            color: #6b7280;
+            margin-left: 10px;
+        }
+        .file-size.error {
+            color: #dc2626;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+            margin-top: 20px;
+            position: relative;
+        }
+        button:hover:not(:disabled) {
+            background-color: #1d4ed8;
+        }
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .spinner {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ffffff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            position: absolute;
+            right: 32px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        @keyframes spin {
+            to { transform: translateY(-50%) rotate(360deg); }
+        }
+        button.loading .spinner {
+            display: block;
+        }
+        button.loading {
+            padding-right: 60px;
+        }
+        .progress-container {
+            display: none;
+            margin-top: 30px;
+        }
+        .progress-stages {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-size: 13px;
+        }
+        .stage {
+            flex: 1;
+            text-align: center;
+            color: #9ca3af;
+            position: relative;
+        }
+        .stage.active {
+            color: #2563eb;
+            font-weight: 500;
+        }
+        .stage.complete {
+            color: #059669;
+        }
+        .stage-dot {
+            width: 24px;
+            height: 24px;
+            background-color: #e5e7eb;
+            border-radius: 50%;
+            margin: 0 auto 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        .stage.active .stage-dot {
+            background-color: #2563eb;
+            color: white;
+        }
+        .stage.complete .stage-dot {
+            background-color: #059669;
+            color: white;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background-color: #f3f4f6;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            font-weight: 500;
+            color: #374151;
+            z-index: 10;
+        }
+        .status {
+            margin-top: 15px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .error {
+            color: #dc2626;
+            margin-top: 15px;
+            padding: 12px;
+            background-color: #fee2e2;
+            border-radius: 8px;
+            display: none;
+        }
+        .success {
+            color: #059669;
+            margin-top: 15px;
+            padding: 12px;
+            background-color: #d1fae5;
+            border-radius: 8px;
+            display: none;
+            text-align: center;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 30px;
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .warning {
+            background-color: #fef3c7;
+            border: 1px solid #f59e0b;
+            color: #92400e;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .auto-redirect {
+            display: none;
+            margin-top: 15px;
+            text-align: center;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .countdown {
+            font-weight: 600;
+            color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32-S3 Dashboard</h1>
+        <p class="subtitle">Over-The-Air Firmware Update</p>
+        
+        <div class="current-version">
+            <strong>Current Version:</strong> <span id="currentVersion">{{VERSION}}</span>
+        </div>
+        
+        <div class="warning">
+            ⚠️ Do not disconnect power during update process
+        </div>
+        
+        <div class="file-select">
+            <label for="file" class="file-label">Choose Firmware File</label>
+            <input type="file" id="file" accept=".bin" />
+            <div class="file-info" id="fileInfo" style="display: none;">
+                <span class="file-name" id="fileName"></span>
+                <span class="file-size" id="fileSize"></span>
+            </div>
+        </div>
+        
+        <button id="uploadBtn" disabled>
+            Upload Firmware
+            <span class="spinner"></span>
+        </button>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-stages">
+                <div class="stage" id="stage1">
+                    <div class="stage-dot">1</div>
+                    <span>Upload</span>
+                </div>
+                <div class="stage" id="stage2">
+                    <div class="stage-dot">2</div>
+                    <span>Verify</span>
+                </div>
+                <div class="stage" id="stage3">
+                    <div class="stage-dot">3</div>
+                    <span>Flash</span>
+                </div>
+                <div class="stage" id="stage4">
+                    <div class="stage-dot">4</div>
+                    <span>Restart</span>
+                </div>
+            </div>
+            
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+            <p class="status" id="status">Preparing upload...</p>
+        </div>
+        
+        <div class="error" id="error"></div>
+        <div class="success" id="success" style="display: none;">
+            ✅ Update completed successfully!
+            <div class="auto-redirect" id="autoRedirect">
+                Redirecting in <span class="countdown" id="countdown">30</span> seconds...
+            </div>
+        </div>
+        
+        <a href="/" class="back-link">← Back to Settings</a>
+    </div>
+
+    <script>
+        const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
+        const fileInput = document.getElementById('file');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const fileInfo = document.getElementById('fileInfo');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const status = document.getElementById('status');
+        const error = document.getElementById('error');
+        const success = document.getElementById('success');
+        const autoRedirect = document.getElementById('autoRedirect');
+        const countdown = document.getElementById('countdown');
+        
+        let otaStatusInterval;
+        let reconnectInterval;
+        
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+        
+        // Update progress stage
+        function updateStage(stageNum, status = 'active') {
+            // Reset all stages
+            document.querySelectorAll('.stage').forEach(stage => {
+                stage.classList.remove('active', 'complete');
+            });
+            
+            // Mark completed stages
+            for (let i = 1; i < stageNum; i++) {
+                document.getElementById(`stage${i}`).classList.add('complete');
+                document.querySelector(`#stage${i} .stage-dot`).innerHTML = '✓';
+            }
+            
+            // Mark current stage
+            if (stageNum <= 4) {
+                document.getElementById(`stage${stageNum}`).classList.add(status);
+            }
+        }
+        
+        // File selection handler
+        fileInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                const file = this.files[0];
+                fileName.textContent = file.name;
+                fileSize.textContent = formatFileSize(file.size);
+                fileInfo.style.display = 'block';
+                
+                // Validate file size
+                if (file.size > MAX_FILE_SIZE) {
+                    fileSize.classList.add('error');
+                    fileSize.textContent += ' (Too large! Maximum: 4MB)';
+                    uploadBtn.disabled = true;
+                    showError('File size exceeds 4MB limit. Please choose a smaller firmware file.');
+                } else {
+                    fileSize.classList.remove('error');
+                    uploadBtn.disabled = false;
+                    error.style.display = 'none';
+                }
+            }
+        });
+        
+        // Check OTA status
+        async function checkOtaStatus() {
+            try {
+                const response = await fetch('/api/ota/status');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'flashing') {
+                        updateStage(3);
+                        status.textContent = `Flashing firmware... ${data.progress || 0}%`;
+                        progressFill.style.width = `${data.progress || 0}%`;
+                        progressText.textContent = `${data.progress || 0}%`;
+                    }
+                }
+            } catch (err) {
+                // Expected during restart
+            }
+        }
+        
+        // Upload handler
+        uploadBtn.addEventListener('click', async function() {
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            // Disable controls
+            uploadBtn.disabled = true;
+            uploadBtn.classList.add('loading');
+            fileInput.disabled = true;
+            error.style.display = 'none';
+            success.style.display = 'none';
+            
+            // Show progress
+            progressContainer.style.display = 'block';
+            updateStage(1);
+            
+            const formData = new FormData();
+            formData.append('firmware', file);
+            
+            try {
+                const xhr = new XMLHttpRequest();
+                
+                // Upload progress
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        progressFill.style.width = percentComplete + '%';
+                        progressText.textContent = percentComplete + '%';
+                        status.textContent = `Uploading firmware... ${formatFileSize(e.loaded)} / ${formatFileSize(e.total)}`;
+                    }
+                });
+                
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === XMLHttpRequest.DONE) {
+                        if (xhr.status === 200) {
+                            // Upload complete, move to verify stage
+                            updateStage(2);
+                            status.textContent = 'Verifying firmware...';
+                            progressFill.style.width = '100%';
+                            progressText.textContent = '100%';
+                            
+                            // Start polling for OTA status
+                            setTimeout(() => {
+                                updateStage(3);
+                                status.textContent = 'Flashing firmware...';
+                                otaStatusInterval = setInterval(checkOtaStatus, 1000);
+                            }, 2000);
+                            
+                            // After expected flash time, show restart
+                            setTimeout(() => {
+                                clearInterval(otaStatusInterval);
+                                updateStage(4);
+                                status.textContent = 'Device restarting...';
+                                
+                                // Show success after a moment
+                                setTimeout(() => {
+                                    progressContainer.style.display = 'none';
+                                    success.style.display = 'block';
+                                    autoRedirect.style.display = 'block';
+                                    startCountdown();
+                                }, 2000);
+                            }, 15000); // 15 seconds for flashing
+                            
+                        } else {
+                            showError('Update failed: ' + (xhr.responseText || 'Unknown error'));
+                            resetForm();
+                        }
+                    }
+                };
+                
+                xhr.open('POST', '/ota/update');
+                xhr.send(file);
+                
+            } catch (err) {
+                showError('Upload error: ' + err.message);
+                resetForm();
+            }
+        });
+        
+        // Countdown and auto-redirect
+        function startCountdown() {
+            let seconds = 30;
+            const countdownInterval = setInterval(() => {
+                seconds--;
+                countdown.textContent = seconds;
+                
+                if (seconds <= 0) {
+                    clearInterval(countdownInterval);
+                    attemptReconnect();
+                }
+            }, 1000);
+        }
+        
+        // Try to reconnect after restart
+        async function attemptReconnect() {
+            autoRedirect.innerHTML = 'Attempting to reconnect...';
+            let attempts = 0;
+            const maxAttempts = 20;
+            
+            reconnectInterval = setInterval(async () => {
+                attempts++;
+                try {
+                    const response = await fetch('/', { 
+                        method: 'HEAD',
+                        mode: 'no-cors',
+                        cache: 'no-cache'
+                    });
+                    
+                    // If we get here, the device responded
+                    clearInterval(reconnectInterval);
+                    autoRedirect.innerHTML = '✅ Device is back online! Redirecting...';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                    
+                } catch (err) {
+                    if (attempts >= maxAttempts) {
+                        clearInterval(reconnectInterval);
+                        autoRedirect.innerHTML = '❌ Could not reconnect. Please <a href="/">refresh manually</a>.';
+                    } else {
+                        autoRedirect.innerHTML = `Attempting to reconnect... (${attempts}/${maxAttempts})`;
+                    }
+                }
+            }, 2000);
+        }
+        
+        function showError(message) {
+            error.textContent = message;
+            error.style.display = 'block';
+        }
+        
+        function resetForm() {
+            uploadBtn.disabled = false;
+            uploadBtn.classList.remove('loading');
+            fileInput.disabled = false;
+            progressContainer.style.display = 'none';
+            clearInterval(otaStatusInterval);
+            clearInterval(reconnectInterval);
+        }
+    </script>
+</body>
+</html>

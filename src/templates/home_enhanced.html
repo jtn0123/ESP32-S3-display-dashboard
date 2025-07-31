@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32-S3 Dashboard Configuration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #1a1a1a;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1a1a1a;
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        h2 {
+            color: #374151;
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: #4b5563;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 15px;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        input.error {
+            border-color: #dc2626;
+        }
+        .field-error {
+            color: #dc2626;
+            font-size: 13px;
+            margin-top: 4px;
+            display: none;
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.2s;
+            position: relative;
+        }
+        button:hover:not(:disabled) {
+            background-color: #1d4ed8;
+        }
+        button:active:not(:disabled) {
+            background-color: #1e40af;
+        }
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .spinner {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ffffff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            position: absolute;
+            right: 24px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        @keyframes spin {
+            to { transform: translateY(-50%) rotate(360deg); }
+        }
+        button.loading .spinner {
+            display: block;
+        }
+        button.loading {
+            padding-right: 50px;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
+        }
+        .success {
+            background-color: #d1fae5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+        .error {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+        .warning {
+            background-color: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+        }
+        .info {
+            background-color: #e0f2fe;
+            color: #0c4a6e;
+            border: 1px solid #bae6fd;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .system-info {
+            font-size: 13px;
+            color: #6b7280;
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .links a {
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+        /* Auto-refresh indicator */
+        .refresh-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            margin-left: 8px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        /* Configuration preview */
+        .config-diff {
+            display: none;
+            margin-top: 15px;
+            padding: 12px;
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .config-diff h3 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            color: #374151;
+        }
+        .diff-item {
+            margin: 4px 0;
+        }
+        .diff-old {
+            color: #dc2626;
+            text-decoration: line-through;
+        }
+        .diff-new {
+            color: #059669;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32-S3 Dashboard</h1>
+        <div class="info">
+            <strong>System Status:</strong>
+            <span id="system-status">Version {{VERSION}} | Connected to: {{SSID}} | Heap: {{FREE_HEAP}} KB | Uptime: {{UPTIME}}</span>
+            <span class="refresh-indicator" title="Auto-refreshing every 30s"></span>
+        </div>
+        
+        <form id="configForm">
+            <h2>WiFi Configuration</h2>
+            
+            <div class="form-group">
+                <label for="wifi_ssid">WiFi SSID:</label>
+                <input type="text" id="wifi_ssid" name="wifi_ssid" required>
+                <div class="field-error" id="wifi_ssid_error">SSID is required</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="wifi_password">WiFi Password:</label>
+                <input type="password" id="wifi_password" name="wifi_password" placeholder="Leave blank to keep current">
+                <div class="field-error" id="wifi_password_error">Password must be at least 8 characters</div>
+            </div>
+            
+            <h2>Display Settings</h2>
+            
+            <div class="form-group">
+                <label for="brightness">Brightness (0-255):</label>
+                <input type="number" id="brightness" name="brightness" min="0" max="255" value="255">
+                <div class="field-error" id="brightness_error">Brightness must be between 0 and 255</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="auto_dim">
+                    <input type="checkbox" id="auto_dim" name="auto_dim">
+                    Auto-dim display when idle
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label for="update_interval">Update Interval (seconds):</label>
+                <input type="number" id="update_interval" name="update_interval" min="1" max="60" value="5">
+                <div class="field-error" id="update_interval_error">Update interval must be between 1 and 60 seconds</div>
+            </div>
+            
+            <h2>Advanced Settings</h2>
+            
+            <div class="form-group">
+                <label for="auto_update">
+                    <input type="checkbox" id="auto_update" name="auto_update">
+                    Enable automatic firmware updates
+                </label>
+            </div>
+            
+            <div class="config-diff" id="configDiff">
+                <h3>Configuration Preview:</h3>
+                <div id="diffContent"></div>
+            </div>
+            
+            <button type="submit" id="submitBtn">
+                Save Configuration
+                <span class="spinner"></span>
+            </button>
+        </form>
+        
+        <div class="links">
+            <a href="/ota">Firmware Update</a>
+            <a href="/metrics">Prometheus Metrics</a>
+            <a href="#" onclick="restartDevice(); return false;">Restart Device</a>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div class="system-info" id="systemInfo">
+            Free memory: {{FREE_HEAP}} bytes | Uptime: {{UPTIME}}
+        </div>
+    </div>
+
+    <script>
+        let currentConfig = {};
+        let systemRefreshInterval;
+        
+        // Validation rules
+        const validators = {
+            wifi_ssid: (value) => value.trim().length > 0 ? null : 'SSID is required',
+            wifi_password: (value) => {
+                if (!value) return null; // Empty is OK (keeps current)
+                return value.length >= 8 ? null : 'Password must be at least 8 characters';
+            },
+            brightness: (value) => {
+                const num = parseInt(value);
+                return num >= 0 && num <= 255 ? null : 'Brightness must be between 0 and 255';
+            },
+            update_interval: (value) => {
+                const num = parseInt(value);
+                return num >= 1 && num <= 60 ? null : 'Update interval must be between 1 and 60 seconds';
+            }
+        };
+        
+        // Auto-refresh system status
+        async function refreshSystemStatus() {
+            try {
+                const response = await fetch('/api/system');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('system-status').textContent = 
+                        `Version ${data.version} | Connected to: ${data.ssid} | Heap: ${Math.round(data.free_heap / 1024)} KB | Uptime: ${formatUptime(data.uptime)}`;
+                }
+            } catch (error) {
+                console.error('Failed to refresh system status:', error);
+            }
+        }
+        
+        // Format uptime in human-readable format
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+            if (hours > 0) return `${hours}h ${minutes}m`;
+            return `${minutes}m ${seconds % 60}s`;
+        }
+        
+        // Validate single field
+        function validateField(fieldName, value) {
+            const validator = validators[fieldName];
+            if (!validator) return null;
+            
+            const error = validator(value);
+            const errorElement = document.getElementById(`${fieldName}_error`);
+            const inputElement = document.getElementById(fieldName);
+            
+            if (error) {
+                errorElement.textContent = error;
+                errorElement.style.display = 'block';
+                inputElement.classList.add('error');
+                return error;
+            } else {
+                errorElement.style.display = 'none';
+                inputElement.classList.remove('error');
+                return null;
+            }
+        }
+        
+        // Add real-time validation
+        document.querySelectorAll('input[type="text"], input[type="password"], input[type="number"]').forEach(input => {
+            input.addEventListener('blur', () => validateField(input.name, input.value));
+            input.addEventListener('input', () => {
+                validateField(input.name, input.value);
+                updateConfigDiff();
+            });
+        });
+        
+        // Update configuration preview
+        function updateConfigDiff() {
+            const formData = new FormData(document.getElementById('configForm'));
+            const newConfig = {
+                wifi_ssid: formData.get('wifi_ssid'),
+                wifi_password: formData.get('wifi_password'),
+                brightness: parseInt(formData.get('brightness')),
+                auto_dim: formData.get('auto_dim') === 'on',
+                update_interval: parseInt(formData.get('update_interval')),
+                auto_update: formData.get('auto_update') === 'on'
+            };
+            
+            const diffContent = document.getElementById('diffContent');
+            const configDiff = document.getElementById('configDiff');
+            let hasChanges = false;
+            let diffHtml = '';
+            
+            // Compare each field
+            Object.keys(newConfig).forEach(key => {
+                if (key === 'wifi_password' && !newConfig[key]) return; // Skip empty password
+                
+                const oldVal = currentConfig[key];
+                const newVal = newConfig[key];
+                
+                if (oldVal !== newVal) {
+                    hasChanges = true;
+                    diffHtml += `<div class="diff-item">
+                        <strong>${key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:</strong>
+                        <span class="diff-old">${oldVal}</span> → 
+                        <span class="diff-new">${newVal}</span>
+                    </div>`;
+                }
+            });
+            
+            if (hasChanges) {
+                diffContent.innerHTML = diffHtml;
+                configDiff.style.display = 'block';
+            } else {
+                configDiff.style.display = 'none';
+            }
+        }
+        
+        // Load current configuration
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                currentConfig = config;
+                
+                // Populate form fields
+                document.getElementById('wifi_ssid').value = config.wifi_ssid || '';
+                document.getElementById('wifi_password').value = '';  // Always blank for security
+                document.getElementById('brightness').value = config.brightness || 255;
+                document.getElementById('auto_dim').checked = config.auto_dim || false;
+                document.getElementById('update_interval').value = config.update_interval || 5;
+                document.getElementById('auto_update').checked = config.auto_update || false;
+            } catch (error) {
+                showStatus('Failed to load configuration', 'error');
+            }
+        }
+        
+        // Handle form submission
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const submitBtn = document.getElementById('submitBtn');
+            
+            // Validate all fields
+            let hasErrors = false;
+            ['wifi_ssid', 'brightness', 'update_interval'].forEach(field => {
+                const value = formData.get(field);
+                if (validateField(field, value)) {
+                    hasErrors = true;
+                }
+            });
+            
+            if (formData.get('wifi_password')) {
+                if (validateField('wifi_password', formData.get('wifi_password'))) {
+                    hasErrors = true;
+                }
+            }
+            
+            if (hasErrors) {
+                showStatus('Please fix the errors before submitting', 'error');
+                return;
+            }
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.classList.add('loading');
+            
+            const config = {
+                wifi_ssid: formData.get('wifi_ssid'),
+                wifi_password: formData.get('wifi_password'),
+                brightness: parseInt(formData.get('brightness')),
+                auto_dim: formData.get('auto_dim') === 'on',
+                update_interval: parseInt(formData.get('update_interval')),
+                auto_update: formData.get('auto_update') === 'on'
+            };
+            
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    showStatus('Configuration saved successfully! Changes will take effect on next boot.', 'success');
+                    currentConfig = {...currentConfig, ...config};
+                    if (!config.wifi_password) delete currentConfig.wifi_password;
+                    updateConfigDiff();
+                } else {
+                    const error = await response.text();
+                    showStatus(`Failed to save configuration: ${error}`, 'error');
+                }
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('loading');
+            }
+        });
+        
+        // Restart device function
+        async function restartDevice() {
+            if (!confirm('Are you sure you want to restart the device?')) return;
+            
+            try {
+                const response = await fetch('/api/restart', { method: 'POST' });
+                if (response.ok) {
+                    showStatus('Device is restarting... Please wait 30 seconds before refreshing.', 'warning');
+                    // Stop auto-refresh during restart
+                    clearInterval(systemRefreshInterval);
+                    
+                    // Try to reconnect after 30 seconds
+                    setTimeout(() => {
+                        showStatus('Attempting to reconnect...', 'info');
+                        attemptReconnect();
+                    }, 30000);
+                } else {
+                    showStatus('Failed to restart device', 'error');
+                }
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            }
+        }
+        
+        // Attempt to reconnect after restart
+        async function attemptReconnect() {
+            let attempts = 0;
+            const maxAttempts = 10;
+            
+            const reconnectInterval = setInterval(async () => {
+                attempts++;
+                try {
+                    const response = await fetch('/api/system', { timeout: 2000 });
+                    if (response.ok) {
+                        clearInterval(reconnectInterval);
+                        showStatus('Device is back online!', 'success');
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    if (attempts >= maxAttempts) {
+                        clearInterval(reconnectInterval);
+                        showStatus('Could not reconnect to device. Please check the connection.', 'error');
+                    }
+                }
+            }, 3000);
+        }
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + type;
+            status.style.display = 'block';
+            
+            if (type !== 'warning') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        // Initialize on page load
+        loadConfig();
+        refreshSystemStatus();
+        
+        // Set up auto-refresh for system status
+        systemRefreshInterval = setInterval(refreshSystemStatus, 30000);
+        
+        // Check for changed fields on input
+        document.getElementById('configForm').addEventListener('change', updateConfigDiff);
+    </script>
+</body>
+</html>

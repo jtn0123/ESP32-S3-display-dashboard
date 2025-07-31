@@ -237,7 +237,6 @@ impl OtaManager {
         Ok(())
     }
     
-    #[allow(dead_code)]
     pub fn restart(&self) {
         // Give some time for final operations
         use esp_idf_hal::delay::Ets;
@@ -259,7 +258,6 @@ impl OtaManager {
         }
     }
     
-    #[allow(dead_code)]
     pub fn cancel(&mut self) {
         if let Some(handle) = self.ota_handle.take() {
             unsafe { esp_ota_end(handle); }

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OTA Update - Not Available</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        /* Dark Mode Design System */
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #374151;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-main);
+            color: var(--text);
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: var(--bg-card);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            padding: 30px;
+            border: 1px solid var(--border);
+        }
+        h1 {
+            color: var(--text);
+            margin-bottom: 20px;
+        }
+        .info {
+            padding: 20px;
+            border: 1px solid var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--text);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .info h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: var(--accent);
+        }
+        .info p {
+            margin: 8px 0;
+            color: var(--text-dim);
+        }
+        pre {
+            background-color: var(--bg-input);
+            color: var(--text);
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            border: 1px solid var(--border);
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .back-link:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        
+        /* Navigation Bar */
+        .nav-bar {
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+        .nav-links a:hover {
+            background: var(--bg-input);
+            color: var(--text);
+        }
+        .nav-links a.active {
+            background: var(--accent);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav-bar">
+            <div class="nav-links">
+                <a href="/">🏠 Home</a>
+                <a href="/dashboard">📊 Dashboard</a>
+                <a href="/logs">📋 Logs</a>
+                <a href="/ota" class="active">⬆️ Update</a>
+                <a href="/metrics">📈 Metrics</a>
+            </div>
+        </div>
+        
+        <h1>OTA Update</h1>
+        <div class="info">
+            <h3>OTA Not Yet Available</h3>
+            <p>OTA updates will be available after the next USB firmware update.</p>
+            <p>This safety measure ensures the device always has a working factory partition to fall back to.</p>
+            <p>Once enabled, you can update wirelessly using:</p>
+            <pre>./scripts/ota.sh {{IP_ADDRESS}}</pre>
+            <p>Or use the web interface at this page.</p>
+        </div>
+        <a href="/" class="back-link">← Back to Settings</a>
+    </div>
+</body>
+</html>

@@ -36,6 +36,10 @@ mod performance;
 mod core1_tasks;
 mod logging;
 mod metrics;
+mod metrics_formatter;
+mod metrics_rwlock;
+// mod ring_buffer;  // TODO: Integrate ring buffer optimization
+mod templates;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
@@ -793,8 +797,15 @@ fn run_app(
         // Process data from Core 1 (non-blocking)
         if let Ok(processed_data) = core1_channels.processed_rx.try_recv() {
             // Core 1 now receives proper sensor data from Core 0, no override needed
-            log::debug!("Core 0: Received processed data from Core 1 - Temp: {:.1}°C, Battery: {}%", 
-                processed_data.temperature, processed_data.battery_percentage);
+            // Rate-limited debug logging to reduce spam
+            static mut DEBUG_COUNTER: u32 = 0;
+            unsafe {
+                DEBUG_COUNTER = DEBUG_COUNTER.wrapping_add(1);
+                if DEBUG_COUNTER % 600 == 0 {  // Log once every ~10 seconds at 60 FPS
+                    log::debug!("Core 0: Received processed data from Core 1 - Temp: {:.1}°C, Battery: {}%", 
+                        processed_data.temperature, processed_data.battery_percentage);
+                }
+            }
             
             // Update UI with processed sensor data
             ui_manager.update_sensor_data(sensors::SensorData {

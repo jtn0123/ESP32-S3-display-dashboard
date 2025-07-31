@@ -1,23 +1,92 @@
 // Global metrics collection for the dashboard
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, OnceLock};
 
-// Global metrics instance - use a static with manual initialization
-static mut METRICS: Option<Arc<Mutex<MetricsData>>> = None;
-static METRICS_INIT: std::sync::Once = std::sync::Once::new();
+// Import the optimized store
+use crate::metrics_rwlock::{self, MetricsStore};
+
+// Global metrics instance - use OnceLock for safe one-time initialization
+static METRICS: OnceLock<Arc<MetricsWrapper>> = OnceLock::new();
 
 // Initialize metrics
 pub fn init_metrics() {
-    unsafe {
-        METRICS_INIT.call_once(|| {
-            METRICS = Some(Arc::new(Mutex::new(MetricsData::default())));
-        });
-    }
+    metrics_rwlock::init_metrics();
+    METRICS.get_or_init(|| Arc::new(MetricsWrapper::new()));
 }
 
 // Get the metrics instance - panics if not initialized
-pub fn metrics() -> &'static Arc<Mutex<MetricsData>> {
-    unsafe {
-        METRICS.as_ref().expect("Metrics not initialized! Call init_metrics() first")
+pub fn metrics() -> &'static Arc<MetricsWrapper> {
+    METRICS.get().expect("Metrics not initialized! Call init_metrics() first")
+}
+
+/// Wrapper that provides Mutex-like interface but uses optimized backend
+pub struct MetricsWrapper {
+    store: &'static Arc<MetricsStore>,
+}
+
+impl MetricsWrapper {
+    fn new() -> Self {
+        Self {
+            store: metrics_rwlock::metrics(),
+        }
+    }
+    
+    /// Lock for reading - returns a snapshot
+    pub fn lock(&self) -> Result<MetricsGuard, std::sync::PoisonError<MetricsGuard>> {
+        Ok(MetricsGuard {
+            data: self.store.snapshot(),
+            store: self.store,
+        })
+    }
+    
+    /// Try to lock for reading - returns a snapshot
+    pub fn try_lock(&self) -> Result<MetricsGuard, std::sync::TryLockError<MetricsGuard>> {
+        Ok(MetricsGuard {
+            data: self.store.snapshot(),
+            store: self.store,
+        })
+    }
+}
+
+/// Guard that provides mutable access to metrics
+pub struct MetricsGuard {
+    data: MetricsData,
+    store: &'static Arc<MetricsStore>,
+}
+
+impl std::ops::Deref for MetricsGuard {
+    type Target = MetricsData;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::ops::DerefMut for MetricsGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl Drop for MetricsGuard {
+    fn drop(&mut self) {
+        // Update the store with any changes made to the data
+        self.store.update_cpu(self.data.cpu_usage, self.data.cpu_freq_mhz);
+        self.store.update_cpu_cores(self.data.cpu0_usage, self.data.cpu1_usage);
+        self.store.update_temperature(self.data.temperature);
+        self.store.update_wifi_signal(self.data.wifi_rssi);
+        self.store.update_wifi_status(self.data.wifi_connected, self.data.wifi_ssid.clone());
+        self.store.update_display(self.data.display_brightness);
+        self.store.update_battery(self.data.battery_voltage_mv, self.data.battery_percentage, self.data.battery_charging);
+        self.store.update_timings(self.data.render_time_ms, self.data.flush_time_ms);
+        self.store.update_frame_stats(self.data.frame_count, self.data.skip_count);
+        self.store.update_psram(self.data.psram_free, self.data.psram_total);
+        self.store.update_button_metrics(
+            self.data.button_avg_response_ms,
+            self.data.button_max_response_ms,
+            self.data.button_events_total,
+            self.data.button_events_per_second,
+        );
+        self.store.update_fps(self.data.fps_actual, self.data.fps_target);
     }
 }
 

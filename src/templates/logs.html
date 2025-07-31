@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 System Logs</title>
+    <style>
+        /* Dark Mode Design System */
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #374151;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+            background: var(--bg-main);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            box-shadow: var(--shadow);
+        }
+
+        .header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .filter-select {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .btn {
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* Log Container */
+        .log-container {
+            margin-top: 70px;
+            padding: 1rem;
+            height: calc(100vh - 70px);
+            overflow-y: auto;
+            background: var(--bg-main);
+        }
+
+        .log-entry {
+            font-size: 0.875rem;
+            line-height: 1.4rem;
+            padding: 0.25rem 0;
+            border-bottom: 1px solid rgba(55, 65, 81, 0.3);
+            word-wrap: break-word;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .log-entry:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .timestamp {
+            color: var(--text-muted);
+            min-width: 80px;
+            font-size: 0.75rem;
+        }
+
+        .level {
+            min-width: 50px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+
+        .level.error {
+            color: var(--danger);
+        }
+
+        .level.warn {
+            color: var(--warning);
+        }
+
+        .level.info {
+            color: var(--success);
+        }
+
+        .level.debug {
+            color: var(--text-muted);
+        }
+
+        .message {
+            flex: 1;
+            color: var(--text);
+        }
+
+        /* Search Box */
+        .search-container {
+            margin-right: 1rem;
+            position: relative;
+        }
+
+        .search-input {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 2.5rem 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            width: 200px;
+            transition: width 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            width: 300px;
+        }
+
+        .search-clear {
+            position: absolute;
+            right: 0.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            padding: 0.5rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .status-left {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .status-center {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .status-center a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 2px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .status-center a:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+        }
+        
+        .status-center a.active {
+            color: var(--accent);
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            margin-right: 0.25rem;
+        }
+
+        .status-dot.disconnected {
+            background: var(--danger);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            margin-top: 4rem;
+            font-size: 0.875rem;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            color: var(--text-muted);
+            margin-top: 2rem;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--accent);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .search-input {
+                width: 120px;
+            }
+            
+            .search-input:focus {
+                width: 200px;
+            }
+            
+            .log-entry {
+                font-size: 0.75rem;
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+            
+            .timestamp {
+                font-size: 0.7rem;
+            }
+            
+            .controls {
+                flex-wrap: wrap;
+            }
+        }
+
+        /* Syntax Highlighting */
+        .highlight {
+            background: rgba(251, 191, 36, 0.2);
+            color: var(--warning);
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>System Logs</h1>
+        <div class="controls">
+            <div class="search-container">
+                <input type="text" class="search-input" id="searchInput" placeholder="Search logs...">
+                <button class="search-clear" id="searchClear" style="display: none;">✕</button>
+            </div>
+            
+            <select class="filter-select" id="levelFilter">
+                <option value="all">All Levels</option>
+                <option value="error">Errors Only</option>
+                <option value="warn">Warnings & Errors</option>
+                <option value="info">Info & Above</option>
+                <option value="debug">Debug & Above</option>
+            </select>
+            
+            <button class="btn" id="autoScrollBtn" onclick="toggleAutoScroll()">Auto Scroll</button>
+            <button class="btn" onclick="clearLogs()">Clear</button>
+            <button class="btn" onclick="window.location.href='/dashboard'">Dashboard</button>
+        </div>
+    </header>
+
+    <div class="log-container" id="logContainer">
+        <div class="loading">
+            <span class="spinner"></span>
+            Loading logs...
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-left">
+            <span><span class="status-dot" id="statusDot"></span>Connected</span>
+            <span id="logCount">0 logs</span>
+            <span id="errorCount">0 errors</span>
+        </div>
+        <div class="status-center">
+            <a href="/">🏠</a>
+            <a href="/dashboard">📊</a>
+            <a href="/logs" class="active">📋</a>
+            <a href="/ota">⬆️</a>
+            <a href="/metrics">📈</a>
+        </div>
+        <div class="status-right">
+            <span id="updateTime">Last update: --</span>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const UPDATE_INTERVAL = 3000; // 3 seconds
+        const MAX_LOGS = 1000; // Keep last 1000 logs
+        
+        // State
+        let logs = [];
+        let filteredLogs = [];
+        let autoScroll = true;
+        let searchTerm = '';
+        let levelFilter = 'all';
+        let updateTimer = null;
+        let errorCount = 0;
+        
+        // Elements
+        const logContainer = document.getElementById('logContainer');
+        const searchInput = document.getElementById('searchInput');
+        const searchClear = document.getElementById('searchClear');
+        const levelFilterSelect = document.getElementById('levelFilter');
+        const autoScrollBtn = document.getElementById('autoScrollBtn');
+        const statusDot = document.getElementById('statusDot');
+        const logCountSpan = document.getElementById('logCount');
+        const errorCountSpan = document.getElementById('errorCount');
+        const updateTimeSpan = document.getElementById('updateTime');
+        
+        // Parse log level from message
+        function parseLogEntry(line) {
+            // Format: [timestamp] LEVEL message
+            const match = line.match(/\[\s*(\d+)\]\s*(\w+)\s+(.*)$/);
+            if (match) {
+                return {
+                    timestamp: parseInt(match[1]),
+                    level: match[2].toLowerCase(),
+                    message: match[3],
+                    raw: line
+                };
+            }
+            
+            // Fallback for non-standard format
+            return {
+                timestamp: Date.now(),
+                level: 'info',
+                message: line,
+                raw: line
+            };
+        }
+        
+        // Fetch logs
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+                
+                if (data.logs) {
+                    // Parse and add new logs
+                    const newLogs = data.logs.map(parseLogEntry);
+                    logs = [...logs, ...newLogs].slice(-MAX_LOGS);
+                    
+                    // Update counts
+                    errorCount = logs.filter(log => log.level === 'error').length;
+                    
+                    // Apply filters and render
+                    applyFilters();
+                }
+                
+                // Update status
+                statusDot.className = 'status-dot';
+                updateTimeSpan.textContent = 'Last update: ' + new Date().toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('Failed to fetch logs:', error);
+                statusDot.className = 'status-dot disconnected';
+            }
+        }
+        
+        // Apply filters
+        function applyFilters() {
+            filteredLogs = logs.filter(log => {
+                // Level filter
+                if (levelFilter !== 'all') {
+                    const levels = {
+                        'error': ['error'],
+                        'warn': ['error', 'warn'],
+                        'info': ['error', 'warn', 'info'],
+                        'debug': ['error', 'warn', 'info', 'debug']
+                    };
+                    if (!levels[levelFilter].includes(log.level)) {
+                        return false;
+                    }
+                }
+                
+                // Search filter
+                if (searchTerm && !log.message.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            renderLogs();
+        }
+        
+        // Render logs
+        function renderLogs() {
+            if (filteredLogs.length === 0) {
+                logContainer.innerHTML = `
+                    <div class="empty-state">
+                        No logs match your filters
+                    </div>
+                `;
+                return;
+            }
+            
+            const wasAtBottom = isAtBottom();
+            
+            logContainer.innerHTML = filteredLogs.map(log => {
+                const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                let message = escapeHtml(log.message);
+                
+                // Highlight search term
+                if (searchTerm) {
+                    const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
+                    message = message.replace(regex, '<span class="highlight">$1</span>');
+                }
+                
+                return `
+                    <div class="log-entry">
+                        <span class="timestamp">[${timestamp}]</span>
+                        <span class="level ${log.level}">${log.level}</span>
+                        <span class="message">${message}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            // Update counts
+            logCountSpan.textContent = `${filteredLogs.length} logs`;
+            errorCountSpan.textContent = `${errorCount} errors`;
+            
+            // Auto scroll if enabled and was at bottom
+            if (autoScroll && wasAtBottom) {
+                scrollToBottom();
+            }
+        }
+        
+        // Utility functions
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function escapeRegex(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+        
+        function isAtBottom() {
+            return logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 50;
+        }
+        
+        function scrollToBottom() {
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            autoScrollBtn.classList.toggle('active', autoScroll);
+            if (autoScroll) {
+                scrollToBottom();
+            }
+        }
+        
+        function clearLogs() {
+            logs = [];
+            filteredLogs = [];
+            errorCount = 0;
+            renderLogs();
+        }
+        
+        // Event listeners
+        searchInput.addEventListener('input', (e) => {
+            searchTerm = e.target.value;
+            searchClear.style.display = searchTerm ? 'block' : 'none';
+            applyFilters();
+        });
+        
+        searchClear.addEventListener('click', () => {
+            searchInput.value = '';
+            searchTerm = '';
+            searchClear.style.display = 'none';
+            applyFilters();
+        });
+        
+        levelFilterSelect.addEventListener('change', (e) => {
+            levelFilter = e.target.value;
+            applyFilters();
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl/Cmd + K to focus search
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                searchInput.focus();
+            }
+            // Ctrl/Cmd + L to clear
+            if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+                e.preventDefault();
+                clearLogs();
+            }
+            // Space to toggle auto-scroll
+            if (e.key === ' ' && e.target === document.body) {
+                e.preventDefault();
+                toggleAutoScroll();
+            }
+        });
+        
+        // Start updates
+        function startUpdates() {
+            fetchLogs();
+            updateTimer = setInterval(fetchLogs, UPDATE_INTERVAL);
+        }
+        
+        function stopUpdates() {
+            if (updateTimer) {
+                clearInterval(updateTimer);
+                updateTimer = null;
+            }
+        }
+        
+        // Page visibility handling
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) stopUpdates();
+            else startUpdates();
+        });
+        
+        // Initialize
+        autoScrollBtn.classList.add('active');
+        startUpdates();
+    </script>
+</body>
+</html>

@@ -41,6 +41,7 @@ log = "=0.4.22"
 serde = { version = "=1.0.217", default-features = false, features = ["derive"] }
 serde_json = "=1.0.135"
 
+
 # Embedded graphics and display drivers
 embedded-graphics = "=0.8.1"
 embedded-graphics-core = "=0.4.0"

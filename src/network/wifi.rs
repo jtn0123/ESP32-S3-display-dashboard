@@ -128,14 +128,17 @@ impl WifiManager {
         // Store signal strength
         self.last_signal_strength = signal_strength;
         
-        // Enable WiFi power save mode
+        // Disable WiFi power save mode to prevent disconnections
+        // MIN_MODEM mode can cause disconnections during web server activity
+        // The ESP32 may disconnect with error code 0x6374c0 when power save is active
+        // and there's significant network traffic (web requests, telnet, etc.)
         unsafe {
             use esp_idf_sys::*;
-            let result = esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_MIN_MODEM);
+            let result = esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE);
             if result == ESP_OK {
-                log::info!("WiFi power save enabled (MIN_MODEM mode)");
+                log::info!("WiFi power save disabled for stable connection");
             } else {
-                log::warn!("Failed to enable WiFi power save: {:?}", result);
+                log::warn!("Failed to set WiFi power save mode: {:?}", result);
             }
         }
         

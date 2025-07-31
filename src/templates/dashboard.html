@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 Dashboard</title>
+    <style>
+        /* Dark Mode Design System */
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #374151;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: var(--shadow);
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .icon-btn {
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .icon-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: default;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+            border-color: var(--accent);
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .metric-trend {
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+            color: var(--success);
+        }
+
+        .metric-trend.down {
+            color: var(--danger);
+        }
+
+        .metric-sparkline {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            opacity: 0.3;
+        }
+
+        /* Control Panel */
+        .control-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin: 0 1.5rem 1.5rem;
+            padding: 1.5rem;
+        }
+
+        .control-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-label {
+            font-size: 0.875rem;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Slider */
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--bg-input);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .slider-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 3px;
+            width: 70%;
+            transition: width 0.2s;
+        }
+
+        .slider-thumb {
+            position: absolute;
+            top: 50%;
+            left: 70%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background: var(--accent);
+            border: 3px solid var(--bg-card);
+            border-radius: 50%;
+            cursor: grab;
+            box-shadow: var(--shadow);
+        }
+
+        .slider-thumb:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+
+        .slider-value {
+            font-weight: 600;
+            min-width: 45px;
+            text-align: right;
+        }
+
+        /* Toggle Buttons */
+        .toggle-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .toggle-btn {
+            flex: 1;
+            padding: 0.5rem 1rem;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .toggle-btn:hover {
+            background: var(--bg-input);
+            color: var(--text);
+        }
+
+        .toggle-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        /* Performance Chart */
+        .chart-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin: 0 1.5rem 1.5rem;
+            padding: 1.5rem;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .chart-title {
+            font-weight: 600;
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        #performanceChart {
+            width: 100%;
+            height: 200px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+        
+        .footer p {
+            margin-bottom: 1rem;
+        }
+        
+        .footer-nav {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .footer-nav a {
+            color: var(--text-dim);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        .footer-nav a:hover {
+            background: var(--bg-card);
+            color: var(--text);
+        }
+        
+        .footer-nav a.active {
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.75rem;
+                padding: 1rem;
+            }
+            
+            .metric-card {
+                padding: 1rem;
+            }
+            
+            .metric-value {
+                font-size: 1.5rem;
+            }
+            
+            .header h1 {
+                font-size: 1.25rem;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        /* Loading State */
+        .loading {
+            opacity: 0.5;
+            position: relative;
+        }
+
+        .loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--accent);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>
+            <span class="status-dot"></span>
+            ESP32-S3 Dashboard
+        </h1>
+        <div class="header-actions">
+            <button class="icon-btn" onclick="refreshData()" title="Refresh">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6M1 20v-6h6"/>
+                    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+            </button>
+            <button class="icon-btn" onclick="window.location.href='/'" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24m-4.24 13.68l4.24 4.24M20 12h6m-22 0h6m-2.22-4.22l-4.24-4.24m4.24 13.68l-4.24 4.24"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main>
+        <!-- Metrics Grid -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value" id="fps">--</div>
+                <div class="metric-label">FPS</div>
+                <div class="metric-trend" id="fps-trend"></div>
+                <canvas class="metric-sparkline" id="fps-spark"></canvas>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-value" id="cpu0">--%</div>
+                <div class="metric-label">CPU Core 0</div>
+                <div class="metric-trend" id="cpu0-trend"></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-value" id="cpu1">--%</div>
+                <div class="metric-label">CPU Core 1</div>
+                <div class="metric-trend" id="cpu1-trend"></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-value" id="memory">--</div>
+                <div class="metric-label">Free Heap</div>
+                <div class="metric-trend" id="memory-trend"></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-value" id="temp">--°</div>
+                <div class="metric-label">Temperature</div>
+                <div class="metric-trend" id="temp-trend"></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-value" id="battery">--%</div>
+                <div class="metric-label">Battery</div>
+                <div class="metric-trend" id="battery-trend"></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-value" id="wifi">--</div>
+                <div class="metric-label">WiFi RSSI</div>
+                <div class="metric-trend" id="wifi-trend"></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-value" id="uptime">--</div>
+                <div class="metric-label">Uptime</div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">Device Controls</h2>
+            
+            <div class="control-group">
+                <div class="control-label">Display Brightness</div>
+                <div class="slider-container">
+                    <div class="slider" id="brightness-slider">
+                        <div class="slider-fill" id="brightness-fill"></div>
+                        <div class="slider-thumb" id="brightness-thumb"></div>
+                    </div>
+                    <div class="slider-value" id="brightness-value">70%</div>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <div class="control-label">Performance Mode</div>
+                <div class="toggle-group">
+                    <button class="toggle-btn" onclick="setMode('eco')">ECO</button>
+                    <button class="toggle-btn active" onclick="setMode('normal')">NORMAL</button>
+                    <button class="toggle-btn" onclick="setMode('turbo')">TURBO</button>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <div class="control-label">Quick Actions</div>
+                <div class="action-buttons">
+                    <button class="btn" onclick="takeScreenshot()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                        Screenshot
+                    </button>
+                    <button class="btn btn-danger" onclick="restartDevice()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                        </svg>
+                        Restart
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Chart -->
+        <div class="chart-container">
+            <div class="chart-header">
+                <h3 class="chart-title">Performance History (60s)</h3>
+                <div class="chart-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--accent)"></div>
+                        <span>FPS</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--success)"></div>
+                        <span>CPU %</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--warning)"></div>
+                        <span>Temp °C</span>
+                    </div>
+                </div>
+            </div>
+            <canvas id="performanceChart"></canvas>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>ESP32-S3 Dashboard {{VERSION}}</p>
+        <div class="footer-nav">
+            <a href="/">🏠 Home</a>
+            <a href="/dashboard" class="active">📊 Dashboard</a>
+            <a href="/logs">📋 Logs</a>
+            <a href="/ota">⬆️ Update</a>
+            <a href="/metrics">📈 Metrics</a>
+        </div>
+    </footer>
+
+    <script>
+        // Configuration
+        const UPDATE_INTERVAL = 2000; // 2 seconds
+        const CHART_POINTS = 60; // 60 data points = 2 minutes at 2s intervals
+        
+        // State
+        let metrics = {
+            fps: [],
+            cpu: [],
+            temp: [],
+            memory: []
+        };
+        let previousValues = {};
+        let chart = null;
+        let updateTimer = null;
+        
+        // Initialize brightness slider
+        const brightnessSlider = document.getElementById('brightness-slider');
+        const brightnessThumb = document.getElementById('brightness-thumb');
+        const brightnessFill = document.getElementById('brightness-fill');
+        const brightnessValue = document.getElementById('brightness-value');
+        let isDragging = false;
+        
+        function updateBrightness(percentage) {
+            brightnessFill.style.width = percentage + '%';
+            brightnessThumb.style.left = percentage + '%';
+            brightnessValue.textContent = Math.round(percentage) + '%';
+        }
+        
+        function handleSliderInput(e) {
+            if (!isDragging && e.type !== 'click') return;
+            
+            const rect = brightnessSlider.getBoundingClientRect();
+            const x = e.clientX || e.touches[0].clientX;
+            const percentage = Math.max(0, Math.min(100, ((x - rect.left) / rect.width) * 100));
+            updateBrightness(percentage);
+            
+            // Send to device
+            fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ brightness: Math.round(percentage * 2.55) })
+            });
+        }
+        
+        brightnessSlider.addEventListener('click', handleSliderInput);
+        brightnessThumb.addEventListener('mousedown', () => isDragging = true);
+        document.addEventListener('mousemove', handleSliderInput);
+        document.addEventListener('mouseup', () => isDragging = false);
+        brightnessThumb.addEventListener('touchstart', () => isDragging = true);
+        document.addEventListener('touchmove', handleSliderInput);
+        document.addEventListener('touchend', () => isDragging = false);
+        
+        // Fetch metrics
+        async function fetchMetrics() {
+            try {
+                const response = await fetch('/api/metrics');
+                const data = await response.json();
+                updateUI(data);
+                updateCharts(data);
+            } catch (error) {
+                console.error('Failed to fetch metrics:', error);
+            }
+        }
+        
+        // Update UI with metrics
+        function updateUI(data) {
+            // Update values
+            updateMetric('fps', data.fps_actual?.toFixed(1) || '--');
+            updateMetric('cpu0', (data.cpu0_usage || 0) + '%');
+            updateMetric('cpu1', (data.cpu1_usage || 0) + '%');
+            updateMetric('memory', formatBytes(data.heap_free || 0));
+            updateMetric('temp', (data.temperature?.toFixed(1) || '--') + '°');
+            updateMetric('battery', (data.battery_percentage || 0) + '%');
+            updateMetric('wifi', (data.wifi_rssi || '--') + ' dBm');
+            updateMetric('uptime', formatUptime(data.uptime || 0));
+            
+            // Update trends
+            updateTrend('fps', data.fps_actual, 30);
+            updateTrend('cpu0', data.cpu0_usage, 50);
+            updateTrend('cpu1', data.cpu1_usage, 50);
+            updateTrend('memory', data.heap_free, null, true);
+            updateTrend('temp', data.temperature, 45);
+            updateTrend('battery', data.battery_percentage, 20);
+            updateTrend('wifi', Math.abs(data.wifi_rssi || 0), 70);
+            
+            // Update status dot
+            const statusDot = document.querySelector('.status-dot');
+            if (data.wifi_connected) {
+                statusDot.style.background = 'var(--success)';
+            } else {
+                statusDot.style.background = 'var(--danger)';
+            }
+            
+            // Store metrics for charts
+            metrics.fps.push(data.fps_actual || 0);
+            metrics.cpu.push(Math.max(data.cpu0_usage || 0, data.cpu1_usage || 0));
+            metrics.temp.push(data.temperature || 0);
+            metrics.memory.push(data.heap_free || 0);
+            
+            // Keep only last N points
+            Object.keys(metrics).forEach(key => {
+                if (metrics[key].length > CHART_POINTS) {
+                    metrics[key].shift();
+                }
+            });
+        }
+        
+        function updateMetric(id, value) {
+            const element = document.getElementById(id);
+            if (element) element.textContent = value;
+        }
+        
+        function updateTrend(id, value, threshold, inverse = false) {
+            const element = document.getElementById(id + '-trend');
+            if (!element || value === undefined) return;
+            
+            const previous = previousValues[id];
+            previousValues[id] = value;
+            
+            if (previous === undefined) return;
+            
+            const diff = value - previous;
+            const percentage = previous > 0 ? (diff / previous * 100).toFixed(1) : 0;
+            
+            if (Math.abs(diff) < 0.01) {
+                element.textContent = '→ Stable';
+                element.className = 'metric-trend';
+            } else if (diff > 0) {
+                element.textContent = '↑ +' + Math.abs(percentage) + '%';
+                element.className = 'metric-trend ' + ((!inverse && threshold && value > threshold) ? 'down' : '');
+            } else {
+                element.textContent = '↓ -' + Math.abs(percentage) + '%';
+                element.className = 'metric-trend ' + ((inverse && threshold && value < threshold) ? 'down' : '');
+            }
+        }
+        
+        // Format helpers
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${minutes}m`;
+            return `${minutes}m`;
+        }
+        
+        // Chart rendering
+        function initChart() {
+            const canvas = document.getElementById('performanceChart');
+            const ctx = canvas.getContext('2d');
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            
+            chart = { canvas, ctx, width: canvas.width, height: canvas.height };
+        }
+        
+        function updateCharts(data) {
+            if (!chart) initChart();
+            
+            const { ctx, width, height } = chart;
+            const padding = 20;
+            const graphWidth = width - padding * 2;
+            const graphHeight = height - padding * 2;
+            
+            // Clear canvas
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, width, height);
+            
+            // Draw grid
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 4]);
+            
+            // Horizontal lines
+            for (let i = 0; i <= 4; i++) {
+                const y = padding + (graphHeight / 4) * i;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(width - padding, y);
+                ctx.stroke();
+            }
+            
+            ctx.setLineDash([]);
+            
+            // Draw lines
+            drawLine(ctx, metrics.fps, 0, 60, '#3b82f6', padding, graphWidth, graphHeight);
+            drawLine(ctx, metrics.cpu, 0, 100, '#10b981', padding, graphWidth, graphHeight);
+            drawLine(ctx, metrics.temp, 20, 60, '#f59e0b', padding, graphWidth, graphHeight);
+            
+            // Draw FPS sparkline
+            const sparkCanvas = document.getElementById('fps-spark');
+            if (sparkCanvas && metrics.fps.length > 1) {
+                drawSparkline(sparkCanvas, metrics.fps, '#3b82f6');
+            }
+        }
+        
+        function drawLine(ctx, data, min, max, color, padding, width, height) {
+            if (data.length < 2) return;
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            data.forEach((value, i) => {
+                const x = padding + (width / (CHART_POINTS - 1)) * i;
+                const y = padding + height - ((value - min) / (max - min)) * height;
+                
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            
+            ctx.stroke();
+        }
+        
+        function drawSparkline(canvas, data, color) {
+            const ctx = canvas.getContext('2d');
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            
+            if (data.length < 2) return;
+            
+            const min = Math.min(...data);
+            const max = Math.max(...data);
+            const range = max - min || 1;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            data.forEach((value, i) => {
+                const x = (canvas.width / (data.length - 1)) * i;
+                const y = canvas.height - ((value - min) / range) * canvas.height;
+                
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            
+            ctx.stroke();
+        }
+        
+        // Control functions
+        function setMode(mode) {
+            document.querySelectorAll('.toggle-group')[0].querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.textContent.toLowerCase() === mode);
+            });
+            
+            fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+        }
+        
+        async function restartDevice() {
+            if (!confirm('Are you sure you want to restart the device?')) return;
+            
+            try {
+                await fetch('/api/restart', { method: 'POST' });
+                alert('Device is restarting...');
+            } catch (error) {
+                alert('Failed to restart device');
+            }
+        }
+        
+        function takeScreenshot() {
+            alert('Screenshot feature not yet implemented');
+        }
+        
+        function refreshData() {
+            fetchMetrics();
+        }
+        
+        // Start updates
+        function startUpdates() {
+            fetchMetrics();
+            updateTimer = setInterval(fetchMetrics, UPDATE_INTERVAL);
+        }
+        
+        function stopUpdates() {
+            if (updateTimer) {
+                clearInterval(updateTimer);
+                updateTimer = null;
+            }
+        }
+        
+        // Page visibility handling
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) stopUpdates();
+            else startUpdates();
+        });
+        
+        // Initialize
+        window.addEventListener('resize', () => {
+            if (chart) initChart();
+        });
+        
+        startUpdates();
+    </script>
+</body>
+</html>
