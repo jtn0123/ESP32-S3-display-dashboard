@@ -173,8 +173,4 @@ impl WifiManager {
                               mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]))
             .unwrap_or_else(|| "Unknown".to_string())
     }
-    
-    pub fn get_signal_strength(&self) -> i8 {
-        self.last_signal_strength
-    }
 }

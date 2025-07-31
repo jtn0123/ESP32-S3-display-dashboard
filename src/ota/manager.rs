@@ -4,7 +4,7 @@ use core::ffi::c_void;
 use esp_idf_sys::{
     esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition,
     esp_ota_handle_t, esp_ota_set_boot_partition, esp_ota_write,
-    esp_partition_t, esp_restart,
+    esp_partition_t,
     esp_partition_find_first, esp_partition_type_t_ESP_PARTITION_TYPE_APP as ESP_PARTITION_TYPE_APP,
     esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_APP_OTA_0 as ESP_PARTITION_SUBTYPE_APP_OTA_0,
 };
@@ -237,15 +237,6 @@ impl OtaManager {
         Ok(())
     }
     
-    pub fn restart(&self) {
-        // Give some time for final operations
-        use esp_idf_hal::delay::Ets;
-        Ets::delay_ms(1000);
-        
-        // Restart the system
-        unsafe { esp_restart(); }
-    }
-    
     pub fn get_status(&self) -> OtaStatus {
         self.status
     }
@@ -256,15 +247,6 @@ impl OtaManager {
             OtaStatus::Ready => 100,
             _ => 0,
         }
-    }
-    
-    pub fn cancel(&mut self) {
-        if let Some(handle) = self.ota_handle.take() {
-            unsafe { esp_ota_end(handle); }
-        }
-        self.status = OtaStatus::Idle;
-        self.bytes_written = 0;
-        self.expected_size = 0;
     }
 }
 

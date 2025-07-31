@@ -66,28 +66,6 @@ pub struct UiManager {
 }
 
 impl UiManager {
-    fn draw_header(&self, display: &mut DisplayManager, title: &str, bg_color: u16) -> Result<()> {
-        // Header background
-        display.fill_rect(0, 0, 320, 30, bg_color)?;
-        
-        // Title
-        display.draw_text_centered(8, title, WHITE, None, 2)?;
-        
-        // Battery indicator
-        display.fill_rect(5, 5, 50, 20, bg_color)?;
-        let battery_color = if self.sensor_data._battery_percentage > 50 { WHITE } 
-                           else if self.sensor_data._battery_percentage > 20 { YELLOW } 
-                           else { PRIMARY_RED };
-        let battery_str = format!("{}%", self.sensor_data._battery_percentage);
-        display.draw_text(10, 8, &battery_str, battery_color, None, 1)?;
-        
-        // Time
-        display.fill_rect(240, 5, 75, 20, bg_color)?;
-        let time_str = self.system_info.format_uptime();
-        display.draw_text(245, 8, &time_str, WHITE, None, 1)?;
-        
-        Ok(())
-    }
     pub fn new(_display: &mut DisplayManager) -> Result<Self> {
         Ok(Self {
             current_screen: 0,

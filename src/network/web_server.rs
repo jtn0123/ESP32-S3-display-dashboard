@@ -21,10 +21,6 @@ struct WebConfig {
 }
 
 impl WebConfigServer {
-    pub fn new(config: Arc<Mutex<Config>>) -> Result<Self> {
-        Self::new_with_ota(config, None)
-    }
-    
     pub fn new_with_ota(config: Arc<Mutex<Config>>, ota_manager: Option<Arc<Mutex<OtaManager>>>) -> Result<Self> {
         Self::new_with_ota_and_metrics(config, ota_manager, crate::metrics::metrics().clone())
     }
