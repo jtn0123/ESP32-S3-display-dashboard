@@ -30,7 +30,6 @@ struct SystemStatus {
 }
 
 impl WebConfigServer {
-    #[allow(dead_code)]
     pub fn new(
         config: Arc<Mutex<Config>>,
         metrics: Arc<std::sync::RwLock<crate::metrics::MetricsStore>>,

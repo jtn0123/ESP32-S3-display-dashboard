@@ -52,7 +52,6 @@ impl NetworkManager {
         Ok(())
     }
     
-    #[allow(dead_code)]
     fn start_mdns(&mut self) -> Result<()> {
         let mut mdns = EspMdns::take()?;
         mdns.set_hostname("esp32-dashboard")?;

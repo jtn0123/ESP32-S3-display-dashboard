@@ -174,7 +174,6 @@ impl WifiManager {
             .unwrap_or_else(|| "Unknown".to_string())
     }
     
-    #[allow(dead_code)]
     pub fn get_signal_strength(&self) -> i8 {
         self.last_signal_strength
     }

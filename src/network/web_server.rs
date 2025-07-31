@@ -21,7 +21,6 @@ struct WebConfig {
 }
 
 impl WebConfigServer {
-    #[allow(dead_code)]
     pub fn new(config: Arc<Mutex<Config>>) -> Result<Self> {
         Self::new_with_ota(config, None)
     }

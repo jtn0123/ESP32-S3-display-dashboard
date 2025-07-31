@@ -42,6 +42,14 @@ This is a Rust-based dashboard implementation for the LilyGo T-Display-S3 (ESP32
 - Dual-core CPU monitoring
 - Auto-dimming and power management
 
+## Code Quality Standards
+
+### NEVER Use Dead Code Annotations
+- **NEVER use `#[allow(dead_code)]`** - If code is unused, remove it completely
+- **Fix warnings properly** by removing unused code, not suppressing warnings
+- **Clean code is better than annotated code** - Keep the codebase clean and minimal
+- **If code might be needed later**, comment it out with a TODO explaining when it will be used
+
 ## Development Workflow
 
 ### Building

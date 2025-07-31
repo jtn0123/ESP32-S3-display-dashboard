@@ -66,7 +66,6 @@ pub struct UiManager {
 }
 
 impl UiManager {
-    #[allow(dead_code)]
     fn draw_header(&self, display: &mut DisplayManager, title: &str, bg_color: u16) -> Result<()> {
         // Header background
         display.fill_rect(0, 0, 320, 30, bg_color)?;
