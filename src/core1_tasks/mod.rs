@@ -22,8 +22,6 @@ pub use network_monitor::NetworkUpdate;
 
 // Channels for communication between cores
 pub struct Core1Channels {
-    pub sensor_rx: std::sync::mpsc::Receiver<SensorUpdate>,
-    pub network_rx: std::sync::mpsc::Receiver<NetworkUpdate>,
     pub processed_rx: std::sync::mpsc::Receiver<ProcessedData>,
 }
 
@@ -59,8 +57,6 @@ impl Core1Manager {
 
         // Only return the processed data receiver to Core 0
         let channels = Core1Channels {
-            sensor_rx: std::sync::mpsc::channel().1,  // Dummy channel, not used
-            network_rx: std::sync::mpsc::channel().1,  // Dummy channel, not used
             processed_rx,
         };
 
@@ -112,13 +108,13 @@ impl Core1Manager {
 }
 
 // Task entry point for Core 1
-unsafe extern "C" fn core1_task_entry(pvParameters: *mut std::ffi::c_void) {
+unsafe extern "C" fn core1_task_entry(pv_parameters: *mut std::ffi::c_void) {
     // Recover the task components
     let (sensor_task, network_monitor, data_processor): (
         Arc<Mutex<SensorTask>>,
         Arc<Mutex<NetworkMonitor>>,
         Arc<Mutex<DataProcessor>>,
-    ) = *Box::from_raw(pvParameters as *mut _);
+    ) = *Box::from_raw(pv_parameters as *mut _);
     
     // Force a visible log message
     println!("CORE1: Task started on CPU {:?}", esp_idf_hal::cpu::core());

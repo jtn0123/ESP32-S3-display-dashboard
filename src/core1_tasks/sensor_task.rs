@@ -18,7 +18,6 @@ pub struct SensorUpdate {
 
 pub struct SensorTask {
     tx: Sender<SensorUpdate>,
-    temp_sensor_handle: Option<temperature_sensor_handle_t>,
     // Circular buffers for filtering
     temp_history: Vec<f32>,
     temp_index: usize,
@@ -37,7 +36,6 @@ impl SensorTask {
         
         Self {
             tx,
-            temp_sensor_handle: None,  // Don't initialize here to avoid conflicts
             temp_history: vec![0.0; 5],  // 0.0 indicates N/A
             temp_index: 0,
         }

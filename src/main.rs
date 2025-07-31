@@ -657,6 +657,12 @@ fn run_app(
     let mut last_button_check = Instant::now();
     let button_check_interval = Duration::from_millis(20);
     
+    // Button test metrics
+    let mut button_test_start = Instant::now();
+    let mut button_events_count = 0u32;
+    let mut max_response_time = Duration::ZERO;
+    let mut total_response_time = Duration::ZERO;
+    
     // Memory diagnostics tracking (ESP_LCD only)
     #[cfg(feature = "esp_lcd_driver")]
     let mut last_memory_check = Instant::now();
@@ -680,10 +686,68 @@ fn run_app(
 
         // Handle button input with debounce (only check every 20ms)
         if last_button_check.elapsed() >= button_check_interval {
+            let poll_start = Instant::now();
             if let Some(event) = button_manager.poll() {
+                let response_time = poll_start.elapsed();
+                log::info!("[BUTTON_TEST] Button event detected: {:?}, Poll latency: {:.2}ms, Time since last check: {:.2}ms", 
+                    event, 
+                    response_time.as_secs_f32() * 1000.0,
+                    last_button_check.elapsed().as_secs_f32() * 1000.0
+                );
+                
+                let ui_start = Instant::now();
                 ui_manager.handle_button_event(event)?;
+                let ui_time = ui_start.elapsed();
+                
                 // Reset activity timer on button press
                 display_manager.reset_activity_timer();
+                
+                let total_time = response_time + ui_time;
+                button_events_count += 1;
+                total_response_time += total_time;
+                if total_time > max_response_time {
+                    max_response_time = total_time;
+                }
+                
+                log::info!("[BUTTON_TEST] UI response time: {:.2}ms, Total response time: {:.2}ms", 
+                    ui_time.as_secs_f32() * 1000.0,
+                    total_time.as_secs_f32() * 1000.0
+                );
+                
+                // Update metrics for Prometheus/Grafana
+                let avg_response = if button_events_count > 0 {
+                    total_response_time / button_events_count
+                } else {
+                    Duration::ZERO
+                };
+                let test_duration = button_test_start.elapsed();
+                let events_per_sec = if test_duration.as_secs_f32() > 0.0 {
+                    button_events_count as f32 / test_duration.as_secs_f32()
+                } else {
+                    0.0
+                };
+                
+                // Update metrics
+                {
+                    let mut metrics = crate::metrics::metrics().lock().unwrap();
+                    metrics.update_button_metrics(
+                        avg_response.as_secs_f32() * 1000.0,
+                        max_response_time.as_secs_f32() * 1000.0,
+                        button_events_count as u64,
+                        events_per_sec
+                    );
+                }
+                
+                // Print summary every 10 button presses
+                if button_events_count % 10 == 0 {
+                    log::warn!("[BUTTON_TEST_SUMMARY] After {} events in {:.1}s: Avg response: {:.2}ms, Max: {:.2}ms, Events/sec: {:.1}", 
+                        button_events_count,
+                        test_duration.as_secs_f32(),
+                        avg_response.as_secs_f32() * 1000.0,
+                        max_response_time.as_secs_f32() * 1000.0,
+                        events_per_sec
+                    );
+                }
             }
             last_button_check = Instant::now();
         }

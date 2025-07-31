@@ -239,7 +239,7 @@ impl WebConfigServer {
                 metrics_data.render_time_ms,
                 metrics_data.flush_time_ms,
                 if metrics_data.frame_count > 0 {
-                    (metrics_data.skip_count as f32 / metrics_data.frame_count as f32 * 100.0)
+                    metrics_data.skip_count as f32 / metrics_data.frame_count as f32 * 100.0
                 } else {
                     0.0
                 },
@@ -248,7 +248,7 @@ impl WebConfigServer {
                 metrics_data.psram_free_bytes,
                 metrics_data.psram_total_bytes,
                 if metrics_data.psram_total_bytes > 0 {
-                    ((metrics_data.psram_total_bytes - metrics_data.psram_free_bytes) as f32 / metrics_data.psram_total_bytes as f32 * 100.0)
+                    (metrics_data.psram_total_bytes - metrics_data.psram_free_bytes) as f32 / metrics_data.psram_total_bytes as f32 * 100.0
                 } else {
                     0.0
                 }

@@ -42,6 +42,11 @@ pub struct MetricsData {
     pub skip_count: u64,
     pub psram_free_bytes: u32,
     pub psram_total_bytes: u32,
+    // Button responsiveness metrics
+    pub button_avg_response_ms: f32,
+    pub button_max_response_ms: f32,
+    pub button_events_total: u64,
+    pub button_events_per_second: f32,
 }
 
 impl MetricsData {
@@ -97,6 +102,13 @@ impl MetricsData {
     pub fn update_psram(&mut self, free: u32, total: u32) {
         self.psram_free_bytes = free;
         self.psram_total_bytes = total;
+    }
+    
+    pub fn update_button_metrics(&mut self, avg_ms: f32, max_ms: f32, total_events: u64, events_per_sec: f32) {
+        self.button_avg_response_ms = avg_ms;
+        self.button_max_response_ms = max_ms;
+        self.button_events_total = total_events;
+        self.button_events_per_second = events_per_sec;
     }
     
     pub fn format_prometheus(&self, uptime_seconds: u64, heap_free: u32, heap_total: u32) -> String {
@@ -166,7 +178,23 @@ impl MetricsData {
              \n\
              # HELP esp32_skipped_frames_count Number of frames skipped\n\
              # TYPE esp32_skipped_frames_count counter\n\
-             esp32_skipped_frames_count {}",
+             esp32_skipped_frames_count {}\n\
+             \n\
+             # HELP esp32_button_avg_response_milliseconds Average button response time in milliseconds\n\
+             # TYPE esp32_button_avg_response_milliseconds gauge\n\
+             esp32_button_avg_response_milliseconds {:.2}\n\
+             \n\
+             # HELP esp32_button_max_response_milliseconds Maximum button response time in milliseconds\n\
+             # TYPE esp32_button_max_response_milliseconds gauge\n\
+             esp32_button_max_response_milliseconds {:.2}\n\
+             \n\
+             # HELP esp32_button_events_total Total number of button events processed\n\
+             # TYPE esp32_button_events_total counter\n\
+             esp32_button_events_total {}\n\
+             \n\
+             # HELP esp32_button_events_per_second Button events processed per second\n\
+             # TYPE esp32_button_events_per_second gauge\n\
+             esp32_button_events_per_second {:.2}",
             uptime_seconds,
             heap_free,
             heap_total,
@@ -181,7 +209,11 @@ impl MetricsData {
             self.flush_time_ms,
             skip_rate,
             self.frame_count,
-            self.skip_count
+            self.skip_count,
+            self.button_avg_response_ms,
+            self.button_max_response_ms,
+            self.button_events_total,
+            self.button_events_per_second
         )
     }
 }

@@ -1,5 +1,5 @@
 use log::{Level, Metadata, Record};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use crate::network::telnet_server::TelnetLogServer;
 
 static TELNET_SERVER: OnceLock<Arc<TelnetLogServer>> = OnceLock::new();

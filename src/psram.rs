@@ -2,8 +2,6 @@
 // The T-Display-S3 has 8MB of PSRAM for extended memory
 
 use esp_idf_sys::*;
-use std::alloc::Layout;
-use std::ptr;
 use log::*;
 
 /// PSRAM memory allocator that prefers external memory for large allocations

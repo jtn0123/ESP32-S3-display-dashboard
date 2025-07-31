@@ -25,12 +25,11 @@ pub enum WorkItem {
     _RenderDisplay,
     _ProcessNetwork,
     _HandleOta,
-    Custom(Box<dyn FnOnce() + Send>),
 }
 
 /// Dual-core work distributor
 pub struct DualCoreProcessor {
-    work_sender: Sender<WorkItem>,
+    _work_sender: Sender<WorkItem>,
     stats: Arc<Mutex<ProcessorStats>>,
 }
 
@@ -55,22 +54,11 @@ impl DualCoreProcessor {
         Self::spawn_worker(rx, stats_clone, CORE_1);
         
         Self {
-            work_sender: tx,
+            _work_sender: tx,
             stats,
         }
     }
     
-    /// Submit work to be processed on any available core
-    pub fn submit(&self, work: WorkItem) -> Result<(), String> {
-        self.work_sender.send(work)
-            .map_err(|e| format!("Failed to submit work: {}", e))?;
-            
-        if let Ok(mut stats) = self.stats.lock() {
-            stats.total_tasks += 1;
-        }
-        
-        Ok(())
-    }
     
     /// Get current processor statistics
     pub fn get_stats(&self) -> ProcessorStats {
@@ -183,10 +171,6 @@ impl DualCoreProcessor {
                         WorkItem::_HandleOta => {
                             debug!("Processing OTA task on core {}", Self::current_core());
                             // OTA handling logic would go here
-                        }
-                        WorkItem::Custom(task) => {
-                            debug!("Processing custom task on core {}", Self::current_core());
-                            task();
                         }
                     }
                     
