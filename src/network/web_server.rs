@@ -30,6 +30,15 @@ impl WebConfigServer {
         ota_manager: Option<Arc<Mutex<OtaManager>>>,
         metrics: Arc<crate::metrics::MetricsWrapper>
     ) -> Result<Self> {
+        Self::new_with_ota_metrics_and_sensor_history(config, ota_manager, metrics, None)
+    }
+    
+    pub fn new_with_ota_metrics_and_sensor_history(
+        config: Arc<Mutex<Config>>, 
+        ota_manager: Option<Arc<Mutex<OtaManager>>>,
+        metrics: Arc<crate::metrics::MetricsWrapper>,
+        sensor_history: Option<Arc<Mutex<crate::sensors::history::SensorHistory>>>
+    ) -> Result<Self> {
         let mut server = EspHttpServer::new(&Configuration::default())?;
         
         let config_clone = config.clone();
@@ -394,8 +403,8 @@ impl WebConfigServer {
                 serde_json::json!({
                     "uptime": uptime,
                     "heap_free": heap_free,
-                    "temperature": metrics_guard.temperature,
-                    "fps_actual": metrics_guard.fps_actual,
+                    "temperature": (metrics_guard.temperature * 10.0).round() / 10.0,
+                    "fps_actual": (metrics_guard.fps_actual * 10.0).round() / 10.0,
                     "fps_target": metrics_guard.fps_target,
                     "render_time_ms": metrics_guard.render_time_ms,
                     "flush_time_ms": metrics_guard.flush_time_ms,
@@ -546,6 +555,15 @@ impl WebConfigServer {
         // SSE (Server-Sent Events) endpoint - register with broadcaster
         let sse_broadcaster = crate::network::sse_broadcaster::init();
         sse_broadcaster.register_endpoints(&mut server)?;
+
+        // Register API v1 routes
+        let sensor_history = sensor_history.unwrap_or_else(|| {
+            crate::sensors::history::init()
+        });
+        crate::network::api_routes::register_api_v1_routes(&mut server, config.clone(), sensor_history)?;
+
+        // Register file manager routes
+        crate::network::file_manager::register_file_routes(&mut server)?;
 
         // Recent logs endpoint for initial load
         server.fn_handler("/api/logs/recent", esp_idf_svc::http::Method::Get, move |req| {

@@ -2,7 +2,7 @@ use anyhow::Result;
 use esp_idf_svc::http::server::{EspHttpServer, Method};
 use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use crate::metrics::MetricsData;
 use crate::network::log_streamer::LogEntry;
 
@@ -25,10 +25,17 @@ impl SseBroadcaster {
         let connections = self.active_connections.clone();
 
         // SSE endpoint for real-time updates
-        server.fn_handler("/events", Method::Get, move |req| {
-            // Increment connection count
+        server.fn_handler("/api/events", Method::Get, move |req| {
+            // Check connection limit
+            const MAX_SSE_CONNECTIONS: u32 = 5;
             {
                 let mut count = connections.lock().unwrap();
+                if *count >= MAX_SSE_CONNECTIONS {
+                    log::warn!("SSE connection limit reached ({} connections)", *count);
+                    let mut response = req.into_status_response(503)?;
+                    response.write_all(b"Too many connections")?;
+                    return Ok(());
+                }
                 *count += 1;
                 log::info!("SSE client connected, total: {}", *count);
             }
@@ -47,8 +54,18 @@ impl SseBroadcaster {
             response.write_all(b"data: {\"type\":\"connected\"}\n\n")?;
             response.flush()?;
 
-            // Send periodic updates
+            // Send periodic updates with timeout
+            let start_time = Instant::now();
+            let max_duration = Duration::from_secs(300); // 5 minute timeout
+            let mut heartbeat_counter = 0u8;
+            
             loop {
+                // Check for timeout
+                if start_time.elapsed() > max_duration {
+                    log::info!("SSE connection timeout after 5 minutes");
+                    break;
+                }
+                
                 std::thread::sleep(Duration::from_secs(1));
                 
                 // Send metrics update
@@ -56,8 +73,8 @@ impl SseBroadcaster {
                     let event = serde_json::json!({
                         "type": "metrics",
                         "data": {
-                            "temperature": metrics.temperature,
-                            "fps_actual": metrics.fps_actual,
+                            "temperature": (metrics.temperature * 10.0).round() / 10.0,
+                            "fps_actual": (metrics.fps_actual * 10.0).round() / 10.0,
                             "cpu_usage": metrics.cpu_usage,
                             "wifi_rssi": metrics.wifi_rssi,
                             "battery_percentage": metrics.battery_percentage,
@@ -74,17 +91,14 @@ impl SseBroadcaster {
                 }
                 
                 // Send heartbeat every 30 iterations (30 seconds)
-                static mut HEARTBEAT_COUNTER: u8 = 0;
-                unsafe {
-                    HEARTBEAT_COUNTER += 1;
-                    if HEARTBEAT_COUNTER >= 30 {
-                        HEARTBEAT_COUNTER = 0;
-                        if response.write_all(b":heartbeat\n\n").is_err() {
-                            break;
-                        }
-                        if response.flush().is_err() {
-                            break;
-                        }
+                heartbeat_counter += 1;
+                if heartbeat_counter >= 30 {
+                    heartbeat_counter = 0;
+                    if response.write_all(b":heartbeat\n\n").is_err() {
+                        break;
+                    }
+                    if response.flush().is_err() {
+                        break;
                     }
                 }
             }

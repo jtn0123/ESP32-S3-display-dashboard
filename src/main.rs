@@ -840,6 +840,14 @@ fn run_app(
                 );
             }
             
+            // Update sensor history
+            if let Some(history) = crate::sensors::history::get() {
+                if let Ok(hist) = history.lock() {
+                    hist.add_temperature(processed_data.temperature);
+                    hist.add_battery(processed_data.battery_percentage as f32);
+                }
+            }
+            
             last_sensor_update = Instant::now();
         }
         
@@ -1057,6 +1065,9 @@ fn run_app(
                 }
                 
                 // Note: Temperature and battery are updated from Core 1 data elsewhere
+                
+                // Broadcast metrics update via SSE
+                crate::network::sse_broadcaster::broadcast_metrics_update(&*metrics);
             }
             
             // Reset report timer

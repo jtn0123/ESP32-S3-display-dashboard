@@ -1,7 +1,20 @@
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
 const MAX_HISTORY_POINTS: usize = 360; // 6 hours at 1 sample/minute for memory efficiency
+
+// Global sensor history instance
+static SENSOR_HISTORY: OnceLock<Arc<Mutex<SensorHistory>>> = OnceLock::new();
+
+pub fn init() -> Arc<Mutex<SensorHistory>> {
+    SENSOR_HISTORY.get_or_init(|| {
+        Arc::new(Mutex::new(SensorHistory::new()))
+    }).clone()
+}
+
+pub fn get() -> Option<Arc<Mutex<SensorHistory>>> {
+    SENSOR_HISTORY.get().cloned()
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DataPoint {
