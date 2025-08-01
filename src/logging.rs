@@ -31,6 +31,9 @@ impl log::Log for DualLogger {
             // Send to telnet server if available
             if let Some(server) = TELNET_SERVER.get() {
                 server.log_message(level_str, &message);
+            } else if record.level() == Level::Error {
+                // For errors, also log that telnet is not available
+                println!("[DEBUG] Telnet server not available for log forwarding");
             }
         }
     }

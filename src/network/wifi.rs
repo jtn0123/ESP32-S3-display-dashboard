@@ -69,6 +69,41 @@ impl WifiManager {
     }
 
     pub fn connect_and_get_signal(&mut self) -> Result<i8> {
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_DELAY_MS: u32 = 5000;
+        
+        log::info!("Starting WiFi connection process for SSID: '{}'", self.ssid);
+        
+        for attempt in 1..=MAX_RETRIES {
+            log::info!("WiFi connection attempt {} of {}", attempt, MAX_RETRIES);
+            
+            match self.try_connect() {
+                Ok(signal) => {
+                    log::info!("WiFi connected successfully on attempt {}", attempt);
+                    log::info!("Signal strength: {} dBm", signal);
+                    return Ok(signal);
+                }
+                Err(e) => {
+                    log::warn!("WiFi connection attempt {} failed: {:?}", attempt, e);
+                    
+                    if attempt < MAX_RETRIES {
+                        log::info!("Waiting {}ms before retry...", RETRY_DELAY_MS);
+                        esp_idf_hal::delay::FreeRtos::delay_ms(RETRY_DELAY_MS);
+                        
+                        // Try to restart WiFi for next attempt
+                        log::info!("Stopping WiFi for clean retry...");
+                        let _ = self.wifi.stop();
+                        esp_idf_hal::delay::FreeRtos::delay_ms(1000);
+                    }
+                }
+            }
+        }
+        
+        log::error!("Failed to connect to WiFi '{}' after {} attempts", self.ssid, MAX_RETRIES);
+        bail!("Failed to connect to WiFi after {} attempts", MAX_RETRIES)
+    }
+    
+    fn try_connect(&mut self) -> Result<i8> {
         log::info!("Starting WiFi...");
         self.wifi.start()?;
 
@@ -83,7 +118,17 @@ impl WifiManager {
         }
         
         // Perform the scan (this can take 3-5 seconds)
-        let ap_infos = self.wifi.scan()?;
+        let ap_infos = match self.wifi.scan() {
+            Ok(aps) => aps,
+            Err(e) => {
+                // Re-add task to watchdog monitoring before returning error
+                unsafe {
+                    esp_idf_sys::esp_task_wdt_add(std::ptr::null_mut());
+                    esp_idf_sys::esp_task_wdt_reset();
+                }
+                return Err(anyhow::anyhow!("WiFi scan failed: {:?}", e));
+            }
+        };
         
         // Re-add task to watchdog monitoring
         unsafe {
@@ -111,14 +156,33 @@ impl WifiManager {
         }
 
         log::info!("Connecting to {}...", self.ssid);
-        self.wifi.connect()?;
+        
+        // Set a timeout for connection
+        match self.wifi.connect() {
+            Ok(_) => {
+                log::info!("Connect command sent successfully");
+            }
+            Err(e) => {
+                log::error!("Connect command failed: {:?}", e);
+                return Err(anyhow::anyhow!("Failed to initiate connection: {:?}", e));
+            }
+        }
 
         log::info!("Waiting for DHCP...");
         
         // Reset watchdog before potentially long DHCP wait
         unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         
-        self.wifi.wait_netif_up()?;
+        // Wait for network interface with timeout
+        match self.wifi.wait_netif_up() {
+            Ok(_) => {
+                log::info!("Network interface is up");
+            }
+            Err(e) => {
+                log::error!("Failed to get IP address: {:?}", e);
+                return Err(anyhow::anyhow!("DHCP failed: {:?}", e));
+            }
+        }
         
         // Reset watchdog after DHCP complete
         unsafe { esp_idf_sys::esp_task_wdt_reset(); }

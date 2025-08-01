@@ -44,6 +44,9 @@ serde_json = { version = "=1.0.135", default-features = false, features = ["allo
 # Base64 encoding for screenshot data
 base64 = { version = "0.21", default-features = false, features = ["alloc"] }
 
+# Compression for web assets
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+
 
 # Embedded graphics and display drivers
 embedded-graphics = "=0.8.1"

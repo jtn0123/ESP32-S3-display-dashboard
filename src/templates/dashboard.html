@@ -790,14 +790,65 @@
         document.addEventListener('touchmove', handleSliderInput);
         document.addEventListener('touchend', () => isDragging = false);
         
-        // Fetch metrics
+        // Binary protocol decoder
+        class BinaryMetricsDecoder {
+            static decode(buffer) {
+                const view = new DataView(buffer);
+                let offset = 0;
+                
+                const packet = {
+                    version: view.getUint8(offset++),
+                    timestamp: Number(view.getBigUint64(offset, true)),
+                    temperature: view.getInt16(offset + 8, true) / 10.0,
+                    battery_percentage: view.getUint8(offset + 10),
+                    battery_voltage_mv: view.getUint16(offset + 11, true),
+                    battery_charging: view.getUint8(offset + 13) === 1,
+                    fps_actual: view.getUint16(offset + 14, true) / 10.0,
+                    fps_target: view.getUint8(offset + 16),
+                    cpu_usage: view.getUint8(offset + 17),
+                    cpu0_usage: view.getUint8(offset + 18),
+                    cpu1_usage: view.getUint8(offset + 19),
+                    cpu_freq_mhz: view.getUint16(offset + 20, true),
+                    heap_free: view.getUint32(offset + 22, true),
+                    heap_total: view.getUint32(offset + 26, true),
+                    wifi_rssi: view.getInt8(offset + 30),
+                    wifi_connected: view.getUint8(offset + 31) === 1,
+                    display_brightness: view.getUint8(offset + 32),
+                    frame_count: view.getUint32(offset + 33, true),
+                    skip_count: view.getUint32(offset + 37, true),
+                    render_time_ms: view.getUint16(offset + 41, true),
+                    flush_time_ms: view.getUint16(offset + 43, true)
+                };
+                
+                return packet;
+            }
+        }
+
+        // Fetch metrics - try binary first, fallback to JSON
         async function fetchMetrics() {
             try {
-                const response = await fetch('/api/metrics');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                let data;
+                
+                // Try binary protocol first for efficiency
+                try {
+                    const response = await fetch('/api/metrics/binary');
+                    if (response.ok && response.headers.get('Content-Type') === 'application/octet-stream') {
+                        const buffer = await response.arrayBuffer();
+                        data = BinaryMetricsDecoder.decode(buffer);
+                        console.debug('Using binary protocol for metrics');
+                    } else {
+                        throw new Error('Binary endpoint not available');
+                    }
+                } catch (binaryError) {
+                    // Fallback to JSON
+                    console.debug('Falling back to JSON protocol');
+                    const response = await fetch('/api/metrics');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    data = await response.json();
                 }
-                const data = await response.json();
+                
                 updateUI(data);
                 updateCharts(data);
                 

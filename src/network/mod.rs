@@ -1,4 +1,5 @@
 pub mod wifi;
+pub mod wifi_reconnect;
 pub mod web_server;
 pub mod telnet_server;
 pub mod sse_broadcaster;
@@ -7,6 +8,8 @@ pub mod error_handler;
 pub mod validators;
 pub mod log_streamer;
 pub mod file_manager;
+pub mod compression;
+pub mod binary_protocol;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;
@@ -17,6 +20,7 @@ use esp_idf_svc::{
 use std::sync::{Arc, Mutex};
 
 use self::wifi::WifiManager;
+use self::wifi_reconnect::WifiReconnectManager;
 use crate::config::Config;
 use esp_idf_svc::mdns::EspMdns;
 
@@ -24,6 +28,7 @@ pub struct NetworkManager {
     wifi: WifiManager,
     _mdns: Option<EspMdns>,
     signal_strength: i8,
+    _reconnect_manager: Option<Arc<WifiReconnectManager>>,
 }
 
 impl NetworkManager {
@@ -35,12 +40,17 @@ impl NetworkManager {
         password: String,
         _config: Arc<Mutex<Config>>,
     ) -> Result<Self> {
-        let wifi = WifiManager::new(modem, sys_loop, ssid, password)?;
+        let wifi = WifiManager::new(modem, sys_loop.clone(), ssid.clone(), password.clone())?;
+        
+        // Create reconnection manager
+        let reconnect_manager = Arc::new(WifiReconnectManager::new(ssid, password));
+        reconnect_manager.register_event_handlers(&sys_loop)?;
 
         Ok(Self {
             wifi,
             _mdns: None,
             signal_strength: -100,
+            _reconnect_manager: Some(reconnect_manager),
         })
     }
 

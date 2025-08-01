@@ -43,6 +43,12 @@ impl LogBuffer {
             result
         }
     }
+    
+    fn get_recent(&self, count: usize) -> Vec<String> {
+        let all_logs = self.get_all();
+        let start = all_logs.len().saturating_sub(count);
+        all_logs[start..].to_vec()
+    }
 }
 
 /// Telnet server for remote log streaming

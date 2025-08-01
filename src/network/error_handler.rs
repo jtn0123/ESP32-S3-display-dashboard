@@ -7,34 +7,15 @@ use std::error::Error as StdError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
-    ValidationFailed,
     NotFound,
-    InternalError,
     BadRequest,
-    Unauthorized,
-    ServiceUnavailable,
 }
 
 impl ErrorCode {
     pub fn as_str(&self) -> &'static str {
         match self {
-            ErrorCode::ValidationFailed => "VALIDATION_FAILED",
             ErrorCode::NotFound => "NOT_FOUND",
-            ErrorCode::InternalError => "INTERNAL_ERROR",
             ErrorCode::BadRequest => "BAD_REQUEST",
-            ErrorCode::Unauthorized => "UNAUTHORIZED",
-            ErrorCode::ServiceUnavailable => "SERVICE_UNAVAILABLE",
-        }
-    }
-
-    pub fn status_code(&self) -> u16 {
-        match self {
-            ErrorCode::ValidationFailed => 400,
-            ErrorCode::BadRequest => 400,
-            ErrorCode::Unauthorized => 401,
-            ErrorCode::NotFound => 404,
-            ErrorCode::InternalError => 500,
-            ErrorCode::ServiceUnavailable => 503,
         }
     }
 }
@@ -63,10 +44,6 @@ impl ApiError {
         }
     }
 
-    pub fn with_field(mut self, field: impl Into<String>) -> Self {
-        self.field = Some(field.into());
-        self
-    }
 }
 
 impl fmt::Display for ApiError {
@@ -89,27 +66,12 @@ impl ErrorResponse {
         }
     }
 
-    pub fn validation_failed(field: impl Into<String>, message: impl Into<String>) -> Self {
-        Self {
-            error: ApiError::new(ErrorCode::ValidationFailed, message)
-                .with_field(field),
-        }
-    }
-
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::NotFound, message)
     }
 
-    pub fn internal_error(message: impl Into<String>) -> Self {
-        Self::new(ErrorCode::InternalError, message)
-    }
-
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::BadRequest, message)
-    }
-
-    pub fn service_unavailable(message: impl Into<String>) -> Self {
-        Self::new(ErrorCode::ServiceUnavailable, message)
     }
 
     pub fn send<T>(self, req: EspHttpRequest<T>) -> Result<(), Box<dyn std::error::Error>> 
@@ -119,11 +81,8 @@ impl ErrorResponse {
     {
         let json = serde_json::to_string(&self)?;
         let status_code = match self.error.code.as_str() {
-            "VALIDATION_FAILED" | "BAD_REQUEST" => 400,
-            "UNAUTHORIZED" => 401,
+            "BAD_REQUEST" => 400,
             "NOT_FOUND" => 404,
-            "INTERNAL_ERROR" => 500,
-            "SERVICE_UNAVAILABLE" => 503,
             _ => 500,
         };
 

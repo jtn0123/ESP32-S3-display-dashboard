@@ -65,6 +65,44 @@ fn main() -> Result<()> {
     let psram_info = crate::psram::PsramAllocator::get_info();
     psram_info.log_info();
     
+    // Check reset reason
+    let reset_reason = unsafe { esp_idf_sys::esp_reset_reason() };
+    let is_ota_restart = match reset_reason {
+        esp_idf_sys::esp_reset_reason_t_ESP_RST_SW => {
+            log::info!("Software reset detected - likely OTA update");
+            true
+        }
+        esp_idf_sys::esp_reset_reason_t_ESP_RST_POWERON => {
+            log::info!("Power-on reset detected");
+            false
+        }
+        esp_idf_sys::esp_reset_reason_t_ESP_RST_PANIC => {
+            log::warn!("Panic reset detected");
+            false
+        }
+        _ => {
+            log::info!("Other reset reason: {:?}", reset_reason);
+            false
+        }
+    };
+    
+    // Add delay after OTA restart to let system stabilize
+    if is_ota_restart {
+        log::info!("Waiting for system to stabilize after OTA...");
+        esp_idf_hal::delay::FreeRtos::delay_ms(3000);
+        
+        // Handle post-OTA WiFi reconnection
+        log::info!("Initiating post-OTA WiFi reconnection sequence...");
+        if let Err(e) = crate::network::wifi_reconnect::handle_post_ota_wifi() {
+            log::warn!("Post-OTA WiFi handling failed: {:?}", e);
+            // Continue anyway, as the normal WiFi connection logic will retry
+        }
+        
+        // Additional delay to ensure WiFi is ready
+        log::info!("Waiting for WiFi to settle...");
+        esp_idf_hal::delay::FreeRtos::delay_ms(2000);
+    }
+    
     // Reconfigure watchdog timeout to 5 seconds
     unsafe {
         // First deinit if already initialized
@@ -261,20 +299,38 @@ fn main() -> Result<()> {
         
         // Start servers if connected
         let web_server = if network_manager.is_connected() {
-            network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()).ok()
+            match network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()) {
+                Ok(server) => {
+                    log::info!("Web server started successfully on port 80");
+                    Some(server)
+                }
+                Err(e) => {
+                    log::error!("Failed to start web server: {:?}", e);
+                    None
+                }
+            }
         } else {
+            log::info!("Skipping web server - no network connection");
             None
         };
         
         let telnet_server = if network_manager.is_connected() {
             let server = Arc::new(TelnetLogServer::new(23));
             logging::set_telnet_server(Arc::clone(&server));
-            if Arc::clone(&server).start().is_ok() {
-                Some(server)
-            } else {
-                None
+            match Arc::clone(&server).start() {
+                Ok(_) => {
+                    log::info!("Telnet server started successfully on port 23");
+                    log::info!("ESP32-S3 Dashboard {} initialized", crate::version::DISPLAY_VERSION);
+                    log::info!("Web interface available at http://{}/", network_manager.get_ip().unwrap_or_default());
+                    Some(server)
+                }
+                Err(e) => {
+                    log::error!("Failed to start telnet server: {:?}", e);
+                    None
+                }
             }
         } else {
+            log::info!("Skipping telnet server - no network connection");
             None
         };
         
@@ -515,6 +571,12 @@ fn main() -> Result<()> {
             Ok(_) => {
                 log::info!("Telnet log server started on port 23");
                 log::info!("Connect with: telnet {} 23", network_manager.get_ip().unwrap_or_default());
+                
+                // Log some initial messages to populate the buffer
+                log::info!("ESP32-S3 Dashboard {} initialized", crate::version::DISPLAY_VERSION);
+                log::info!("Web interface available at http://{}/", network_manager.get_ip().unwrap_or_default());
+                log::info!("Logs can be viewed at http://{}/logs", network_manager.get_ip().unwrap_or_default());
+                
                 Some(server)
             }
             Err(e) => {
@@ -719,7 +781,7 @@ fn run_app(
                 };
                 
                 // Non-blocking send to Core 1
-                if let Err(_) = sensor_tx.try_send(sensor_update.clone()) {
+                if let Err(_) = sensor_tx.send(sensor_update.clone()) {
                     log::warn!("Core 1 sensor queue full, skipping update");
                 }
             }

@@ -6,17 +6,9 @@ const MAX_LOG_LINES: usize = 10000;
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LogEntry {
     pub timestamp: u64,
-    pub level: LogLevel,
+    pub level: String,
     pub message: String,
     pub module: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub enum LogLevel {
-    Debug,
-    Info,
-    Warn,
-    Error,
 }
 
 

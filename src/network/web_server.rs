@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 use crate::config::Config;
 use crate::ota::OtaManager;
 use crate::metrics_formatter::MetricsFormatter;
+use crate::network::compression::write_compressed_response;
+use crate::network::binary_protocol::MetricsBinaryPacket;
 
 pub struct WebConfigServer {
     _server: EspHttpServer<'static>,
@@ -59,9 +61,7 @@ impl WebConfigServer {
             // Render template with dynamic content
             let html = crate::templates::render_home_page(version, &ssid, free_heap, uptime_ms);
             
-            let mut response = req.into_ok_response()?;
-            response.write_all(html.as_bytes())?;
-            Ok(()) as Result<(), Box<dyn std::error::Error>>
+            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
         })?;
 
         // Get current configuration
@@ -226,17 +226,15 @@ impl WebConfigServer {
             
             // OTA web interface
             server.fn_handler("/ota", esp_idf_svc::http::Method::Get, move |req| {
-                let mut response = req.into_ok_response()?;
-                
-                if ota_mgr_clone.is_some() {
-                    const OTA_HTML: &str = crate::templates::OTA_PAGE;
-                    response.write_all(OTA_HTML.as_bytes())?;
+                let html = if ota_mgr_clone.is_some() {
+                    crate::templates::OTA_PAGE
                 } else {
                     // Show message that OTA will be available after first USB update
-                    let msg = crate::templates::OTA_UNAVAILABLE_PAGE;
-                    response.write_all(msg.as_bytes())?;
-                }
-                Ok::<(), anyhow::Error>(())
+                    crate::templates::OTA_UNAVAILABLE_PAGE
+                };
+                
+                write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+                    .map_err(|e| anyhow::anyhow!("Response error: {}", e))
             })?;
             
             // OTA update endpoint
@@ -385,8 +383,30 @@ impl WebConfigServer {
             let html = include_str!("../templates/dashboard.html")
                 .replace("{{VERSION}}", version);
             
-            let mut response = req.into_ok_response()?;
-            response.write_all(html.as_bytes())?;
+            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+        })?;
+
+        // Binary metrics endpoint for efficient updates
+        let metrics_clone_bin = metrics.clone();
+        server.fn_handler("/api/metrics/binary", esp_idf_svc::http::Method::Get, move |req| {
+            if let Ok(metrics_guard) = metrics_clone_bin.try_lock() {
+                let packet = MetricsBinaryPacket::from_metrics(&*metrics_guard);
+                let bytes = packet.to_bytes();
+                
+                let mut response = req.into_response(
+                    200,
+                    Some("OK"),
+                    &[
+                        ("Content-Type", "application/octet-stream"),
+                        ("Cache-Control", "no-cache"),
+                    ]
+                )?;
+                response.write_all(&bytes)?;
+            } else {
+                let mut response = req.into_status_response(503)?;
+                response.write_all(b"Metrics temporarily unavailable")?;
+            }
+            
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
@@ -443,18 +463,35 @@ impl WebConfigServer {
         // Logs page
         server.fn_handler("/logs", esp_idf_svc::http::Method::Get, move |req| {
             let html = include_str!("../templates/logs.html");
-            let mut response = req.into_ok_response()?;
-            response.write_all(html.as_bytes())?;
-            Ok(()) as Result<(), Box<dyn std::error::Error>>
+            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
         })?;
 
         // Logs API endpoint - returns recent log entries from telnet buffer
         server.fn_handler("/api/logs", esp_idf_svc::http::Method::Get, move |req| {
             // Get logs from the telnet server if available
             let logs = if let Some(telnet_server) = crate::logging::get_telnet_server() {
-                telnet_server.get_recent_logs(100)
+                let recent_logs = telnet_server.get_recent_logs(100);
+                log::info!("Web API: Retrieved {} logs from telnet server", recent_logs.len());
+                
+                // Clean up the log entries - remove \r\n
+                recent_logs.into_iter()
+                    .map(|log| log.trim_end().to_string())
+                    .collect()
             } else {
+                log::warn!("Web API: No telnet server available for logs");
                 Vec::new()
+            };
+            
+            // Add some test logs if empty
+            let logs = if logs.is_empty() {
+                log::info!("Adding test logs since buffer is empty");
+                vec![
+                    format!("[{}] INFO  System started", esp_idf_svc::systime::EspSystemTime.now().as_secs()),
+                    format!("[{}] INFO  WiFi connected", esp_idf_svc::systime::EspSystemTime.now().as_secs()),
+                    format!("[{}] INFO  Web server ready", esp_idf_svc::systime::EspSystemTime.now().as_secs()),
+                ]
+            } else {
+                logs
             };
             
             let logs_json = serde_json::json!({
@@ -563,7 +600,6 @@ impl WebConfigServer {
         // Server-Sent Events endpoint for real-time updates
         let metrics_clone_sse = metrics.clone();
         server.fn_handler("/api/events", esp_idf_svc::http::Method::Get, move |req| {
-            use std::io::Write as StdWrite;
             
             let mut response = req.into_response(200, None, &[
                 ("Content-Type", "text/event-stream"),
@@ -579,17 +615,19 @@ impl WebConfigServer {
             // Send periodic updates
             for _ in 0..300 { // 5 minutes max connection
                 // Get current metrics
-                if let Ok(metrics_guard) = metrics_clone_sse.read() {
+                if let Ok(metrics_guard) = metrics_clone_sse.try_lock() {
                     let data = serde_json::json!({
                         "temperature": (metrics_guard.temperature * 10.0).round() / 10.0,
-                        "battery_level": metrics_guard.battery_level,
+                        "battery_percentage": metrics_guard.battery_percentage,
                         "fps_actual": (metrics_guard.fps_actual * 10.0).round() / 10.0,
-                        "fps_possible": (metrics_guard.fps_possible * 10.0).round() / 10.0,
-                        "skip_percentage": (metrics_guard.skip_percentage * 10.0).round() / 10.0,
+                        "fps_target": metrics_guard.fps_target,
+                        "skip_rate": if metrics_guard.frame_count > 0 {
+                            metrics_guard.skip_count as f32 / metrics_guard.frame_count as f32 * 100.0
+                        } else { 0.0 },
                         "heap_free": metrics_guard.heap_free,
                         "timestamp": metrics_guard.timestamp,
-                        "cpu_usage_core0": metrics_guard.cpu_usage_core0,
-                        "cpu_usage_core1": metrics_guard.cpu_usage_core1,
+                        "cpu0_usage": metrics_guard.cpu0_usage,
+                        "cpu1_usage": metrics_guard.cpu1_usage,
                     });
                     
                     let event = format!("data: {}\n\n", serde_json::to_string(&data)?);
