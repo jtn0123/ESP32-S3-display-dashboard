@@ -543,6 +543,58 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
+        // SSE (Server-Sent Events) endpoint - register with broadcaster
+        let sse_broadcaster = crate::network::sse_broadcaster::init();
+        sse_broadcaster.register_endpoints(&mut server)?;
+
+        // Recent logs endpoint for initial load
+        server.fn_handler("/api/logs/recent", esp_idf_svc::http::Method::Get, move |req| {
+            let count = req.uri()
+                .split('?')
+                .nth(1)
+                .and_then(|query| query.split('&').find(|p| p.starts_with("count=")))
+                .and_then(|p| p.strip_prefix("count="))
+                .and_then(|c| c.parse::<usize>().ok())
+                .unwrap_or(100);
+            
+            // Get log streamer instance
+            let log_streamer = crate::network::log_streamer::init(None);
+            let recent_logs = log_streamer.get_recent_logs(count);
+            
+            let json = serde_json::to_string(&recent_logs)?;
+            let mut response = req.into_ok_response()?;
+            response.write_all(json.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        // Service Worker
+        server.fn_handler("/sw.js", esp_idf_svc::http::Method::Get, move |req| {
+            const SW_JS: &str = include_str!("../templates/sw.js");
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[
+                    ("Content-Type", "application/javascript"),
+                    ("Cache-Control", "no-cache"),
+                ]
+            )?;
+            response.write_all(SW_JS.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        // Web App Manifest
+        server.fn_handler("/manifest.json", esp_idf_svc::http::Method::Get, move |req| {
+            // Use escaped quotes to avoid parsing issues
+            const MANIFEST_JSON: &str = "{\"name\":\"ESP32-S3 Dashboard\",\"short_name\":\"ESP32 Dash\",\"description\":\"Control and monitor your ESP32-S3 device\",\"start_url\":\"/dashboard\",\"display\":\"standalone\",\"theme_color\":\"#3b82f6\",\"background_color\":\"#0a0a0a\",\"icons\":[{\"src\":\"/icon-192.png\",\"sizes\":\"192x192\",\"type\":\"image/png\"},{\"src\":\"/icon-512.png\",\"sizes\":\"512x512\",\"type\":\"image/png\"}]}";
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "application/manifest+json")]
+            )?;
+            response.write_all(MANIFEST_JSON.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
         Ok(Self { _server: server })
     }
 }

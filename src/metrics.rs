@@ -90,8 +90,12 @@ impl Drop for MetricsGuard {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MetricsData {
+    // Timestamp for the metrics
+    pub timestamp: u64,
+    // Heap memory
+    pub heap_free: u32,
     // CPU metrics
     pub cpu_usage: u8,
     pub cpu_freq_mhz: u16,

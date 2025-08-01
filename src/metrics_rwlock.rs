@@ -204,6 +204,11 @@ impl MetricsStore {
         let complex = self.complex_data.read().unwrap_or_else(|e| e.into_inner()).clone();
         
         crate::metrics::MetricsData {
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            heap_free: unsafe { esp_idf_sys::esp_get_free_heap_size() },
             cpu_usage: self.cpu_usage.load(Ordering::Relaxed),
             cpu_freq_mhz: self.cpu_freq_mhz.load(Ordering::Relaxed),
             cpu0_usage: self.cpu0_usage.load(Ordering::Relaxed),

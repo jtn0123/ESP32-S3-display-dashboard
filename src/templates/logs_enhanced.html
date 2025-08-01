@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ESP32-S3 System Logs - Real-time</title>
+    <style>
+        /* Dark Mode Design System */
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #374151;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+            background: var(--bg-main);
+            color: var(--text);
+            line-height: 1.5;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            box-shadow: var(--shadow);
+        }
+
+        .header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .ws-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+            transition: background 0.3s;
+        }
+
+        .ws-status.connected {
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-input {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            width: 200px;
+            transition: all 0.2s;
+        }
+
+        .filter-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            width: 300px;
+        }
+
+        .filter-select {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .btn {
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* Virtual Scrolling Log Container */
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background: var(--bg-main);
+            font-size: 0.875rem;
+            position: relative;
+        }
+
+        .log-viewport {
+            position: relative;
+        }
+
+        .log-spacer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1px;
+            pointer-events: none;
+        }
+
+        .log-content {
+            position: relative;
+        }
+
+        .log-entry {
+            line-height: 1.5rem;
+            padding: 0.25rem 0;
+            border-bottom: 1px solid rgba(55, 65, 81, 0.2);
+            word-wrap: break-word;
+            display: flex;
+            gap: 1rem;
+            transition: background 0.1s;
+        }
+
+        .log-entry:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .log-entry.highlight {
+            background: rgba(251, 191, 36, 0.1);
+        }
+
+        .timestamp {
+            color: var(--text-muted);
+            min-width: 100px;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .level {
+            min-width: 60px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .level.ERROR, .level.Error { color: var(--danger); }
+        .level.WARN, .level.Warn { color: var(--warning); }
+        .level.INFO, .level.Info { color: var(--success); }
+        .level.DEBUG, .level.Debug { color: var(--text-muted); }
+
+        .message {
+            flex: 1;
+            color: var(--text);
+            font-family: inherit;
+        }
+
+        .message .match {
+            background: rgba(251, 191, 36, 0.3);
+            color: var(--warning);
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .status-left {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .stats-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .footer-nav {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .footer-nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .footer-nav a:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+        }
+
+        .footer-nav a.active {
+            color: var(--accent);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            margin-top: 4rem;
+            font-size: 0.875rem;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            color: var(--text-muted);
+            margin-top: 2rem;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--accent);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: stretch;
+            }
+
+            .controls {
+                justify-content: stretch;
+            }
+
+            .filter-input {
+                width: 100%;
+            }
+
+            .filter-input:focus {
+                width: 100%;
+            }
+
+            .log-entry {
+                font-size: 0.75rem;
+                flex-wrap: wrap;
+            }
+
+            .timestamp {
+                width: 100%;
+                margin-bottom: 0.25rem;
+            }
+
+            .footer-nav {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>
+            <span class="ws-status" id="wsStatus"></span>
+            System Logs
+        </h1>
+        <div class="controls">
+            <input type="text" class="filter-input" id="filterInput" placeholder="Filter regex... (e.g. /error|warn/i)">
+            <select class="filter-select" id="logLevel">
+                <option value="ALL">All Levels</option>
+                <option value="Debug">Debug</option>
+                <option value="Info">Info</option>
+                <option value="Warn">Warn</option>
+                <option value="Error">Error</option>
+            </select>
+            <button class="btn" id="pauseBtn" onclick="togglePause()">⏸ Pause</button>
+            <button class="btn" onclick="clearLogs()">🗑 Clear</button>
+            <button class="btn" onclick="exportLogs()">💾 Export</button>
+        </div>
+    </header>
+
+    <div class="log-container" id="logContainer">
+        <div class="log-viewport" id="logViewport">
+            <div class="log-spacer" id="logSpacer"></div>
+            <div class="log-content" id="logContent">
+                <div class="loading">
+                    <span class="spinner"></span>
+                    Connecting to log stream...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-left">
+            <div class="stats-item">
+                <span>📋</span>
+                <span id="logCount">0 logs</span>
+            </div>
+            <div class="stats-item">
+                <span>⚠️</span>
+                <span id="warnCount">0</span>
+            </div>
+            <div class="stats-item">
+                <span>❌</span>
+                <span id="errorCount">0</span>
+            </div>
+            <div class="stats-item">
+                <span>📊</span>
+                <span id="logsPerSec">0/s</span>
+            </div>
+        </div>
+        <div class="footer-nav">
+            <a href="/">🏠 Home</a>
+            <a href="/dashboard">📊 Dashboard</a>
+            <a href="/logs" class="active">📋 Logs</a>
+            <a href="/files">📁 Files</a>
+            <a href="/ota">⬆️ Update</a>
+        </div>
+        <div class="status-right">
+            <span id="updateTime">--:--:--</span>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const MAX_LOGS = 10000;
+        const RENDER_BATCH_SIZE = 50;
+        const LOG_HEIGHT = 28; // pixels per log entry
+        const SSE_RECONNECT_DELAY = 3000;
+        const WS_RECONNECT_DELAY = SSE_RECONNECT_DELAY; // For compatibility
+
+        // State
+        let logs = [];
+        let filteredLogs = [];
+        let isPaused = false;
+        let filterRegex = null;
+        let levelFilter = 'ALL';
+        let stats = {
+            total: 0,
+            warn: 0,
+            error: 0,
+            rate: 0,
+            lastUpdate: Date.now()
+        };
+
+        // Virtual scrolling state
+        let scrollTop = 0;
+        let visibleStart = 0;
+        let visibleEnd = 0;
+        let isAutoScrolling = true;
+
+        // Elements
+        const logContainer = document.getElementById('logContainer');
+        const logViewport = document.getElementById('logViewport');
+        const logSpacer = document.getElementById('logSpacer');
+        const logContent = document.getElementById('logContent');
+        const filterInput = document.getElementById('filterInput');
+        const logLevelSelect = document.getElementById('logLevel');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const wsStatus = document.getElementById('wsStatus');
+
+        // SSE (Server-Sent Events) connection
+        let eventSource = null;
+        let reconnectTimer = null;
+        
+        function connectSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource('/api/events');
+            
+            eventSource.onopen = () => {
+                console.log('SSE connection established');
+                wsStatus.classList.add('connected');
+                updateStatus();
+                if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('SSE connection error:', error);
+                wsStatus.classList.remove('connected');
+                eventSource.close();
+                
+                // Automatic reconnection
+                if (!reconnectTimer) {
+                    reconnectTimer = setTimeout(() => {
+                        console.log('Attempting SSE reconnection...');
+                        connectSSE();
+                    }, WS_RECONNECT_DELAY);
+                }
+            };
+            
+            // Handle log entries
+            eventSource.addEventListener('log', (event) => {
+                try {
+                    const logData = JSON.parse(event.data);
+                    if (!isPaused) {
+                        addLogEntry(logData);
+                    }
+                } catch (error) {
+                    console.error('Failed to parse log event:', error);
+                }
+            });
+            
+            // Handle metrics updates
+            eventSource.addEventListener('metrics', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // Could display connection stats here
+                } catch (error) {
+                    console.error('Failed to parse metrics:', error);
+                }
+            });
+        }
+
+        // Add log entry
+        function addLogEntry(logData) {
+            const entry = {
+                timestamp: logData.timestamp || Date.now(),
+                level: logData.level || 'INFO',
+                message: logData.message || '',
+                module: logData.module
+            };
+
+            logs.push(entry);
+            stats.total++;
+
+            if (entry.level === 'WARN') stats.warn++;
+            if (entry.level === 'ERROR') stats.error++;
+
+            // Trim logs if exceeded max
+            if (logs.length > MAX_LOGS) {
+                const removed = logs.shift();
+                if (removed.level === 'WARN') stats.warn--;
+                if (removed.level === 'ERROR') stats.error--;
+                stats.total--;
+            }
+
+            // Apply filters
+            filterLogs();
+            
+            // Auto-scroll to bottom if enabled
+            if (isAutoScrolling) {
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            updateStats();
+        }
+
+        // Filter logs
+        function filterLogs() {
+            filteredLogs = logs.filter(log => {
+                // Level filter
+                if (levelFilter !== 'ALL' && log.level !== levelFilter) {
+                    return false;
+                }
+
+                // Regex filter
+                if (filterRegex) {
+                    return filterRegex.test(log.message);
+                }
+
+                return true;
+            });
+
+            renderVirtualLogs();
+        }
+
+        // Virtual scrolling renderer
+        function renderVirtualLogs() {
+            const totalHeight = filteredLogs.length * LOG_HEIGHT;
+            logSpacer.style.height = totalHeight + 'px';
+
+            // Calculate visible range
+            scrollTop = logContainer.scrollTop;
+            visibleStart = Math.floor(scrollTop / LOG_HEIGHT);
+            visibleEnd = Math.ceil((scrollTop + logContainer.clientHeight) / LOG_HEIGHT);
+
+            // Add buffer for smooth scrolling
+            visibleStart = Math.max(0, visibleStart - 10);
+            visibleEnd = Math.min(filteredLogs.length, visibleEnd + 10);
+
+            // Clear and render visible logs
+            logContent.innerHTML = '';
+            logContent.style.transform = `translateY(${visibleStart * LOG_HEIGHT}px)`;
+
+            for (let i = visibleStart; i < visibleEnd; i++) {
+                const log = filteredLogs[i];
+                if (!log) continue;
+
+                const entry = createLogElement(log);
+                logContent.appendChild(entry);
+            }
+        }
+
+        // Create log element
+        function createLogElement(log) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            const timestamp = new Date(log.timestamp).toLocaleTimeString('en-US', { 
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                fractionalSecondDigits: 3
+            });
+
+            const timestampEl = document.createElement('span');
+            timestampEl.className = 'timestamp';
+            timestampEl.textContent = timestamp;
+
+            const levelEl = document.createElement('span');
+            levelEl.className = `level ${log.level}`;
+            levelEl.textContent = log.level;
+
+            const messageEl = document.createElement('span');
+            messageEl.className = 'message';
+            
+            // Highlight search matches
+            if (filterRegex) {
+                messageEl.innerHTML = log.message.replace(filterRegex, '<span class="match">$&</span>');
+            } else {
+                messageEl.textContent = log.message;
+            }
+
+            entry.appendChild(timestampEl);
+            entry.appendChild(levelEl);
+            entry.appendChild(messageEl);
+
+            return entry;
+        }
+
+        // Event handlers
+        filterInput.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            if (value) {
+                try {
+                    // Support regex syntax like /pattern/flags
+                    if (value.startsWith('/') && value.lastIndexOf('/') > 0) {
+                        const lastSlash = value.lastIndexOf('/');
+                        const pattern = value.slice(1, lastSlash);
+                        const flags = value.slice(lastSlash + 1);
+                        filterRegex = new RegExp(pattern, flags);
+                    } else {
+                        filterRegex = new RegExp(value, 'i');
+                    }
+                } catch (error) {
+                    console.error('Invalid regex:', error);
+                    filterRegex = null;
+                }
+            } else {
+                filterRegex = null;
+            }
+            filterLogs();
+        });
+
+        logLevelSelect.addEventListener('change', (e) => {
+            levelFilter = e.target.value;
+            filterLogs();
+        });
+
+        logContainer.addEventListener('scroll', () => {
+            renderVirtualLogs();
+            
+            // Detect if user scrolled away from bottom
+            const isAtBottom = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 50;
+            isAutoScrolling = isAtBottom;
+        });
+
+        function togglePause() {
+            isPaused = !isPaused;
+            pauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+            pauseBtn.classList.toggle('active', isPaused);
+        }
+
+        function clearLogs() {
+            logs = [];
+            filteredLogs = [];
+            stats = { total: 0, warn: 0, error: 0, rate: 0, lastUpdate: Date.now() };
+            renderVirtualLogs();
+            updateStats();
+        }
+
+        function exportLogs() {
+            const content = filteredLogs.map(log => {
+                const timestamp = new Date(log.timestamp).toISOString();
+                return `[${timestamp}] ${log.level} ${log.message}`;
+            }).join('\n');
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `esp32-logs-${new Date().toISOString()}.log`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function updateStats() {
+            document.getElementById('logCount').textContent = `${stats.total} logs`;
+            document.getElementById('warnCount').textContent = stats.warn.toString();
+            document.getElementById('errorCount').textContent = stats.error.toString();
+            
+            // Calculate logs per second
+            const now = Date.now();
+            const timeDiff = (now - stats.lastUpdate) / 1000;
+            if (timeDiff > 1) {
+                const rate = Math.round(stats.rate / timeDiff);
+                document.getElementById('logsPerSec').textContent = `${rate}/s`;
+                stats.rate = 0;
+                stats.lastUpdate = now;
+            } else {
+                stats.rate++;
+            }
+        }
+
+        function updateStatus() {
+            const now = new Date();
+            document.getElementById('updateTime').textContent = now.toLocaleTimeString('en-US', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        // Initialize
+        connectSSE();
+        setInterval(updateStatus, 1000);
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+            }
+        });
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            renderVirtualLogs();
+        });
+
+        // Load initial logs via REST API
+        fetch('/api/logs')
+            .then(res => res.json())
+            .then(data => {
+                if (data.logs) {
+                    data.logs.forEach(logLine => {
+                        // Parse log line and add
+                        const match = logLine.match(/\[(\d+)\]\s+(\w+)\s+(.+)/);
+                        if (match) {
+                            addLogEntry({
+                                timestamp: parseInt(match[1]),
+                                level: match[2],
+                                message: match[3]
+                            });
+                        }
+                    });
+                }
+            })
+            .catch(error => console.error('Failed to load initial logs:', error));
+    </script>
+</body>
+</html>

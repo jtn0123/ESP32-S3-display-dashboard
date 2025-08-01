@@ -429,6 +429,79 @@
         @keyframes spin {
             to { transform: translate(-50%, -50%) rotate(360deg); }
         }
+        /* Notifications */
+        .notification {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            box-shadow: var(--shadow);
+            animation: slideIn 0.3s ease;
+        }
+        
+        .notification-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .notification-info {
+            border-left: 4px solid var(--accent);
+        }
+        
+        .notification-warning {
+            border-left: 4px solid var(--warning);
+        }
+        
+        .notification-error {
+            border-left: 4px solid var(--danger);
+        }
+        
+        .notification button {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .notification button:hover {
+            color: var(--text);
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        /* Touch device optimizations */
+        .touch-device .slider-thumb {
+            width: 28px;
+            height: 28px;
+        }
+        
+        .touch-device .btn {
+            min-height: 44px;
+        }
+        
+        .touch-device .icon-btn {
+            width: 44px;
+            height: 44px;
+        }
     </style>
 </head>
 <body>
@@ -589,17 +662,22 @@
         // Configuration
         const UPDATE_INTERVAL = 2000; // 2 seconds
         const CHART_POINTS = 60; // 60 data points = 2 minutes at 2s intervals
+        const SSE_RECONNECT_DELAY = 3000; // 3 seconds reconnect delay
         
         // State
         let metrics = {
             fps: [],
             cpu: [],
             temp: [],
-            memory: []
+            memory: [],
+            battery: [],
+            wifi: []
         };
         let previousValues = {};
         let chart = null;
         let updateTimer = null;
+        let eventSource = null;
+        let reconnectTimer = null;
         
         // Initialize brightness slider
         const brightnessSlider = document.getElementById('brightness-slider');
@@ -684,6 +762,8 @@
             metrics.cpu.push(Math.max(data.cpu0_usage || 0, data.cpu1_usage || 0));
             metrics.temp.push(data.temperature || 0);
             metrics.memory.push(data.heap_free || 0);
+            metrics.battery.push(data.battery_percentage || 0);
+            metrics.wifi.push(Math.abs(data.wifi_rssi || 0));
             
             // Keep only last N points
             Object.keys(metrics).forEach(key => {
@@ -860,24 +940,154 @@
             }
         }
         
-        function takeScreenshot() {
-            alert('Screenshot feature not yet implemented');
+        async function takeScreenshot() {
+            try {
+                const response = await fetch('/api/v1/display/screenshot', { method: 'POST' });
+                const data = await response.json();
+                
+                // Convert base64 to blob and download
+                const byteCharacters = atob(data.data);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'image/png' });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `esp32-screenshot-${new Date().toISOString()}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                console.log('Screenshot saved');
+            } catch (error) {
+                alert('Failed to capture screenshot: ' + error.message);
+            }
         }
         
         function refreshData() {
             fetchMetrics();
         }
         
+        // SSE Connection Management
+        function connectSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource('/api/events');
+            
+            eventSource.onopen = () => {
+                console.log('SSE connection established');
+                document.querySelector('.status-dot').style.background = 'var(--success)';
+                if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('SSE connection error:', error);
+                document.querySelector('.status-dot').style.background = 'var(--danger)';
+                eventSource.close();
+                
+                // Automatic reconnection
+                if (!reconnectTimer) {
+                    reconnectTimer = setTimeout(() => {
+                        console.log('Attempting SSE reconnection...');
+                        connectSSE();
+                    }, SSE_RECONNECT_DELAY);
+                }
+            };
+            
+            // Handle metrics updates
+            eventSource.addEventListener('metrics', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    updateUI(data);
+                    updateCharts(data);
+                } catch (error) {
+                    console.error('Failed to parse metrics:', error);
+                }
+            });
+            
+            // Handle log entries
+            eventSource.addEventListener('log', (event) => {
+                try {
+                    const logData = JSON.parse(event.data);
+                    console.log(`[${logData.level}] ${logData.message}`);
+                } catch (error) {
+                    console.error('Failed to parse log:', error);
+                }
+            });
+            
+            // Handle alerts
+            eventSource.addEventListener('alert', (event) => {
+                try {
+                    const alert = JSON.parse(event.data);
+                    showNotification(alert.level, alert.message);
+                } catch (error) {
+                    console.error('Failed to parse alert:', error);
+                }
+            });
+        }
+        
+        // Notification system
+        function showNotification(level, message) {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${level}`;
+            notification.innerHTML = `
+                <div class="notification-content">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()">×</button>
+                </div>
+            `;
+            
+            // Add to notification container
+            let container = document.getElementById('notification-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'notification-container';
+                container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 1000;';
+                document.body.appendChild(container);
+            }
+            container.appendChild(notification);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => notification.remove(), 5000);
+        }
+        
         // Start updates
         function startUpdates() {
+            // Initial fetch
             fetchMetrics();
-            updateTimer = setInterval(fetchMetrics, UPDATE_INTERVAL);
+            
+            // Connect SSE for real-time updates
+            connectSSE();
+            
+            // Fallback polling (in case SSE fails)
+            updateTimer = setInterval(() => {
+                if (!eventSource || eventSource.readyState !== EventSource.OPEN) {
+                    fetchMetrics();
+                }
+            }, UPDATE_INTERVAL * 2);
         }
         
         function stopUpdates() {
             if (updateTimer) {
                 clearInterval(updateTimer);
                 updateTimer = null;
+            }
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
             }
         }
         
@@ -887,10 +1097,35 @@
             else startUpdates();
         });
         
+        // PWA Support
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then((registration) => {
+                console.log('Service Worker registered:', registration.scope);
+            }).catch((error) => {
+                console.error('Service Worker registration failed:', error);
+            });
+        }
+        
+        // Enhanced error handling
+        window.addEventListener('error', (event) => {
+            console.error('Global error:', event.error);
+            showNotification('error', 'An unexpected error occurred');
+        });
+        
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('Unhandled promise rejection:', event.reason);
+            showNotification('error', 'An unexpected error occurred');
+        });
+        
         // Initialize
         window.addEventListener('resize', () => {
             if (chart) initChart();
         });
+        
+        // Mobile touch support for sliders
+        if ('ontouchstart' in window) {
+            document.body.classList.add('touch-device');
+        }
         
         startUpdates();
     </script>

@@ -1,0 +1,141 @@
+use anyhow::Result;
+use esp_idf_svc::http::server::{EspHttpServer, Method};
+use esp_idf_svc::io::Write;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use crate::metrics::MetricsData;
+use crate::network::log_streamer::LogEntry;
+
+// Simple SSE broadcaster that doesn't try to store responses
+// Instead, it relies on the metrics system to provide data when requested
+pub struct SseBroadcaster {
+    // We don't actually store connections in ESP32 version
+    // Just keep track of active connections count
+    active_connections: Arc<Mutex<u32>>,
+}
+
+impl SseBroadcaster {
+    pub fn new() -> Self {
+        Self {
+            active_connections: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    pub fn register_endpoints(&self, server: &mut EspHttpServer<'static>) -> Result<()> {
+        let connections = self.active_connections.clone();
+
+        // SSE endpoint for real-time updates
+        server.fn_handler("/events", Method::Get, move |req| {
+            // Increment connection count
+            {
+                let mut count = connections.lock().unwrap();
+                *count += 1;
+                log::info!("SSE client connected, total: {}", *count);
+            }
+
+            // Set SSE headers
+            let headers = [
+                ("Content-Type", "text/event-stream"),
+                ("Cache-Control", "no-cache"),
+                ("Connection", "keep-alive"),
+                ("Access-Control-Allow-Origin", "*"),
+            ];
+
+            let mut response = req.into_response(200, Some("OK"), &headers)?;
+            
+            // Send initial connection message
+            response.write_all(b"data: {\"type\":\"connected\"}\n\n")?;
+            response.flush()?;
+
+            // Send periodic updates
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                
+                // Send metrics update
+                if let Ok(metrics) = crate::metrics::metrics().try_lock() {
+                    let event = serde_json::json!({
+                        "type": "metrics",
+                        "data": {
+                            "temperature": metrics.temperature,
+                            "fps_actual": metrics.fps_actual,
+                            "cpu_usage": metrics.cpu_usage,
+                            "wifi_rssi": metrics.wifi_rssi,
+                            "battery_percentage": metrics.battery_percentage,
+                        }
+                    });
+                    
+                    let data = format!("data: {}\n\n", serde_json::to_string(&event)?);
+                    if response.write_all(data.as_bytes()).is_err() {
+                        break;
+                    }
+                    if response.flush().is_err() {
+                        break;
+                    }
+                }
+                
+                // Send heartbeat every 30 iterations (30 seconds)
+                static mut HEARTBEAT_COUNTER: u8 = 0;
+                unsafe {
+                    HEARTBEAT_COUNTER += 1;
+                    if HEARTBEAT_COUNTER >= 30 {
+                        HEARTBEAT_COUNTER = 0;
+                        if response.write_all(b":heartbeat\n\n").is_err() {
+                            break;
+                        }
+                        if response.flush().is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Decrement connection count on disconnect
+            let mut count = connections.lock().unwrap();
+            *count = count.saturating_sub(1);
+            log::info!("SSE client disconnected, remaining: {}", *count);
+
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        Ok(())
+    }
+
+    pub fn broadcast_metrics(&self, _metrics: &MetricsData) -> Result<()> {
+        // In the simple version, we don't broadcast
+        // Clients poll the metrics themselves
+        Ok(())
+    }
+
+    pub fn broadcast_log(&self, _log_entry: &LogEntry) -> Result<()> {
+        // In the simple version, we don't broadcast logs
+        Ok(())
+    }
+
+    pub fn send_log_event(&self, log_entry: &LogEntry) {
+        let _ = self.broadcast_log(log_entry);
+    }
+
+    pub fn client_count(&self) -> usize {
+        *self.active_connections.lock().unwrap() as usize
+    }
+}
+
+// Global broadcaster instance
+static mut SSE_BROADCASTER: Option<Arc<SseBroadcaster>> = None;
+
+pub fn init() -> Arc<SseBroadcaster> {
+    unsafe {
+        if SSE_BROADCASTER.is_none() {
+            SSE_BROADCASTER = Some(Arc::new(SseBroadcaster::new()));
+        }
+        SSE_BROADCASTER.as_ref().unwrap().clone()
+    }
+}
+
+pub fn broadcast_metrics_update(metrics: &MetricsData) {
+    unsafe {
+        if let Some(ref broadcaster) = SSE_BROADCASTER {
+            let _ = broadcaster.broadcast_metrics(metrics);
+        }
+    }
+}

@@ -1,0 +1,365 @@
+/* Responsive Design System for ESP32-S3 Dashboard */
+
+/* Mobile-First Base Styles */
+* {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Allow text selection in specific areas */
+.log-entry .message,
+.editor-textarea,
+#editor,
+input[type="text"],
+textarea {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* Smooth scrolling on iOS */
+.scrollable {
+    -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+}
+
+/* Prevent overscroll bounce */
+body {
+    overscroll-behavior: none;
+}
+
+/* Touch-friendly tap targets (48px minimum) */
+button,
+.btn,
+.toggle-btn,
+.tree-item,
+.metric-card {
+    min-height: 48px;
+    min-width: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Responsive Grid System */
+.container {
+    width: 100%;
+    padding: 0 1rem;
+    margin: 0 auto;
+}
+
+/* Phone Portrait (320px - 480px) */
+@media (max-width: 480px) {
+    .container {
+        padding: 0 0.5rem;
+    }
+
+    .header h1 {
+        font-size: 1.125rem;
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+
+    .metric-card {
+        padding: 0.75rem;
+    }
+
+    .metric-value {
+        font-size: 1.25rem;
+    }
+
+    .control-panel {
+        margin: 0 0.5rem 0.5rem;
+        padding: 1rem;
+    }
+
+    .footer-nav {
+        display: none;
+    }
+
+    /* Stack controls vertically */
+    .controls {
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+    }
+
+    .filter-input,
+    .filter-select {
+        width: 100%;
+    }
+
+    /* Full-width buttons */
+    .action-buttons {
+        flex-direction: column;
+    }
+
+    .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Simplified chart */
+    #performanceChart {
+        height: 150px;
+    }
+
+    .chart-legend {
+        font-size: 0.625rem;
+    }
+
+    /* Compact log entries */
+    .log-entry {
+        flex-direction: column;
+        padding: 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    .timestamp {
+        order: -1;
+        width: 100%;
+        margin-bottom: 0.25rem;
+    }
+}
+
+/* Phone Landscape & Small Tablets (481px - 768px) */
+@media (min-width: 481px) and (max-width: 768px) {
+    .container {
+        padding: 0 1rem;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.75rem;
+    }
+
+    .control-panel {
+        margin: 0 1rem 1rem;
+    }
+
+    /* Side-by-side controls */
+    .controls {
+        flex-wrap: wrap;
+        justify-content: space-between;
+    }
+
+    .filter-input {
+        width: 45%;
+    }
+
+    .filter-select {
+        width: 45%;
+    }
+
+    /* Chart optimizations */
+    #performanceChart {
+        height: 180px;
+    }
+}
+
+/* Tablets (769px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .container {
+        max-width: 900px;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .file-browser {
+        gap: 1rem;
+    }
+
+    .file-tree {
+        width: 300px;
+    }
+}
+
+/* Desktop (1025px+) */
+@media (min-width: 1025px) {
+    .container {
+        max-width: 1200px;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    /* Enable hover effects on desktop only */
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+    }
+
+    .btn:hover {
+        transform: translateY(-1px);
+    }
+
+    .tree-item:hover {
+        background: var(--bg-hover);
+    }
+}
+
+/* High DPI Displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    /* Sharper borders */
+    .metric-card,
+    .control-panel,
+    .file-tree,
+    .file-editor {
+        border-width: 0.5px;
+    }
+
+    /* Thinner chart lines */
+    canvas {
+        image-rendering: crisp-edges;
+    }
+}
+
+/* Dark Mode Adjustments */
+@media (prefers-color-scheme: dark) {
+    /* Already dark by default */
+}
+
+/* Light Mode Override */
+@media (prefers-color-scheme: light) {
+    body.light-mode {
+        --bg-main: #ffffff;
+        --bg-card: #f9fafb;
+        --bg-hover: #f3f4f6;
+        --bg-input: #e5e7eb;
+        --text: #111827;
+        --text-dim: #6b7280;
+        --text-muted: #9ca3af;
+        --border: #e5e7eb;
+        --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+}
+
+/* Orientation-specific styles */
+@media (orientation: landscape) and (max-height: 500px) {
+    /* Compact header for landscape phones */
+    .header {
+        padding: 0.5rem 1rem;
+    }
+
+    .header h1 {
+        font-size: 1rem;
+    }
+
+    /* Hide status bar in landscape */
+    .status-bar {
+        position: relative;
+        padding: 0.5rem 1rem;
+    }
+
+    /* Reduce vertical spacing */
+    .metric-card {
+        padding: 0.5rem;
+    }
+
+    .control-group {
+        margin-bottom: 0.75rem;
+    }
+}
+
+/* Touch gesture support */
+.swipeable {
+    touch-action: pan-y;
+}
+
+.swipeable-x {
+    touch-action: pan-x;
+}
+
+/* Pull-to-refresh indicator */
+.pull-to-refresh {
+    position: absolute;
+    top: -60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.pull-to-refresh.visible {
+    opacity: 1;
+}
+
+/* iOS Safe Areas */
+@supports (padding: max(0px)) {
+    .header {
+        padding-top: max(1rem, env(safe-area-inset-top));
+    }
+
+    .status-bar {
+        padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    }
+
+    .container {
+        padding-left: max(1rem, env(safe-area-inset-left));
+        padding-right: max(1rem, env(safe-area-inset-right));
+    }
+}
+
+/* Accessibility - Focus Styles */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Remove focus for mouse/touch */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* Print Styles */
+@media print {
+    /* Hide interactive elements */
+    .header-actions,
+    .controls,
+    .btn,
+    .footer-nav {
+        display: none !important;
+    }
+
+    /* Expand content */
+    .file-browser {
+        display: block;
+    }
+
+    .file-tree {
+        width: 100%;
+        height: auto;
+        page-break-after: always;
+    }
+
+    /* High contrast for printing */
+    * {
+        color: black !important;
+        background: white !important;
+    }
+
+    .metric-value {
+        font-weight: bold;
+    }
+}

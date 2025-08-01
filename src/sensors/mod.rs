@@ -1,5 +1,7 @@
 // Sensor abstraction layer for ESP32-S3 dashboard
 
+pub mod history;
+
 use anyhow::Result;
 use esp_idf_hal::gpio::Gpio4;
 use esp_idf_hal::adc::ADC1;
