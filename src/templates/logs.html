@@ -349,6 +349,7 @@
             <a href="/logs" class="active">📋</a>
             <a href="/ota">⬆️</a>
             <a href="/metrics">📈</a>
+            <a href="/files">📁</a>
         </div>
         <div class="status-right">
             <span id="updateTime">Last update: --</span>
@@ -406,6 +407,9 @@
         async function fetchLogs() {
             try {
                 const response = await fetch('/api/logs');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const data = await response.json();
                 
                 if (data.logs) {
@@ -457,7 +461,91 @@
             renderLogs();
         }
         
-        // Render logs
+        // Virtual scrolling implementation
+        class VirtualScroller {
+            constructor(container, items, itemHeight = 24) {
+                this.container = container;
+                this.items = items;
+                this.itemHeight = itemHeight;
+                this.scrollTop = 0;
+                this.containerHeight = container.clientHeight;
+                this.totalHeight = items.length * itemHeight;
+                
+                // Create viewport and content elements
+                this.viewport = document.createElement('div');
+                this.viewport.style.height = '100%';
+                this.viewport.style.overflow = 'auto';
+                this.viewport.style.position = 'relative';
+                
+                this.content = document.createElement('div');
+                this.content.style.height = `${this.totalHeight}px`;
+                this.content.style.position = 'relative';
+                
+                this.visibleContent = document.createElement('div');
+                this.visibleContent.style.position = 'absolute';
+                this.visibleContent.style.top = '0';
+                this.visibleContent.style.left = '0';
+                this.visibleContent.style.right = '0';
+                
+                this.content.appendChild(this.visibleContent);
+                this.viewport.appendChild(this.content);
+                this.container.innerHTML = '';
+                this.container.appendChild(this.viewport);
+                
+                // Bind scroll handler
+                this.viewport.addEventListener('scroll', () => this.handleScroll());
+                this.render();
+            }
+            
+            handleScroll() {
+                this.scrollTop = this.viewport.scrollTop;
+                this.render();
+            }
+            
+            render() {
+                const startIndex = Math.floor(this.scrollTop / this.itemHeight);
+                const endIndex = Math.min(
+                    startIndex + Math.ceil(this.containerHeight / this.itemHeight) + 1,
+                    this.items.length
+                );
+                
+                // Only render visible items
+                const visibleItems = this.items.slice(startIndex, endIndex);
+                const offsetY = startIndex * this.itemHeight;
+                
+                this.visibleContent.style.transform = `translateY(${offsetY}px)`;
+                this.visibleContent.innerHTML = visibleItems.map((log, index) => {
+                    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                    let message = escapeHtml(log.message);
+                    
+                    // Highlight search term
+                    if (searchTerm) {
+                        const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
+                        message = message.replace(regex, '<span class="highlight">$1</span>');
+                    }
+                    
+                    return `
+                        <div class="log-entry" style="height: ${this.itemHeight}px">
+                            <span class="timestamp">[${timestamp}]</span>
+                            <span class="level ${log.level}">${log.level}</span>
+                            <span class="message">${message}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            scrollToBottom() {
+                this.viewport.scrollTop = this.totalHeight;
+            }
+            
+            isAtBottom() {
+                return this.viewport.scrollHeight - this.viewport.scrollTop - this.viewport.clientHeight < 50;
+            }
+        }
+        
+        let virtualScroller = null;
+        
+        // Render logs with virtual scrolling
         function renderLogs() {
             if (filteredLogs.length === 0) {
                 logContainer.innerHTML = `
@@ -465,29 +553,19 @@
                         No logs match your filters
                     </div>
                 `;
+                virtualScroller = null;
                 return;
             }
             
-            const wasAtBottom = isAtBottom();
+            const wasAtBottom = virtualScroller ? virtualScroller.isAtBottom() : true;
             
-            logContainer.innerHTML = filteredLogs.map(log => {
-                const timestamp = new Date(log.timestamp).toLocaleTimeString();
-                let message = escapeHtml(log.message);
-                
-                // Highlight search term
-                if (searchTerm) {
-                    const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
-                    message = message.replace(regex, '<span class="highlight">$1</span>');
-                }
-                
-                return `
-                    <div class="log-entry">
-                        <span class="timestamp">[${timestamp}]</span>
-                        <span class="level ${log.level}">${log.level}</span>
-                        <span class="message">${message}</span>
-                    </div>
-                `;
-            }).join('');
+            // Create or update virtual scroller
+            if (!virtualScroller || virtualScroller.items.length !== filteredLogs.length) {
+                virtualScroller = new VirtualScroller(logContainer, filteredLogs);
+            } else {
+                virtualScroller.items = filteredLogs;
+                virtualScroller.render();
+            }
             
             // Update counts
             logCountSpan.textContent = `${filteredLogs.length} logs`;
@@ -495,7 +573,7 @@
             
             // Auto scroll if enabled and was at bottom
             if (autoScroll && wasAtBottom) {
-                scrollToBottom();
+                virtualScroller.scrollToBottom();
             }
         }
         
@@ -510,19 +588,11 @@
             return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
         
-        function isAtBottom() {
-            return logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 50;
-        }
-        
-        function scrollToBottom() {
-            logContainer.scrollTop = logContainer.scrollHeight;
-        }
-        
         function toggleAutoScroll() {
             autoScroll = !autoScroll;
             autoScrollBtn.classList.toggle('active', autoScroll);
-            if (autoScroll) {
-                scrollToBottom();
+            if (autoScroll && virtualScroller) {
+                virtualScroller.scrollToBottom();
             }
         }
         
@@ -533,11 +603,27 @@
             renderLogs();
         }
         
+        // Debounce function for search
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        
+        // Debounced search to avoid filtering on every keystroke
+        const debouncedApplyFilters = debounce(() => applyFilters(), 300);
+        
         // Event listeners
         searchInput.addEventListener('input', (e) => {
             searchTerm = e.target.value;
             searchClear.style.display = searchTerm ? 'block' : 'none';
-            applyFilters();
+            debouncedApplyFilters();
         });
         
         searchClear.addEventListener('click', () => {

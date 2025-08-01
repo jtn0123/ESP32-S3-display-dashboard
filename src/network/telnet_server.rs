@@ -172,6 +172,15 @@ impl TelnetLogServer {
             }
         }
     }
+    
+    /// Get recent logs from the buffer
+    pub fn get_recent_logs(&self, count: usize) -> Vec<String> {
+        if let Ok(buffer) = self.log_buffer.lock() {
+            buffer.get_recent(count)
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 /// Macro to log to telnet server if available

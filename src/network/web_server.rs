@@ -448,23 +448,17 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // Logs API endpoint - returns recent log entries
+        // Logs API endpoint - returns recent log entries from telnet buffer
         server.fn_handler("/api/logs", esp_idf_svc::http::Method::Get, move |req| {
-            // For now, return empty logs array
-            // TODO: Integrate with telnet log buffer
+            // Get logs from the telnet server if available
+            let logs = if let Some(telnet_server) = crate::logging::get_telnet_server() {
+                telnet_server.get_recent_logs(100)
+            } else {
+                Vec::new()
+            };
+            
             let logs_json = serde_json::json!({
-                "logs": [
-                    "[11000] INFO System initialized successfully",
-                    "[11001] DEBUG Starting main loop",
-                    "[11002] INFO Temperature: 44.5°C",
-                    "[11003] WARN Battery voltage low: 3.2V",
-                    "[11004] INFO FPS: 60.0, Skip rate: 99.8%",
-                    "[11005] ERROR Failed to read sensor",
-                    "[11006] INFO Recovered from error",
-                    "[11007] DEBUG Memory allocation successful",
-                    "[11008] INFO WiFi connected to Batcave",
-                    "[11009] INFO Web server started on port 80"
-                ]
+                "logs": logs
             });
             
             let json_string = serde_json::to_string(&logs_json)?;
@@ -495,9 +489,10 @@ impl WebConfigServer {
                 log::info!("Brightness set to: {} ({}%)", brightness_u8, (brightness_u8 as f32 / 255.0 * 100.0) as u8);
             }
             
-            if let Some(display) = control_cmd.get("display").and_then(|v| v.as_bool()) {
-                // TODO: Implement display on/off control
-                log::info!("Display control: {}", display);
+            if let Some(display_on) = control_cmd.get("display").and_then(|v| v.as_bool()) {
+                // Display control would require access to the display manager
+                // For now, just log the request
+                log::info!("Display control requested: {} (not yet implemented)", display_on);
             }
             
             if let Some(mode) = control_cmd.get("mode").and_then(|v| v.as_str()) {
@@ -564,6 +559,51 @@ impl WebConfigServer {
 
         // Register file manager routes
         crate::network::file_manager::register_file_routes(&mut server)?;
+        
+        // Server-Sent Events endpoint for real-time updates
+        let metrics_clone_sse = metrics.clone();
+        server.fn_handler("/api/events", esp_idf_svc::http::Method::Get, move |req| {
+            use std::io::Write as StdWrite;
+            
+            let mut response = req.into_response(200, None, &[
+                ("Content-Type", "text/event-stream"),
+                ("Cache-Control", "no-cache"),
+                ("Connection", "keep-alive"),
+                ("Access-Control-Allow-Origin", "*"),
+            ])?;
+            
+            // Send initial connection message
+            response.write_all(b"retry: 1000\n\n")?;
+            response.flush()?;
+            
+            // Send periodic updates
+            for _ in 0..300 { // 5 minutes max connection
+                // Get current metrics
+                if let Ok(metrics_guard) = metrics_clone_sse.read() {
+                    let data = serde_json::json!({
+                        "temperature": (metrics_guard.temperature * 10.0).round() / 10.0,
+                        "battery_level": metrics_guard.battery_level,
+                        "fps_actual": (metrics_guard.fps_actual * 10.0).round() / 10.0,
+                        "fps_possible": (metrics_guard.fps_possible * 10.0).round() / 10.0,
+                        "skip_percentage": (metrics_guard.skip_percentage * 10.0).round() / 10.0,
+                        "heap_free": metrics_guard.heap_free,
+                        "timestamp": metrics_guard.timestamp,
+                        "cpu_usage_core0": metrics_guard.cpu_usage_core0,
+                        "cpu_usage_core1": metrics_guard.cpu_usage_core1,
+                    });
+                    
+                    let event = format!("data: {}\n\n", serde_json::to_string(&data)?);
+                    if response.write_all(event.as_bytes()).is_err() {
+                        break; // Client disconnected
+                    }
+                    response.flush()?;
+                }
+                
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
 
         // Recent logs endpoint for initial load
         server.fn_handler("/api/logs/recent", esp_idf_svc::http::Method::Get, move |req| {

@@ -502,9 +502,83 @@
             width: 44px;
             height: 44px;
         }
+        
+        /* Connection status indicator */
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+        
+        .connection-status::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+        
+        .connection-status.offline {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+        
+        .connection-status.offline::before {
+            background: var(--danger);
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        body.offline .container {
+            opacity: 0.7;
+        }
+        
+        /* Skeleton loading animation */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s ease-in-out infinite;
+            border-radius: 4px;
+        }
+        
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        .skeleton-text {
+            height: 1em;
+            margin: 0.5em 0;
+            width: 80%;
+        }
+        
+        .skeleton-metric {
+            height: 2em;
+            width: 100px;
+            margin: 0.5em 0;
+        }
     </style>
 </head>
 <body>
+    <div class="connection-status" id="connectionStatus">Connected</div>
     <header class="header">
         <h1>
             <span class="status-dot"></span>
@@ -720,11 +794,26 @@
         async function fetchMetrics() {
             try {
                 const response = await fetch('/api/metrics');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const data = await response.json();
                 updateUI(data);
                 updateCharts(data);
+                
+                // Clear any error state
+                document.getElementById('connectionStatus').textContent = 'Connected';
+                document.getElementById('connectionStatus').classList.remove('offline');
             } catch (error) {
                 console.error('Failed to fetch metrics:', error);
+                // Show error state
+                document.getElementById('connectionStatus').textContent = 'Error';
+                document.getElementById('connectionStatus').classList.add('offline');
+                
+                // Show notification if repeated failures
+                if (!document.querySelector('.error-notification')) {
+                    showNotification('error', 'Failed to fetch data. Retrying...');
+                }
             }
         }
         
@@ -991,6 +1080,12 @@
             eventSource.onerror = (error) => {
                 console.error('SSE connection error:', error);
                 document.querySelector('.status-dot').style.background = 'var(--danger)';
+                
+                // Update connection status
+                document.getElementById('connectionStatus').textContent = 'Offline';
+                document.getElementById('connectionStatus').classList.add('offline');
+                document.body.classList.add('offline');
+                
                 eventSource.close();
                 
                 // Automatic reconnection
@@ -1002,16 +1097,21 @@
                 }
             };
             
-            // Handle metrics updates
-            eventSource.addEventListener('metrics', (event) => {
+            // Handle metrics updates (default message type)
+            eventSource.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
                     updateUI(data);
                     updateCharts(data);
+                    
+                    // Update connection status
+                    document.getElementById('connectionStatus').textContent = 'Connected';
+                    document.getElementById('connectionStatus').classList.remove('offline');
+                    document.body.classList.remove('offline');
                 } catch (error) {
                     console.error('Failed to parse metrics:', error);
                 }
-            });
+            };
             
             // Handle log entries
             eventSource.addEventListener('log', (event) => {
@@ -1065,6 +1165,9 @@
             // Initial fetch
             fetchMetrics();
             
+            // Load historical data for charts
+            loadHistoricalData();
+            
             // Connect SSE for real-time updates
             connectSSE();
             
@@ -1074,6 +1177,43 @@
                     fetchMetrics();
                 }
             }, UPDATE_INTERVAL * 2);
+        }
+        
+        // Load historical sensor data for charts
+        async function loadHistoricalData() {
+            try {
+                const response = await fetch('/api/v1/sensors/temperature/history?hours=1');
+                if (response.ok) {
+                    const data = await response.json();
+                    // Populate chart arrays with historical data
+                    if (data.history && Array.isArray(data.history)) {
+                        // Clear existing data
+                        metrics.temp = [];
+                        metrics.cpu = [];
+                        metrics.fps = [];
+                        
+                        // Add historical points
+                        data.history.forEach(point => {
+                            metrics.temp.push(point.value);
+                            // Estimate other values if not available
+                            metrics.cpu.push(50); // Default CPU
+                            metrics.fps.push(60); // Default FPS
+                        });
+                        
+                        // Ensure we don't exceed max points
+                        while (metrics.temp.length > CHART_POINTS) {
+                            metrics.temp.shift();
+                            metrics.cpu.shift();
+                            metrics.fps.shift();
+                        }
+                        
+                        // Redraw charts with historical data
+                        if (chart) updateCharts({});
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load historical data:', error);
+            }
         }
         
         function stopUpdates() {
@@ -1095,6 +1235,11 @@
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) stopUpdates();
             else startUpdates();
+        });
+        
+        // Cleanup on page unload to prevent memory leaks
+        window.addEventListener('beforeunload', () => {
+            stopUpdates();
         });
         
         // PWA Support

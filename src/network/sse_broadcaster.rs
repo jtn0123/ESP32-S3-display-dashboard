@@ -3,8 +3,6 @@ use esp_idf_svc::http::server::{EspHttpServer, Method};
 use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use crate::metrics::MetricsData;
-use crate::network::log_streamer::LogEntry;
 
 // Simple SSE broadcaster that doesn't try to store responses
 // Instead, it relies on the metrics system to provide data when requested
@@ -114,42 +112,13 @@ impl SseBroadcaster {
         Ok(())
     }
 
-    pub fn broadcast_metrics(&self, _metrics: &MetricsData) -> Result<()> {
-        // In the simple version, we don't broadcast
-        // Clients poll the metrics themselves
-        Ok(())
-    }
-
-    pub fn broadcast_log(&self, _log_entry: &LogEntry) -> Result<()> {
-        // In the simple version, we don't broadcast logs
-        Ok(())
-    }
-
-    pub fn send_log_event(&self, log_entry: &LogEntry) {
-        let _ = self.broadcast_log(log_entry);
-    }
-
-    pub fn client_count(&self) -> usize {
-        *self.active_connections.lock().unwrap() as usize
-    }
 }
 
-// Global broadcaster instance
-static mut SSE_BROADCASTER: Option<Arc<SseBroadcaster>> = None;
+// Global broadcaster instance using OnceLock for safety
+use std::sync::OnceLock;
+static SSE_BROADCASTER: OnceLock<Arc<SseBroadcaster>> = OnceLock::new();
 
 pub fn init() -> Arc<SseBroadcaster> {
-    unsafe {
-        if SSE_BROADCASTER.is_none() {
-            SSE_BROADCASTER = Some(Arc::new(SseBroadcaster::new()));
-        }
-        SSE_BROADCASTER.as_ref().unwrap().clone()
-    }
+    SSE_BROADCASTER.get_or_init(|| Arc::new(SseBroadcaster::new())).clone()
 }
 
-pub fn broadcast_metrics_update(metrics: &MetricsData) {
-    unsafe {
-        if let Some(ref broadcaster) = SSE_BROADCASTER {
-            let _ = broadcaster.broadcast_metrics(metrics);
-        }
-    }
-}

@@ -25,7 +25,6 @@ pub struct DataPoint {
 pub struct SensorHistory {
     temperature: Mutex<VecDeque<DataPoint>>,
     battery: Mutex<VecDeque<DataPoint>>,
-    humidity: Mutex<VecDeque<DataPoint>>,
 }
 
 impl SensorHistory {
@@ -33,7 +32,6 @@ impl SensorHistory {
         Self {
             temperature: Mutex::new(VecDeque::with_capacity(MAX_HISTORY_POINTS)),
             battery: Mutex::new(VecDeque::with_capacity(MAX_HISTORY_POINTS)),
-            humidity: Mutex::new(VecDeque::with_capacity(MAX_HISTORY_POINTS)),
         }
     }
 
@@ -43,10 +41,6 @@ impl SensorHistory {
 
     pub fn add_battery(&self, value: f32) {
         self.add_data_point(&self.battery, value);
-    }
-
-    pub fn add_humidity(&self, value: f32) {
-        self.add_data_point(&self.humidity, value);
     }
 
     fn add_data_point(&self, queue: &Mutex<VecDeque<DataPoint>>, value: f32) {
@@ -72,10 +66,6 @@ impl SensorHistory {
         self.get_history(&self.battery, hours)
     }
 
-    pub fn get_humidity_history(&self, hours: u32) -> Vec<DataPoint> {
-        self.get_history(&self.humidity, hours)
-    }
-
     fn get_history(&self, queue: &Mutex<VecDeque<DataPoint>>, hours: u32) -> Vec<DataPoint> {
         let cutoff = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -90,9 +80,4 @@ impl SensorHistory {
             .collect()
     }
 
-    pub fn clear_all(&self) {
-        self.temperature.lock().unwrap().clear();
-        self.battery.lock().unwrap().clear();
-        self.humidity.lock().unwrap().clear();
-    }
 }

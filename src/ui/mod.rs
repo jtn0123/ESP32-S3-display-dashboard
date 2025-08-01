@@ -691,9 +691,6 @@ impl UiManager {
             display.draw_text(100, y_start + 18, "No Battery", TEXT_SECONDARY, None, 1)?;
         }
         
-        // Add debug box with ADC info (temporary for calibration)
-        display.draw_rect(10, 140, 300, 25, BORDER_COLOR)?;
-        display.draw_text(15, 145, "[DEBUG] Check telnet for ADC raw values", YELLOW, None, 1)?;
         
         // Temperature value (adjusted position due to battery info)
         let temp_y = y_start + line_height + 5;

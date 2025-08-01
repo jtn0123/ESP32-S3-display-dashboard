@@ -51,3 +51,8 @@ pub fn init_logger() -> Result<(), log::SetLoggerError> {
 pub fn set_telnet_server(server: Arc<TelnetLogServer>) {
     let _ = TELNET_SERVER.set(server);
 }
+
+/// Get the telnet server if it's been set
+pub fn get_telnet_server() -> Option<Arc<TelnetLogServer>> {
+    TELNET_SERVER.get().cloned()
+}

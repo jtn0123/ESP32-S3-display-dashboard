@@ -353,6 +353,38 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Navigation Bar */
+        .nav-bar {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 16px;
+            text-align: center;
+        }
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+        .nav-links a:hover {
+            background: var(--bg-input);
+            color: var(--text);
+        }
+        .nav-links a.active {
+            background: var(--accent);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -376,6 +408,17 @@
             </button>
         </div>
     </header>
+
+    <div class="nav-bar">
+        <div class="nav-links">
+            <a href="/">🏠 Home</a>
+            <a href="/dashboard">📊 Dashboard</a>
+            <a href="/logs">📋 Logs</a>
+            <a href="/ota">⬆️ Update</a>
+            <a href="/metrics">📈 Metrics</a>
+            <a href="/files" class="active">📁 Files</a>
+        </div>
+    </div>
 
     <div class="file-browser">
         <div class="file-tree">
@@ -530,7 +573,9 @@
         // Select file
         async function selectFile(file) {
             if (file.type === 'directory') {
-                // TODO: Navigate into directory
+                // Navigate into directory
+                currentPath = file.path || `${currentPath}/${file.name}`.replace('//', '/');
+                loadFiles(currentPath);
                 return;
             }
 

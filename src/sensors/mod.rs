@@ -173,12 +173,8 @@ impl SensorManager {
         // First convert ADC to measured voltage
         let measured_mv = ((adc_value as u32 * 3100) / 4095) as u16;
         
-        // Debug output every time (temporary for calibration)
-        let battery_mv = measured_mv * 2;
-        log::info!("[BAT_DEBUG] ADC raw: {} -> Measured: {}mV -> Battery: {}mV ({:.3}V)", 
-            adc_value, measured_mv, battery_mv, battery_mv as f32 / 1000.0);
-        
         // Then double it to get actual battery voltage (due to 1:1 voltage divider)
+        let battery_mv = measured_mv * 2;
         battery_mv
     }
     

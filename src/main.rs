@@ -208,6 +208,19 @@ fn main() -> Result<()> {
         let button_manager = system::ButtonManager::new(button1, button2)?;
         info!("Buttons initialized");
         
+        // Mount SPIFFS filesystem
+        {
+            use esp_idf_svc::fs::{self, StorageImpl};
+            let spiffs_config = fs::SpiffsConfig {
+                base_path: "/spiffs".to_owned(),
+                partition_label: Some("storage".to_owned()),
+                max_files: 5,
+                format_if_mount_failed: true,
+            };
+            let _spiffs = fs::SpiffsSingleton::mount(spiffs_config)?;
+            info!("SPIFFS filesystem mounted at /spiffs");
+        }
+        
         let network_config = config.lock().map_err(|e| anyhow::anyhow!("Failed to lock config: {}", e))?;
         let mut network_manager = NetworkManager::new(
             peripherals.modem,
@@ -679,43 +692,37 @@ fn run_app(
     
     log::info!("Main render loop started - entering infinite loop");
 
-    // Sensor reading optimization - read all sensors on Core 0
+    // Sensor reading stays on Core 0 but we'll minimize the work
     let mut last_sensor_reading = Instant::now();
     let sensor_reading_interval = Duration::from_secs(5); // Read sensors every 5 seconds
+    let sensor_tx = core1_channels.sensor_tx.clone();
     
     loop {
         // Start frame timing
         let frame_start = Instant::now();
         
-        // Removed debug logging from hot path
-        
-        // Read sensors on Core 0 and send to Core 1
+        // Send sensor data to Core 1 for processing
         if last_sensor_reading.elapsed() >= sensor_reading_interval {
-            // Sample all sensors on Core 0
-            let sensor_result = sensor_manager.sample()?;
-            
-            // Get CPU usage
-            let (cpu0_usage, cpu1_usage) = cpu_monitor.get_cpu_usage();
-            
-            // Create sensor update to send to Core 1
-            let sensor_update = core1_tasks::SensorUpdate {
-                temperature: sensor_result._temperature,
-                battery_percentage: sensor_result._battery_percentage,
-                battery_voltage: sensor_result._battery_voltage,
-                is_charging: sensor_result._is_charging,
-                is_on_usb: sensor_result._is_on_usb,
-                cpu_usage_core0: cpu0_usage,
-                cpu_usage_core1: cpu1_usage,
-            };
-            
-            // Send to Core 1 for processing
-            if let Err(e) = core1_channels.sensor_tx.send(sensor_update.clone()) {
-                log::warn!("Failed to send sensor data to Core 1: {}", e);
-            } else {
-                log::info!("Core 0: Sent sensor data to Core 1 - Temp: {:.1}°C, Battery: {}mV ({}%)", 
-                    sensor_update.temperature, sensor_update.battery_voltage, sensor_update.battery_percentage);
+            // Sample sensors quickly on Core 0
+            if let Ok(sensor_result) = sensor_manager.sample() {
+                let (cpu0_usage, cpu1_usage) = cpu_monitor.get_cpu_usage();
+                
+                // Send to Core 1 for processing
+                let sensor_update = core1_tasks::SensorUpdate {
+                    temperature: sensor_result._temperature,
+                    battery_percentage: sensor_result._battery_percentage,
+                    battery_voltage: sensor_result._battery_voltage,
+                    is_charging: sensor_result._is_charging,
+                    is_on_usb: sensor_result._is_on_usb,
+                    cpu_usage_core0: cpu0_usage,
+                    cpu_usage_core1: cpu1_usage,
+                };
+                
+                // Non-blocking send to Core 1
+                if let Err(_) = sensor_tx.try_send(sensor_update.clone()) {
+                    log::warn!("Core 1 sensor queue full, skipping update");
+                }
             }
-            
             last_sensor_reading = Instant::now();
         }
 
@@ -1065,9 +1072,6 @@ fn run_app(
                 }
                 
                 // Note: Temperature and battery are updated from Core 1 data elsewhere
-                
-                // Broadcast metrics update via SSE
-                crate::network::sse_broadcaster::broadcast_metrics_update(&*metrics);
             }
             
             // Reset report timer

@@ -146,30 +146,3 @@ fn generate_request_id() -> String {
     format!("req_{:08x}{:04x}", timestamp, count & 0xFFFF)
 }
 
-// Helper macro for consistent error handling
-#[macro_export]
-macro_rules! handle_api_error {
-    ($expr:expr, $req:expr) => {
-        match $expr {
-            Ok(val) => val,
-            Err(e) => {
-                log::error!("API error: {:?}", e);
-                return $crate::network::error_handler::ErrorResponse::internal_error(
-                    format!("Internal error: {}", e)
-                ).send($req);
-            }
-        }
-    };
-}
-
-// Middleware for logging errors
-pub fn log_error<E: std::error::Error>(error: &E, request_path: &str) {
-    log::error!("Request to {} failed: {}", request_path, error);
-    
-    // Log the error chain
-    let mut source = error.source();
-    while let Some(err) = source {
-        log::error!("  Caused by: {}", err);
-        source = err.source();
-    }
-}
