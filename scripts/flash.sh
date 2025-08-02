@@ -37,7 +37,7 @@ BUILD_DIR="target/xtensa-esp32s3-espidf/release"
 ELF_FILE="$BUILD_DIR/esp32-s3-dashboard"
 BIN_FILE="$BUILD_DIR/esp32-s3-dashboard.bin"
 BOOTLOADER="$BUILD_DIR/bootloader.bin"
-PARTITION_CSV="partitions/partitions_16mb_ota.csv"
+PARTITION_CSV="partition_table/partitions_ota.csv"
 PARTITION_BIN="$BUILD_DIR/partition-table.bin"
 OTA_DATA_INIT="firmware/ota_data_initial.bin"
 
@@ -130,14 +130,13 @@ fi
 echo -e "\n${BLUE}Initializing OTA data...${NC}"
 $ESPTOOL --chip esp32s3 --port "$PORT" --baud 921600 \
     write_flash --flash_mode dio --flash_freq 40m --flash_size 16MB \
-    0xf000 "$OTA_DATA_INIT"
+    0xd000 "$OTA_DATA_INIT"
 
-# Step 7: Flash app to BOTH factory and ota_0
-echo -e "\n${BLUE}Flashing app to factory and ota_0...${NC}"
+# Step 7: Flash app to ota_0 (partition_table/partitions_ota.csv layout)
+echo -e "\n${BLUE}Flashing app to ota_0...${NC}"
 $ESPTOOL --chip esp32s3 --port "$PORT" --baud 921600 \
     write_flash --flash_mode dio --flash_freq 40m --flash_size 16MB \
-    0x20000 "$BIN_FILE" \
-    0x1A0000 "$BIN_FILE"
+    0x10000 "$BIN_FILE"
 
 # Clean up
 rm -f "$BIN_FILE" "$PARTITION_BIN"

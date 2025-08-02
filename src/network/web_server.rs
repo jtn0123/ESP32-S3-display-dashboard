@@ -41,7 +41,22 @@ impl WebConfigServer {
         metrics: Arc<crate::metrics::MetricsWrapper>,
         sensor_history: Option<Arc<Mutex<crate::sensors::history::SensorHistory>>>
     ) -> Result<Self> {
-        let mut server = EspHttpServer::new(&Configuration::default())?;
+        // Check if we're recovering from OTA
+        let reset_reason = unsafe { esp_idf_sys::esp_reset_reason() };
+        if reset_reason == esp_idf_sys::esp_reset_reason_t_ESP_RST_SW {
+            log::warn!("Software reset detected - likely from OTA update");
+            log::info!("Adding delay to ensure clean HTTP server state...");
+            esp_idf_hal::delay::FreeRtos::delay_ms(500);
+        }
+        
+        // Create custom configuration with increased handler limit
+        // We have ~33 total routes (22 base + 6 API v1 + 5 file manager)
+        let server_config = Configuration {
+            stack_size: 8192, // Increase stack size for handlers
+            max_uri_handlers: 40, // Increase to support all routes with some headroom
+            ..Default::default()
+        };
+        let mut server = EspHttpServer::new(&server_config)?;
         
         let config_clone = config.clone();
         
@@ -150,6 +165,61 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
+        // Health check endpoint - simple and lightweight
+        let metrics_health = metrics.clone();
+        server.fn_handler("/health", esp_idf_svc::http::Method::Get, move |req| {
+            let uptime = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u64;
+            let heap = unsafe { esp_idf_sys::esp_get_free_heap_size() };
+            
+            // Check system health
+            let mut status = "healthy";
+            let mut issues = Vec::new();
+            
+            // Check heap memory (warn if less than 50KB)
+            if heap < 50_000 {
+                status = "warning";
+                issues.push("low_memory");
+            }
+            
+            // Check temperature if available
+            if let Ok(metrics_guard) = metrics_health.try_lock() {
+                if metrics_guard.temperature > 35.0 {
+                    status = "warning";
+                    issues.push("high_temperature");
+                }
+            }
+            
+            // Simple JSON response
+            let health_json = format!(
+                r#"{{"status":"{}","uptime_seconds":{},"free_heap":{},"version":"{}","issues":{:?}}}"#,
+                status,
+                uptime,
+                heap,
+                crate::version::DISPLAY_VERSION,
+                issues
+            );
+            
+            let mut response = req.into_ok_response()?;
+            response.write_all(health_json.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        // Restart endpoint for remote device management
+        server.fn_handler("/restart", esp_idf_svc::http::Method::Post, move |req| {
+            log::warn!("Restart requested via HTTP");
+            
+            // Schedule restart after response
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                unsafe { esp_idf_sys::esp_restart(); }
+            });
+            
+            let response_json = r#"{"status":"ok","message":"Device will restart in 1 second"}"#;
+            let mut response = req.into_ok_response()?;
+            response.write_all(response_json.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
         // Prometheus metrics endpoint - optimized with formatter
         server.fn_handler("/metrics", esp_idf_svc::http::Method::Get, move |req| {
             // Get system metrics
@@ -240,6 +310,17 @@ impl WebConfigServer {
             // OTA update endpoint
             let ota_manager_clone2 = ota_manager.clone();
             server.fn_handler("/ota/update", esp_idf_svc::http::Method::Post, move |mut req| {
+                // Basic password protection for OTA
+                const OTA_PASSWORD: &str = "esp32"; // Change this to your preferred password
+                
+                let auth_header = req.header("X-OTA-Password").unwrap_or("");
+                if auth_header != OTA_PASSWORD {
+                    log::warn!("OTA update rejected - invalid password");
+                    let mut response = req.into_status_response(401)?;
+                    response.write_all(b"Unauthorized - Invalid OTA password")?;
+                    return Ok::<(), anyhow::Error>(());
+                }
+                
                 // Check if OTA is available
                 let Some(ota_mgr) = ota_manager_clone2.as_ref() else {
                     let mut response = req.into_status_response(503)?;
@@ -253,7 +334,13 @@ impl WebConfigServer {
                     .and_then(|v| v.parse::<usize>().ok())
                     .ok_or_else(|| anyhow::anyhow!("Missing Content-Length"))?;
                 
+                // Get optional SHA256 header
+                let sha256_header = req.header("X-SHA256").map(|s| s.to_string());
+                
                 log::info!("OTA Update started, size: {} bytes", content_length);
+                if let Some(ref sha) = sha256_header {
+                    log::info!("OTA Expected SHA256: {}", sha);
+                }
                 
                 // Perform the OTA update
                 let result = {
@@ -266,6 +353,11 @@ impl WebConfigServer {
                             return Ok::<(), anyhow::Error>(());
                         }
                     };
+                    
+                    // Set expected SHA256 if provided
+                    if let Some(sha) = sha256_header {
+                        ota.set_expected_sha256(sha);
+                    }
                     
                     // Begin OTA update
                     if let Err(e) = ota.begin_update(content_length) {
@@ -325,7 +417,7 @@ impl WebConfigServer {
                         // Schedule restart
                         std::thread::spawn(|| {
                             std::thread::sleep(std::time::Duration::from_secs(2));
-                            log::info!("Restarting system...");
+                            log::info!("OTA complete - restarting...");
                             unsafe { esp_idf_sys::esp_restart(); }
                         });
                         
@@ -384,6 +476,104 @@ impl WebConfigServer {
                 .replace("{{VERSION}}", version);
             
             write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+        })?;
+        
+        // Sensor graphs route
+        server.fn_handler("/graphs", esp_idf_svc::http::Method::Get, move |req| {
+            let html = crate::templates::GRAPHS_PAGE;
+            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+        })?;
+        
+        // Config backup endpoint - exports current config as JSON
+        let config_backup = config.clone();
+        server.fn_handler("/api/config/backup", esp_idf_svc::http::Method::Get, move |req| {
+            let config = match config_backup.lock() {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    log::error!("Failed to lock config for backup: {}", e);
+                    let mut response = req.into_status_response(503)?;
+                    response.write_all(b"Configuration lock failed")?;
+                    return Ok(());
+                }
+            };
+            
+            // Export full config as JSON
+            let json = serde_json::to_string_pretty(&*config)?;
+            
+            // Return as downloadable file
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[
+                    ("Content-Type", "application/json"),
+                    ("Content-Disposition", "attachment; filename=\"esp32-config-backup.json\"")
+                ]
+            )?;
+            response.write_all(json.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+        
+        // Config restore endpoint - imports config from JSON
+        let config_restore = config.clone();
+        server.fn_handler("/api/config/restore", esp_idf_svc::http::Method::Post, move |mut req| {
+            // Read uploaded JSON
+            let mut buf = vec![0; 4096]; // Larger buffer for full config
+            let len = req.read(&mut buf)?;
+            buf.truncate(len);
+            
+            let json_str = std::str::from_utf8(&buf)?;
+            
+            // Parse and validate config
+            let new_config: Config = match serde_json::from_str(json_str) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    log::error!("Invalid config JSON: {}", e);
+                    let mut response = req.into_status_response(400)?;
+                    response.write_all(format!("Invalid configuration: {}", e).as_bytes())?;
+                    return Ok(());
+                }
+            };
+            
+            // Update and save config
+            {
+                let mut config = match config_restore.lock() {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        log::error!("Failed to lock config for restore: {}", e);
+                        let mut response = req.into_status_response(503)?;
+                        response.write_all(b"Configuration lock failed")?;
+                        return Ok(());
+                    }
+                };
+                
+                // Keep the current WiFi credentials if not provided in backup
+                let wifi_ssid = if new_config.wifi_ssid.is_empty() {
+                    config.wifi_ssid.clone()
+                } else {
+                    new_config.wifi_ssid.clone()
+                };
+                let wifi_password = if new_config.wifi_password.is_empty() {
+                    config.wifi_password.clone()
+                } else {
+                    new_config.wifi_password.clone()
+                };
+                
+                *config = new_config;
+                config.wifi_ssid = wifi_ssid;
+                config.wifi_password = wifi_password;
+                config.save()?;
+                
+                log::info!("Configuration restored from backup");
+            }
+            
+            let response_json = serde_json::json!({
+                "status": "success",
+                "message": "Configuration restored successfully"
+            });
+            
+            let mut response = req.into_ok_response()?;
+            response.write_all(serde_json::to_string(&response_json)?.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // Binary metrics endpoint for efficient updates
@@ -577,7 +767,7 @@ impl WebConfigServer {
             // Schedule restart after response is sent
             std::thread::spawn(|| {
                 std::thread::sleep(std::time::Duration::from_secs(1));
-                log::info!("Restarting device...");
+                log::info!("Manual restart requested...");
                 unsafe { esp_idf_sys::esp_restart(); }
             });
             
@@ -597,51 +787,7 @@ impl WebConfigServer {
         // Register file manager routes
         crate::network::file_manager::register_file_routes(&mut server)?;
         
-        // Server-Sent Events endpoint for real-time updates
-        let metrics_clone_sse = metrics.clone();
-        server.fn_handler("/api/events", esp_idf_svc::http::Method::Get, move |req| {
-            
-            let mut response = req.into_response(200, None, &[
-                ("Content-Type", "text/event-stream"),
-                ("Cache-Control", "no-cache"),
-                ("Connection", "keep-alive"),
-                ("Access-Control-Allow-Origin", "*"),
-            ])?;
-            
-            // Send initial connection message
-            response.write_all(b"retry: 1000\n\n")?;
-            response.flush()?;
-            
-            // Send periodic updates
-            for _ in 0..300 { // 5 minutes max connection
-                // Get current metrics
-                if let Ok(metrics_guard) = metrics_clone_sse.try_lock() {
-                    let data = serde_json::json!({
-                        "temperature": (metrics_guard.temperature * 10.0).round() / 10.0,
-                        "battery_percentage": metrics_guard.battery_percentage,
-                        "fps_actual": (metrics_guard.fps_actual * 10.0).round() / 10.0,
-                        "fps_target": metrics_guard.fps_target,
-                        "skip_rate": if metrics_guard.frame_count > 0 {
-                            metrics_guard.skip_count as f32 / metrics_guard.frame_count as f32 * 100.0
-                        } else { 0.0 },
-                        "heap_free": metrics_guard.heap_free,
-                        "timestamp": metrics_guard.timestamp,
-                        "cpu0_usage": metrics_guard.cpu0_usage,
-                        "cpu1_usage": metrics_guard.cpu1_usage,
-                    });
-                    
-                    let event = format!("data: {}\n\n", serde_json::to_string(&data)?);
-                    if response.write_all(event.as_bytes()).is_err() {
-                        break; // Client disconnected
-                    }
-                    response.flush()?;
-                }
-                
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            
-            Ok(()) as Result<(), Box<dyn std::error::Error>>
-        })?;
+        // NOTE: SSE endpoint /api/events is already registered by sse_broadcaster.register_endpoints() above
 
         // Recent logs endpoint for initial load
         server.fn_handler("/api/logs/recent", esp_idf_svc::http::Method::Get, move |req| {

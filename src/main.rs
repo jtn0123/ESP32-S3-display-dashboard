@@ -40,6 +40,7 @@ mod metrics_formatter;
 mod metrics_rwlock;
 // mod ring_buffer;  // TODO: Integrate ring buffer optimization
 mod templates;
+mod power;
 
 use crate::boot::{BootManager, BootStage};
 use crate::display::{DisplayManager, colors};
@@ -48,15 +49,22 @@ use crate::ota::OtaManager;
 use crate::ui::UiManager;
 use crate::dual_core::{DualCoreProcessor, CpuMonitor};
 use crate::performance::PerformanceMetrics;
+use crate::power::{PowerManager, PowerConfig};
+
+// Global error storage for web server initialization
+static mut WEB_SERVER_ERROR: Option<String> = None;
 
 fn main() -> Result<()> {
     // Initialize ESP-IDF
     esp_idf_svc::sys::link_patches();
     
-    // Initialize our custom logger instead of EspLogger
+    // Initialize our logger with colors and timestamps
     logging::init_logger().expect("Failed to initialize logger");
 
+    // Test enhanced logging with different levels
     info!("ESP32-S3 Dashboard {} - OTA on Port 80", crate::version::full_version());
+    log::debug!("Debug logging is enabled with enhanced formatting");
+    log::trace!("Trace logging provides the most detailed information");
     info!("Free heap: {} bytes", unsafe {
         esp_idf_sys::esp_get_free_heap_size()
     });
@@ -65,16 +73,21 @@ fn main() -> Result<()> {
     let psram_info = crate::psram::PsramAllocator::get_info();
     psram_info.log_info();
     
-    // Check reset reason
+    // Check reset reason and log it
+    let reset_reason_str = crate::system::reset::get_reset_reason();
+    log::info!("Boot reason: {}", reset_reason_str);
+    
     let reset_reason = unsafe { esp_idf_sys::esp_reset_reason() };
     let is_ota_restart = match reset_reason {
         esp_idf_sys::esp_reset_reason_t_ESP_RST_SW => {
-            log::info!("Software reset detected - likely OTA update");
+            log::info!("Software reset detected - checking if from OTA");
             true
         }
         esp_idf_sys::esp_reset_reason_t_ESP_RST_POWERON => {
-            log::info!("Power-on reset detected");
-            false
+            log::info!("Power-on reset detected - could be RTC reset or actual power cycle");
+            // RTC reset often shows as POWERON, so check if we have WiFi config
+            // If we have config, it's likely an RTC reset from OTA
+            true  // Treat as potential OTA restart
         }
         esp_idf_sys::esp_reset_reason_t_ESP_RST_PANIC => {
             log::warn!("Panic reset detected");
@@ -283,10 +296,26 @@ fn main() -> Result<()> {
             }
         };
         
-        let network_manager = match wifi_result {
-            Ok(mgr) => mgr,
-            Err(mgr) => mgr,
+        let (mut network_manager, wifi_connected) = match wifi_result {
+            Ok(mgr) => (mgr, true),
+            Err(mgr) => (mgr, false),
         };
+        
+        // Wait for IP assignment if WiFi connected
+        if wifi_connected {
+            log::info!("Waiting for IP address assignment...");
+            let mut ip_wait = 0;
+            while !network_manager.is_connected() && ip_wait < 100 {
+                esp_idf_hal::delay::FreeRtos::delay_ms(100);
+                ip_wait += 1;
+            }
+            
+            if network_manager.is_connected() {
+                log::info!("IP address obtained: {:?}", network_manager.get_ip());
+            } else {
+                log::warn!("Failed to obtain IP address after 10 seconds");
+            }
+        }
         
         // Initialize OTA
         let ota_manager = match ota::OtaManager::new() {
@@ -297,23 +326,7 @@ fn main() -> Result<()> {
             }
         };
         
-        // Start servers if connected
-        let web_server = if network_manager.is_connected() {
-            match network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()) {
-                Ok(server) => {
-                    log::info!("Web server started successfully on port 80");
-                    Some(server)
-                }
-                Err(e) => {
-                    log::error!("Failed to start web server: {:?}", e);
-                    None
-                }
-            }
-        } else {
-            log::info!("Skipping web server - no network connection");
-            None
-        };
-        
+        // Start telnet server first so we can capture web server errors
         let telnet_server = if network_manager.is_connected() {
             let server = Arc::new(TelnetLogServer::new(23));
             logging::set_telnet_server(Arc::clone(&server));
@@ -322,6 +335,16 @@ fn main() -> Result<()> {
                     log::info!("Telnet server started successfully on port 23");
                     log::info!("ESP32-S3 Dashboard {} initialized", crate::version::DISPLAY_VERSION);
                     log::info!("Web interface available at http://{}/", network_manager.get_ip().unwrap_or_default());
+                    
+                    // Check for stored web server error
+                    unsafe {
+                        if let Some(ref error) = WEB_SERVER_ERROR {
+                            log::error!("STORED WEB SERVER ERROR: {}", error);
+                            log::error!("The web server failed to start earlier!");
+                            log::error!("This prevents OTA updates from working!");
+                        }
+                    }
+                    
                     Some(server)
                 }
                 Err(e) => {
@@ -331,6 +354,46 @@ fn main() -> Result<()> {
             }
         } else {
             log::info!("Skipping telnet server - no network connection");
+            None
+        };
+        
+        // Small delay to ensure telnet is ready
+        esp_idf_hal::delay::FreeRtos::delay_ms(100);
+        
+        // Log before attempting web server start
+        log::info!("Attempting to start web server...");
+        log::info!("Network connected: {}", network_manager.is_connected());
+        log::info!("Device IP: {:?}", network_manager.get_ip());
+        
+        // Start web server after telnet so errors are logged
+        let web_server = if network_manager.is_connected() {
+            log::info!("Network is connected, starting web server...");
+            match network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()) {
+                Ok(server) => {
+                    log::info!("Web server started successfully on port 80");
+                    Some(server)
+                }
+                Err(e) => {
+                    let error_msg = format!("Web server failed: {}", e);
+                    log::error!("Failed to start web server: {:?}", e);
+                    log::error!("Web server error details: {}", e);
+                    log::error!("This error prevents OTA updates from working");
+                    
+                    // Store error globally
+                    unsafe {
+                        WEB_SERVER_ERROR = Some(error_msg.clone());
+                    }
+                    
+                    // Log multiple times to ensure it's captured
+                    for _ in 0..3 {
+                        esp_idf_hal::delay::FreeRtos::delay_ms(100);
+                        log::error!("WEB SERVER FAILED TO START: {}", e);
+                    }
+                    None
+                }
+            }
+        } else {
+            log::info!("Skipping web server - no network connection");
             None
         };
         
@@ -468,7 +531,7 @@ fn main() -> Result<()> {
     log::info!("Boot: Network init screen rendered - display should still be visible");
     
     let network_config = config.lock().map_err(|e| anyhow::anyhow!("Failed to lock config: {}", e))?;
-    let network_manager = NetworkManager::new(
+    let mut network_manager = NetworkManager::new(
         peripherals.modem,
         sys_loop,
         timer_service,
@@ -478,12 +541,38 @@ fn main() -> Result<()> {
     )?;
     drop(network_config);
     
+    // Connect to WiFi
+    log::info!("Connecting to WiFi...");
+    match network_manager.connect() {
+        Ok(_) => {
+            log::info!("WiFi connected successfully!");
+            
+            // Wait for IP assignment (up to 10 seconds)
+            log::info!("Waiting for IP address...");
+            let mut ip_wait = 0;
+            while !network_manager.is_connected() && ip_wait < 100 {
+                esp_idf_hal::delay::FreeRtos::delay_ms(100);
+                ip_wait += 1;
+            }
+            
+            if network_manager.is_connected() {
+                log::info!("IP address obtained: {:?}", network_manager.get_ip());
+            } else {
+                log::warn!("Failed to obtain IP address after 10 seconds");
+            }
+        }
+        Err(e) => {
+            log::warn!("WiFi connection failed: {:?}", e);
+            log::info!("Continuing without WiFi - auto-reconnect will retry");
+        }
+    }
+    
     // Keep animating during network init
     log::info!("Boot: Keeping display alive during network stage");
     for i in 0..10 {
         boot_manager.render_boot_screen(&mut display_manager)?;
         display_manager.flush()?;
-        display_manager.update_auto_dim()?; // Keep display alive
+        display_manager.update_auto_dim(true)?; // Keep display alive during boot
         
         // Extra safety - ensure power pins stay high
         display_manager.ensure_display_on()?;
@@ -521,11 +610,27 @@ fn main() -> Result<()> {
         }
     };
     
-    // Extract network manager back
-    let network_manager = match wifi_result {
-        Ok(mgr) => mgr,
-        Err(mgr) => mgr,
+    // Extract network manager back and track connection status
+    let (mut network_manager, wifi_connected) = match wifi_result {
+        Ok(mgr) => (mgr, true),
+        Err(mgr) => (mgr, false),
     };
+    
+    // Wait for IP assignment if WiFi connected
+    if wifi_connected {
+        log::info!("Waiting for IP address assignment...");
+        let mut ip_wait = 0;
+        while !network_manager.is_connected() && ip_wait < 100 {
+            esp_idf_hal::delay::FreeRtos::delay_ms(100);
+            ip_wait += 1;
+        }
+        
+        if network_manager.is_connected() {
+            log::info!("IP address obtained: {:?}", network_manager.get_ip());
+        } else {
+            log::warn!("Failed to obtain IP address after 10 seconds");
+        }
+    }
 
     // Initialize OTA manager - always create wrapper even if manager fails
     log::info!("Initializing OTA manager...");
@@ -543,15 +648,35 @@ fn main() -> Result<()> {
         }
     };
 
+    // Log before attempting web server start
+    log::info!("Normal boot path - attempting to start web server...");
+    log::info!("Network connected: {}", network_manager.is_connected());
+    log::info!("Device IP: {:?}", network_manager.get_ip());
+    
     // Start web server with OTA support if we have network
     let web_server = if network_manager.is_connected() {
+        log::info!("Network is connected, starting web server...");
         match network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()) {
             Ok(server) => {
                 log::info!("Web configuration server started on port 80 with OTA support");
                 Some(server)
             }
             Err(e) => {
+                let error_msg = format!("Web server failed: {}", e);
                 log::error!("Failed to start web server: {:?}", e);
+                log::error!("Web server error details: {}", e);
+                log::error!("This error prevents OTA updates from working");
+                
+                // Store error globally
+                unsafe {
+                    WEB_SERVER_ERROR = Some(error_msg.clone());
+                }
+                
+                // Log multiple times to ensure it's captured
+                for _ in 0..3 {
+                    esp_idf_hal::delay::FreeRtos::delay_ms(100);
+                    log::error!("WEB SERVER FAILED TO START: {}", e);
+                }
                 None
             }
         }
@@ -576,6 +701,15 @@ fn main() -> Result<()> {
                 log::info!("ESP32-S3 Dashboard {} initialized", crate::version::DISPLAY_VERSION);
                 log::info!("Web interface available at http://{}/", network_manager.get_ip().unwrap_or_default());
                 log::info!("Logs can be viewed at http://{}/logs", network_manager.get_ip().unwrap_or_default());
+                
+                // Check for stored web server error
+                unsafe {
+                    if let Some(ref error) = WEB_SERVER_ERROR {
+                        log::error!("STORED WEB SERVER ERROR: {}", error);
+                        log::error!("The web server failed to start earlier!");
+                        log::error!("This prevents OTA updates from working!");
+                    }
+                }
                 
                 Some(server)
             }
@@ -645,7 +779,7 @@ fn main() -> Result<()> {
     info!("Starting main loop - UI should now be visible");
     
     // Ensure backlight is on before entering main loop
-    display_manager.update_auto_dim()?;
+    display_manager.update_auto_dim(true)?; // Keep display on during startup
     
     info!("Entering run_app function now...");
     
@@ -698,8 +832,35 @@ fn run_app(
     let dual_core = DualCoreProcessor::new();
     let mut cpu_monitor = CpuMonitor::new();
     
+    // Initialize power manager with custom config
+    let power_config = PowerConfig {
+        dim_timeout: Duration::from_secs(60),      // Dim after 1 minute
+        power_save_timeout: Duration::from_secs(300), // Power save after 5 minutes
+        sleep_timeout: Duration::from_secs(600),   // Sleep after 10 minutes
+        active_brightness: 100,
+        dimmed_brightness: 30,
+        power_save_brightness: 10,
+        low_battery_threshold: 20,
+    };
+    let mut power_manager = PowerManager::new(power_config);
+    
+    // Initialize uptime tracker
+    let uptime_tracker = match system::UptimeTracker::new() {
+        Ok(tracker) => {
+            log::info!("Uptime tracking initialized - Boot #{}, Total uptime: {}", 
+                      tracker.get_boot_count(), 
+                      tracker.format_total_uptime());
+            Some(Arc::new(Mutex::new(tracker)))
+        }
+        Err(e) => {
+            log::warn!("Failed to initialize uptime tracker: {:?}", e);
+            None
+        }
+    };
+    
     log::info!("Dual-core processing initialized");
     log::info!("Main task running on core {}", DualCoreProcessor::current_core());
+    log::info!("Power management initialized with dimming support");
 
     // Note: OTA checker would run in the main loop instead of a separate thread
     // due to thread safety constraints with ESP-IDF HTTP server
@@ -805,6 +966,7 @@ fn run_app(
                 
                 // Reset activity timer on button press
                 display_manager.reset_activity_timer();
+                power_manager.activity_detected();
                 
                 let total_time = response_time + ui_time;
                 button_events_count += 1;
@@ -917,6 +1079,16 @@ fn run_app(
                 }
             }
             
+            // Update power manager with sensor data
+            power_manager.update(&sensors::SensorData {
+                _temperature: processed_data.temperature,
+                _battery_percentage: processed_data.battery_percentage,
+                _battery_voltage: processed_data.battery_voltage,
+                _is_charging: processed_data.is_charging,
+                _is_on_usb: processed_data.is_on_usb,
+                _light_level: 0,
+            });
+            
             last_sensor_update = Instant::now();
         }
         
@@ -954,7 +1126,13 @@ fn run_app(
         if last_watchdog_reset.elapsed() >= watchdog_reset_interval {
             unsafe { esp_idf_sys::esp_task_wdt_reset(); }
             last_watchdog_reset = Instant::now();
-            // Removed debug logging
+            
+            // Save uptime tracker state periodically (piggyback on watchdog timer)
+            if let Some(ref tracker) = uptime_tracker {
+                if let Ok(mut t) = tracker.lock() {
+                    let _ = t.save_if_needed();
+                }
+            }
         }
         
         // Update and render UI
@@ -968,8 +1146,8 @@ fn run_app(
         if rendered {
             perf_metrics.record_render_time(render_time);
             
-            // Update auto-dim
-            display_manager.update_auto_dim()?;
+            // Update auto-dim based on power manager state
+            display_manager.update_auto_dim(power_manager.should_update_display())?;
             
             // Flush to display
             let flush_start = Instant::now();
@@ -981,7 +1159,7 @@ fn run_app(
             perf_metrics.fps_tracker.frame_skipped();
             
             // Still update auto-dim even on skipped frames
-            display_manager.update_auto_dim()?;
+            display_manager.update_auto_dim(power_manager.should_update_display())?;
         }
         
         // Track ALL loop iterations for accurate main loop FPS

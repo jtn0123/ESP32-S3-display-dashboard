@@ -80,15 +80,34 @@ source ~/export-esp.sh
 
 ## ✨ Key Features
 
-- **ST7789 Display Driver** - 8-bit parallel interface with optimized drawing
+### Display & UI
+- **ESP_LCD DMA Driver** - Hardware-accelerated 55-65 FPS (v5.53+)
 - **Dirty Rectangle Tracking** - Only update changed screen regions
-- **Dynamic Frequency Scaling** - CPU scales 80-240MHz based on load
-- **Web Configuration** - Change settings via web browser at `http://<device-ip>/`
-- **OTA Updates** - Update firmware over WiFi at `http://<device-ip>:8080/ota`
+- **Power Management** - Screen dimming/timeout with battery awareness
+- **Visual Alerts** - Temperature, WiFi signal, and battery warnings
+- **Multiple UI Screens** - System info, sensors, network, OTA status
+
+### Networking & Updates
+- **mDNS Support** - Access via `http://esp32.local/`
+- **OTA Updates** - Secure wireless firmware updates with SHA256 validation
+- **WiFi Auto-Reconnect** - Automatic recovery with exponential backoff
 - **Remote Serial Monitoring** - Telnet server for wireless log streaming
-- **Power Management** - Auto-dim, sleep modes, WiFi power save
-- **Performance Monitoring** - Built-in telemetry in main loop
-- **Compile-time WiFi Config** - Credentials compiled into firmware for easy deployment
+- **Health Endpoint** - `/health` for uptime monitoring tools
+- **Remote Control** - `/restart` endpoint and telnet-control.py script
+
+### Performance & Reliability
+- **Dual-Core Architecture** - Sensor monitoring on Core 1, UI on Core 0
+- **Dynamic Frequency Scaling** - CPU scales 80-240MHz based on load
+- **Persistent Uptime Tracking** - Total device uptime across reboots
+- **Real Sensor Data** - Temperature, battery, and CPU monitoring
+- **Performance Telemetry** - Built-in FPS and timing metrics
+
+### Security & Development
+- **OTA Password Protection** - Basic authentication for updates
+- **SHA256 Firmware Validation** - Prevents corrupted updates
+- **Development Scripts** - Quick flash, log filtering, and monitoring tools
+- **Enhanced Logging** - Color-coded output with timestamps and module names
+- **Compile-time WiFi Config** - Credentials compiled into firmware
 
 ## 📊 Performance Optimizations
 
@@ -282,6 +301,22 @@ The device runs a telnet server on port 23 for wireless log streaming:
 
 # Scan network for devices
 ./scripts/monitor-telnet.py --scan
+```
+
+### Remote Control (New!)
+```bash
+# Enhanced telnet client with commands
+./scripts/telnet-control.py esp32.local
+
+# Available commands:
+#   help     - Show available commands
+#   stats    - Display device statistics
+#   restart  - Restart the device remotely
+#   filter X - Filter logs containing X
+#   clear    - Clear the screen
+
+# Scan for devices
+./scripts/telnet-control.py --scan
 ```
 
 ### Direct Connection

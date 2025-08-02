@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 use esp_idf_svc::eventloop::{EspEventLoop, System};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// WiFi reconnection manager that handles disconnection events
 pub struct WifiReconnectManager {
@@ -9,6 +10,8 @@ pub struct WifiReconnectManager {
     password: String,
     last_disconnect: Arc<Mutex<Option<Instant>>>,
     reconnect_attempts: Arc<Mutex<u32>>,
+    is_connected: Arc<AtomicBool>,
+    monitoring_active: Arc<AtomicBool>,
 }
 
 impl WifiReconnectManager {
@@ -18,15 +21,115 @@ impl WifiReconnectManager {
             password,
             last_disconnect: Arc::new(Mutex::new(None)),
             reconnect_attempts: Arc::new(Mutex::new(0)),
+            is_connected: Arc::new(AtomicBool::new(true)), // Assume connected initially
+            monitoring_active: Arc::new(AtomicBool::new(false)),
         }
+    }
+    
+    /// Start monitoring WiFi connection and handle reconnections
+    pub fn start_monitoring(&self) -> Result<()> {
+        // Only start if not already monitoring
+        if self.monitoring_active.swap(true, Ordering::SeqCst) {
+            log::warn!("WiFi monitoring already active");
+            return Ok(());
+        }
+        
+        // Clone these in case we need them for future reconnection improvements
+        let _ssid = self.ssid.clone();
+        let _password = self.password.clone();
+        let is_connected = self.is_connected.clone();
+        let reconnect_attempts = self.reconnect_attempts.clone();
+        let last_disconnect = self.last_disconnect.clone();
+        let monitoring_active = self.monitoring_active.clone();
+        
+        // Spawn monitoring task
+        std::thread::spawn(move || {
+            log::info!("WiFi monitoring task started");
+            
+            // Initial delay to avoid race condition during boot
+            log::info!("Waiting 15 seconds before starting WiFi monitoring...");
+            std::thread::sleep(Duration::from_secs(15));
+            
+            while monitoring_active.load(Ordering::Relaxed) {
+                // Check if WiFi is connected
+                let connected = unsafe {
+                    let mut ap_info: esp_idf_sys::wifi_ap_record_t = std::mem::zeroed();
+                    esp_idf_sys::esp_wifi_sta_get_ap_info(&mut ap_info) == esp_idf_sys::ESP_OK
+                };
+                
+                let was_connected = is_connected.load(Ordering::Relaxed);
+                is_connected.store(connected, Ordering::Relaxed);
+                
+                if was_connected && !connected {
+                    // Just disconnected
+                    log::warn!("WiFi disconnected! Starting reconnection process...");
+                    *last_disconnect.lock().unwrap() = Some(Instant::now());
+                    *reconnect_attempts.lock().unwrap() = 0;
+                }
+                
+                if !connected {
+                    // Try to reconnect
+                    let attempts = {
+                        let mut attempts = reconnect_attempts.lock().unwrap();
+                        *attempts += 1;
+                        *attempts
+                    };
+                    
+                    log::info!("WiFi reconnection attempt #{}", attempts);
+                    
+                    // Calculate backoff delay (exponential, max 60 seconds)
+                    let delay = std::cmp::min(60, 5 * (1 << std::cmp::min(attempts - 1, 4)));
+                    log::info!("Waiting {} seconds before reconnection attempt", delay);
+                    std::thread::sleep(Duration::from_secs(delay as u64));
+                    
+                    // Attempt reconnection
+                    match Self::force_reconnect() {
+                        Ok(_) => {
+                            log::info!("WiFi reconnection initiated");
+                            // Wait a bit for connection to establish
+                            std::thread::sleep(Duration::from_secs(10));
+                        }
+                        Err(e) => {
+                            log::error!("WiFi reconnection failed: {:?}", e);
+                        }
+                    }
+                } else {
+                    // Connected - reset attempts counter
+                    let attempts = *reconnect_attempts.lock().unwrap();
+                    if attempts > 0 {
+                        log::info!("WiFi reconnected successfully after {} attempts", attempts);
+                        *reconnect_attempts.lock().unwrap() = 0;
+                    }
+                }
+                
+                // Check every 10 seconds
+                std::thread::sleep(Duration::from_secs(10));
+            }
+            
+            log::info!("WiFi monitoring task stopped");
+        });
+        
+        log::info!("WiFi auto-reconnection monitoring started");
+        Ok(())
     }
     
     /// Register WiFi event handlers for automatic reconnection
     pub fn register_event_handlers(&self, _sysloop: &EspEventLoop<System>) -> Result<()> {
-        // Note: In newer esp-idf-svc versions, WiFi events are handled differently
-        // For now, we'll rely on the retry logic in WifiManager::connect_and_get_signal
-        log::info!("WiFi reconnection logic configured in connection manager");
-        Ok(())
+        // Start the monitoring task instead
+        self.start_monitoring()
+    }
+    
+    /// Stop monitoring
+    #[allow(dead_code)] // Will be used for graceful shutdown
+    pub fn stop_monitoring(&self) {
+        self.monitoring_active.store(false, Ordering::SeqCst);
+        log::info!("WiFi monitoring stopped");
+    }
+    
+    /// Check if currently connected
+    #[allow(dead_code)] // Useful for status checks
+    pub fn is_connected(&self) -> bool {
+        self.is_connected.load(Ordering::Relaxed)
     }
     
     /// Force a WiFi reconnection (useful after OTA)
@@ -34,7 +137,25 @@ impl WifiReconnectManager {
         log::info!("Forcing WiFi reconnection...");
         
         unsafe {
-            // Disconnect first
+            // Check WiFi state to avoid race condition
+            let mut mode: esp_idf_sys::wifi_mode_t = 0;
+            esp_idf_sys::esp_wifi_get_mode(&mut mode);
+            
+            // If WiFi is not in STA mode, skip reconnection
+            if mode != esp_idf_sys::wifi_mode_t_WIFI_MODE_STA && 
+               mode != esp_idf_sys::wifi_mode_t_WIFI_MODE_APSTA {
+                log::warn!("WiFi not in STA mode, skipping reconnection");
+                return Ok(());
+            }
+            
+            // Check if already connected
+            let mut ap_info: esp_idf_sys::wifi_ap_record_t = std::mem::zeroed();
+            if esp_idf_sys::esp_wifi_sta_get_ap_info(&mut ap_info) == esp_idf_sys::ESP_OK {
+                log::info!("WiFi already connected, skipping reconnection");
+                return Ok(());
+            }
+            
+            // Disconnect first (ignore error if not connected)
             let _ = esp_idf_sys::esp_wifi_disconnect();
             
             // Wait a bit
@@ -45,8 +166,12 @@ impl WifiReconnectManager {
             if result == esp_idf_sys::ESP_OK {
                 log::info!("WiFi reconnection initiated");
                 Ok(())
+            } else if result == esp_idf_sys::ESP_ERR_WIFI_CONN as i32 {
+                // Already connecting - not an error
+                log::info!("WiFi already connecting");
+                Ok(())
             } else {
-                bail!("Failed to initiate WiFi reconnection: {:?}", result)
+                bail!("Failed to initiate WiFi reconnection: {} (0x{:x})", result, result)
             }
         }
     }

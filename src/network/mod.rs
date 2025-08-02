@@ -61,7 +61,7 @@ impl NetworkManager {
         
         // Start mDNS for network discovery
         match self.start_mdns() {
-            Ok(_) => log::info!("mDNS service started: esp32-dashboard.local"),
+            Ok(_) => log::info!("mDNS service started: esp32.local"),
             Err(e) => log::warn!("Failed to start mDNS: {:?}", e),
         }
         
@@ -70,14 +70,14 @@ impl NetworkManager {
     
     fn start_mdns(&mut self) -> Result<()> {
         let mut mdns = EspMdns::take()?;
-        mdns.set_hostname("esp32-dashboard")?;
+        mdns.set_hostname("esp32")?;
         
         // Properties are set via service text records in esp-idf-svc
         
         // Add service for OTA discovery
         mdns.add_service(None, "_esp32-ota", "_tcp", 8080, &[
             ("path", "/ota"),
-            ("version", "v4.13"),
+            ("version", crate::version::DISPLAY_VERSION),
         ])?;
         
         // Add service for web config

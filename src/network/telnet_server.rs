@@ -6,14 +6,14 @@ use std::thread;
 use std::time::Duration;
 
 /// Ring buffer for storing recent log messages
-struct LogBuffer {
+pub(super) struct LogBuffer {
     buffer: Vec<String>,
     capacity: usize,
     write_index: usize,
 }
 
 impl LogBuffer {
-    fn new(capacity: usize) -> Self {
+    pub(super) fn new(capacity: usize) -> Self {
         Self {
             buffer: Vec::with_capacity(capacity),
             capacity,
@@ -21,7 +21,7 @@ impl LogBuffer {
         }
     }
     
-    fn push(&mut self, message: String) {
+    pub(super) fn push(&mut self, message: String) {
         if self.buffer.len() < self.capacity {
             self.buffer.push(message);
         } else {
@@ -30,7 +30,7 @@ impl LogBuffer {
         }
     }
     
-    fn get_all(&self) -> Vec<String> {
+    pub(super) fn get_all(&self) -> Vec<String> {
         if self.buffer.len() < self.capacity {
             self.buffer.clone()
         } else {
@@ -44,7 +44,7 @@ impl LogBuffer {
         }
     }
     
-    fn get_recent(&self, count: usize) -> Vec<String> {
+    pub(super) fn get_recent(&self, count: usize) -> Vec<String> {
         let all_logs = self.get_all();
         let start = all_logs.len().saturating_sub(count);
         all_logs[start..].to_vec()
@@ -108,7 +108,10 @@ impl TelnetLogServer {
                     // Send welcome message and recent logs
                     if let Ok(mut s) = stream.lock() {
                         let _ = writeln!(s, "\r\n=== ESP32-S3 Dashboard Remote Log ===\r\n");
-                        let _ = writeln!(s, "Connected to device. Streaming live logs...\r\n");
+                        let _ = writeln!(s, "Firmware: {}\r", crate::version::DISPLAY_VERSION);
+                        let _ = writeln!(s, "Free heap: {} KB\r", unsafe { esp_idf_sys::esp_get_free_heap_size() } / 1024);
+                        let _ = writeln!(s, "\r\nConnected to device. Streaming live logs...\r\n");
+                        let _ = writeln!(s, "TIP: Use monitor-telnet.py for filtering and commands\r\n");
                         
                         // Send recent log history
                         if let Ok(buffer) = self.log_buffer.lock() {

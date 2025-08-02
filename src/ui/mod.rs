@@ -63,6 +63,10 @@ pub struct UiManager {
     settings_screen_initialized: bool,
     // Global time caching for all screens
     global_cached_time: u64,
+    // Alert states
+    temperature_alert: bool,
+    wifi_signal_alert: bool,
+    battery_alert: bool,
 }
 
 impl UiManager {
@@ -105,6 +109,9 @@ impl UiManager {
             cpu0_usage: 0,
             cpu1_usage: 0,
             core_tasks: (0, 0),
+            temperature_alert: false,
+            wifi_signal_alert: false,
+            battery_alert: false,
         })
     }
 
@@ -133,7 +140,14 @@ impl UiManager {
     }
 
     pub fn update_sensor_data(&mut self, data: SensorData) {
+        // Check for temperature alert (>35°C is high for ambient temperature)
+        self.temperature_alert = data._temperature > 35.0;
+        
+        // Check for battery alert (<10% is critical)
+        self.battery_alert = data._battery_percentage < 10 && !data._is_on_usb;
+        
         self.sensor_data = data;
+        
         // Force render when sensor data updates
         self.force_next_render();
     }
@@ -145,6 +159,9 @@ impl UiManager {
         self.network_signal = signal;
         self.network_gateway = gateway;
         self.network_mac = mac;
+        
+        // Check for WiFi signal alert (<-80 dBm is poor signal)
+        self.wifi_signal_alert = connected && signal < -80;
     }
     
     pub fn update_ota_status(&mut self, status: OtaStatus) {
@@ -249,6 +266,9 @@ impl UiManager {
         if let OtaStatus::Downloading { progress } = self.ota_status {
             self.render_ota_overlay(display, progress)?;
         }
+        
+        // Render alerts if any are active
+        self.render_alerts(display)?;
         
         Ok(true) // Frame was rendered
     }
@@ -984,6 +1004,50 @@ impl UiManager {
         
         // Warning text
         display.draw_text_centered(bar_y + 40, "DO NOT POWER OFF", PRIMARY_RED, None, 1)?;
+        
+        Ok(())
+    }
+    
+    fn render_alerts(&mut self, display: &mut DisplayManager) -> Result<()> {
+        // Count active alerts
+        let mut active_alerts = Vec::new();
+        
+        if self.temperature_alert {
+            active_alerts.push(("TEMP HIGH", format!("{:.1}°C", self.sensor_data._temperature), PRIMARY_RED));
+        }
+        
+        if self.wifi_signal_alert {
+            active_alerts.push(("WEAK WIFI", format!("{}dBm", self.network_signal), YELLOW));
+        }
+        
+        if self.battery_alert {
+            active_alerts.push(("LOW BATTERY", format!("{}%", self.sensor_data._battery_percentage), PRIMARY_RED));
+        }
+        
+        // If no alerts, return early
+        if active_alerts.is_empty() {
+            return Ok(());
+        }
+        
+        // Render alert bar at the top of the screen
+        let alert_height = 20;
+        let alert_y = 2;
+        
+        // Cycle through alerts if multiple (show one at a time)
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let alert_index = ((current_time / 3) % active_alerts.len() as u64) as usize;
+        
+        let (label, value, color) = &active_alerts[alert_index];
+        
+        // Draw alert background
+        display.fill_rect(0, alert_y, 300, alert_height, color.clone())?;
+        
+        // Draw alert text
+        let alert_text = format!("⚠ {}: {}", label, value);
+        display.draw_text_centered(alert_y + 6, &alert_text, BLACK, None, 1)?;
         
         Ok(())
     }

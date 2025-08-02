@@ -10,6 +10,7 @@ use esp_idf_sys::{
 };
 use std::fmt;
 use std::ffi::CStr;
+use sha2::{Sha256, Digest};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OtaStatus {
@@ -51,6 +52,8 @@ pub struct OtaManager {
     expected_size: usize,
     bytes_written: usize,
     status: OtaStatus,
+    sha256_hasher: Option<Sha256>,
+    expected_sha256: Option<String>,
 }
 
 // SAFETY: OtaManager only contains a pointer to the partition structure which is
@@ -116,7 +119,13 @@ impl OtaManager {
             expected_size: 0,
             bytes_written: 0,
             status: OtaStatus::Idle,
+            sha256_hasher: None,
+            expected_sha256: None,
         })
+    }
+    
+    pub fn set_expected_sha256(&mut self, sha256: String) {
+        self.expected_sha256 = Some(sha256);
     }
     
     pub fn begin_update(&mut self, size: usize) -> Result<(), OtaError> {
@@ -181,12 +190,18 @@ impl OtaManager {
         self.expected_size = size;
         self.bytes_written = 0;
         self.status = OtaStatus::Downloading { progress: 0 };
+        self.sha256_hasher = Some(Sha256::new());
         
         Ok(())
     }
     
     pub fn write_chunk(&mut self, data: &[u8]) -> Result<(), OtaError> {
         let handle = self.ota_handle.ok_or(OtaError::WriteFailed)?;
+        
+        // Update SHA256 hash
+        if let Some(ref mut hasher) = self.sha256_hasher {
+            hasher.update(data);
+        }
         
         let result = unsafe {
             esp_ota_write(
@@ -216,6 +231,23 @@ impl OtaManager {
         let handle = self.ota_handle.take().ok_or(OtaError::ValidationFailed)?;
         
         self.status = OtaStatus::Verifying;
+        
+        // Verify SHA256 if provided
+        if let (Some(hasher), Some(expected)) = (self.sha256_hasher.take(), &self.expected_sha256) {
+            let computed = format!("{:x}", hasher.finalize());
+            log::info!("OTA: Computed SHA256: {}", computed);
+            log::info!("OTA: Expected SHA256: {}", expected);
+            
+            if computed.to_lowercase() != expected.to_lowercase() {
+                log::error!("OTA: SHA256 mismatch! Update rejected.");
+                self.status = OtaStatus::Failed;
+                // Still need to call esp_ota_end to clean up
+                unsafe { esp_ota_end(handle); }
+                return Err(OtaError::ValidationFailed);
+            }
+            
+            log::info!("OTA: SHA256 validation passed");
+        }
         
         // End the OTA update
         let result = unsafe { esp_ota_end(handle) };

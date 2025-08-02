@@ -34,6 +34,24 @@ impl Dashboard {
         }
     }
     
+    pub fn cycle_theme(&mut self) {
+        // Get current theme index from settings screen if on that screen
+        if self.current_screen == 4 {
+            // Settings screen is at index 4
+            // This is a simple increment, in a real implementation
+            // we'd need to properly track and update the theme index
+            static mut THEME_INDEX: usize = 0;
+            unsafe {
+                THEME_INDEX = (THEME_INDEX + 1) % Theme::THEME_COUNT;
+                self.theme = Theme::get_theme_by_index(THEME_INDEX);
+            }
+        }
+    }
+    
+    pub fn get_current_theme(&self) -> &Theme {
+        &self.theme
+    }
+    
     pub async fn render(&mut self) {
         // Clear screen with theme background
         self.display.clear(self.theme.colors.background);

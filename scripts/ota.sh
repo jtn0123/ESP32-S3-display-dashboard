@@ -81,10 +81,15 @@ upload_firmware() {
     local size=$(stat -f%z "$firmware" 2>/dev/null || stat -c%s "$firmware" 2>/dev/null)
     local size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
     
+    # Calculate SHA256
+    print_color "$BLUE" "🔐 Calculating SHA256..."
+    local sha256=$(shasum -a 256 "$firmware" | cut -d' ' -f1)
+    
     print_color "$BLUE" "\n📡 OTA Update Process"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "📍 Target device: $ip"
     echo "📦 Firmware size: ${size_mb} MB ($size bytes)"
+    echo "🔐 SHA256: ${sha256:0:16}...${sha256: -16}"
     echo "🏷️  Current version: ${old_version:-unknown}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
@@ -104,6 +109,8 @@ upload_firmware() {
     # Upload with curl and capture response
     response=$(curl -X POST \
         -H "Content-Length: $size" \
+        -H "X-OTA-Password: esp32" \
+        -H "X-SHA256: $sha256" \
         --data-binary "@$firmware" \
         --connect-timeout 5 \
         --max-time 60 \
@@ -184,6 +191,11 @@ upload_firmware() {
             if (( $(echo "$size_mb > 1.5" | bc -l) )); then
                 print_color "$RED" "   ⚠️  Firmware exceeds partition size!"
             fi
+        elif [ "$http_code" = "401" ]; then
+            print_color "$YELLOW" "📋 Diagnosis: Unauthorized"
+            echo "   • Invalid OTA password"
+            echo "   • Check X-OTA-Password header in script"
+            echo "   • Default password is: esp32"
         elif [ "$http_code" = "404" ]; then
             print_color "$YELLOW" "📋 Diagnosis: Endpoint Not Found"
             echo "   • OTA endpoint not available"
@@ -276,8 +288,8 @@ case "${1:-help}" in
             sleep 3
             kill $MDNS_PID 2>/dev/null || true
             
-            # Check for esp32 devices
-            MDNS_DEVICES=$(grep "esp32-display" /tmp/mdns_scan.txt 2>/dev/null | awk '{print $7}' || true)
+            # Check for esp32 devices (matches esp32, esp32-dashboard, etc)
+            MDNS_DEVICES=$(grep -E "esp32" /tmp/mdns_scan.txt 2>/dev/null | awk '{print $7}' || true)
             rm -f /tmp/mdns_scan.txt
             
             if [ -n "$MDNS_DEVICES" ]; then
@@ -412,7 +424,8 @@ case "${1:-help}" in
         echo ""
         echo "Examples:"
         echo "  $0 find                   # Find first device"
-        echo "  $0 192.168.1.100         # Update specific device"
+        echo "  $0 192.168.1.100         # Update specific device by IP"
+        echo "  $0 esp32.local           # Update using mDNS hostname"
         echo "  $0 scan                  # List all devices"
         echo "  $0 auto                  # Update all devices"
         echo ""
@@ -422,16 +435,51 @@ case "${1:-help}" in
         ;;
     
     *)
-        # Assume it's an IP address
-        if [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            if upload_firmware "$1" "$FIRMWARE"; then
+        # Handle both IP addresses and mDNS hostnames
+        TARGET="$1"
+        
+        # If it's a .local hostname, resolve it
+        if [[ $TARGET == *.local ]]; then
+            print_color "$BLUE" "🔍 Resolving $TARGET..."
+            
+            # Try to resolve using different methods
+            IP=""
+            
+            # Method 1: dscacheutil (macOS)
+            if command -v dscacheutil >/dev/null 2>&1; then
+                IP=$(dscacheutil -q host -a name "$TARGET" 2>/dev/null | grep "ip_address" | awk '{print $2}' | head -1)
+            fi
+            
+            # Method 2: getent (Linux)
+            if [ -z "$IP" ] && command -v getent >/dev/null 2>&1; then
+                IP=$(getent hosts "$TARGET" 2>/dev/null | awk '{print $1}' | head -1)
+            fi
+            
+            # Method 3: ping (fallback)
+            if [ -z "$IP" ]; then
+                IP=$(ping -c 1 -t 1 "$TARGET" 2>/dev/null | grep "^PING" | sed -n 's/.*(\([0-9.]*\)).*/\1/p')
+            fi
+            
+            if [ -n "$IP" ]; then
+                print_color "$GREEN" "✓ Resolved to: $IP"
+                TARGET="$IP"
+            else
+                print_color "$RED" "❌ Could not resolve $TARGET"
+                echo "Make sure the device is online and mDNS is working"
+                exit 1
+            fi
+        fi
+        
+        # Now upload to the target (IP address)
+        if [[ $TARGET =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            if upload_firmware "$TARGET" "$FIRMWARE"; then
                 print_color "$GREEN" "\n✨ OTA update completed successfully!"
             else
                 print_color "$RED" "\n❌ OTA update failed!"
                 exit 1
             fi
         else
-            print_color "$RED" "Invalid command or IP address: $1"
+            print_color "$RED" "Invalid target: $1"
             echo "Run '$0 help' for usage"
             exit 1
         fi

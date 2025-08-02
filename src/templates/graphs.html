@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32-S3 - Sensor Graphs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        /* Theme Variables */
+        :root {
+            /* Light mode colors */
+            --light-bg-main: #f9fafb;
+            --light-bg-card: #ffffff;
+            --light-bg-hover: #f3f4f6;
+            --light-text: #111827;
+            --light-text-dim: #6b7280;
+            --light-border: #e5e7eb;
+            --light-accent: #3b82f6;
+            
+            /* Dark mode colors */
+            --dark-bg-main: #0a0a0a;
+            --dark-bg-card: #1a1a1a;
+            --dark-bg-hover: #2a2a2a;
+            --dark-text: #f9fafb;
+            --dark-text-dim: #9ca3af;
+            --dark-border: #374151;
+            --dark-accent: #3b82f6;
+        }
+        
+        /* Default to dark mode */
+        [data-theme="dark"] {
+            --bg-main: var(--dark-bg-main);
+            --bg-card: var(--dark-bg-card);
+            --bg-hover: var(--dark-bg-hover);
+            --text: var(--dark-text);
+            --text-dim: var(--dark-text-dim);
+            --border: var(--dark-border);
+            --accent: var(--dark-accent);
+        }
+        
+        [data-theme="light"] {
+            --bg-main: var(--light-bg-main);
+            --bg-card: var(--light-bg-card);
+            --bg-hover: var(--light-bg-hover);
+            --text: var(--light-text);
+            --text-dim: var(--light-text-dim);
+            --border: var(--light-border);
+            --accent: var(--light-accent);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-main);
+            color: var(--text);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        /* Theme toggle button */
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+        
+        .theme-toggle:hover {
+            background-color: var(--bg-hover);
+            transform: scale(1.05);
+        }
+        
+        .theme-toggle svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text);
+        }
+        
+        .theme-toggle .sun {
+            display: none;
+        }
+        
+        [data-theme="light"] .theme-toggle .sun {
+            display: block;
+        }
+        
+        [data-theme="light"] .theme-toggle .moon {
+            display: none;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: var(--text);
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 30px;
+        }
+        
+        .controls {
+            background-color: var(--bg-card);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .controls label {
+            color: var(--text-dim);
+            font-weight: 500;
+        }
+        
+        .controls select, .controls button {
+            padding: 8px 16px;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .controls button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+        }
+        
+        .controls button:hover {
+            transform: translateY(-1px);
+            opacity: 0.9;
+        }
+        
+        .chart-container {
+            background-color: var(--bg-card);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            position: relative;
+            height: 400px;
+        }
+        
+        .chart-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text);
+        }
+        
+        .nav-links {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+        
+        .nav-links a {
+            color: var(--accent);
+            text-decoration: none;
+            margin: 0 10px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        
+        .loading {
+            text-align: center;
+            color: var(--text-dim);
+            padding: 40px;
+        }
+        
+        .error {
+            color: #ef4444;
+            background-color: rgba(239, 68, 68, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .chart-container {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <svg class="sun" viewBox="0 0 24 24">
+            <path d="M12 17.5C9.5 17.5 7.5 15.5 7.5 13S9.5 8.5 12 8.5 16.5 10.5 16.5 13 14.5 17.5 12 17.5M12 7C8.7 7 6 9.7 6 13S8.7 19 12 19 18 16.3 18 13 15.3 7 12 7M12 2L14.4 6.4L19 5.7L16.2 9.2L18.6 13L14.4 12.3L12 16.5L9.6 12.3L5.4 13L7.8 9.2L5 5.7L9.6 6.4L12 2Z"/>
+        </svg>
+        <svg class="moon" viewBox="0 0 24 24">
+            <path d="M17.75,4.09L15.22,6.03L16.13,9.09L13.5,7.28L10.87,9.09L11.78,6.03L9.25,4.09L12.44,4L13.5,1L14.56,4L17.75,4.09M21.25,11L19.61,12.25L20.2,14.23L18.5,13.06L16.8,14.23L17.39,12.25L15.75,11L17.81,10.95L18.5,9L19.19,10.95L21.25,11M18.97,15.95C19.8,15.87 20.69,17.05 20.16,17.8C19.84,18.25 19.5,18.67 19.08,19.07C15.17,23 8.84,23 4.94,19.07C1.03,15.17 1.03,8.83 4.94,4.93C5.34,4.53 5.76,4.17 6.21,3.85C6.96,3.32 8.14,4.21 8.06,5.04C7.79,7.9 8.75,10.87 10.95,13.06C13.14,15.26 16.1,16.22 18.97,15.95M17.33,17.97C14.5,17.81 11.7,16.64 9.53,14.5C7.36,12.31 6.2,9.5 6.04,6.68C3.23,9.82 3.34,14.64 6.35,17.66C9.37,20.67 14.19,20.78 17.33,17.97Z"/>
+        </svg>
+    </button>
+
+    <div class="container">
+        <h1>ESP32-S3 Sensor History Graphs</h1>
+        
+        <div class="controls">
+            <label for="timeRange">Time Range:</label>
+            <select id="timeRange" onchange="updateCharts()">
+                <option value="1">Last Hour</option>
+                <option value="6">Last 6 Hours</option>
+                <option value="24" selected>Last 24 Hours</option>
+            </select>
+            
+            <label for="updateInterval">Auto Update:</label>
+            <select id="updateInterval" onchange="setUpdateInterval()">
+                <option value="0">Disabled</option>
+                <option value="30">30 seconds</option>
+                <option value="60" selected>1 minute</option>
+                <option value="300">5 minutes</option>
+            </select>
+            
+            <button onclick="updateCharts()">Refresh Now</button>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">Temperature (°C)</div>
+            <canvas id="temperatureChart"></canvas>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">Battery Level (%)</div>
+            <canvas id="batteryChart"></canvas>
+        </div>
+        
+        <div id="errorMessage" class="error" style="display: none;"></div>
+        
+        <div class="nav-links">
+            <a href="/">Configuration</a>
+            <a href="/dashboard">Live Dashboard</a>
+            <a href="/logs">View Logs</a>
+            <a href="/ota">OTA Update</a>
+            <a href="/metrics">Prometheus</a>
+        </div>
+    </div>
+
+    <script>
+        // Theme management
+        function getTheme() {
+            return localStorage.getItem('theme') || 'dark';
+        }
+        
+        function setTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            // Update chart colors when theme changes
+            updateChartTheme();
+        }
+        
+        function toggleTheme() {
+            const currentTheme = document.body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            setTheme(newTheme);
+        }
+        
+        // Initialize theme
+        setTheme(getTheme());
+        
+        // Chart instances
+        let temperatureChart = null;
+        let batteryChart = null;
+        let updateTimer = null;
+        
+        // Chart configuration
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        tooltipFormat: 'MMM DD, HH:mm',
+                        displayFormats: {
+                            hour: 'HH:mm',
+                            day: 'MMM DD'
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(128, 128, 128, 0.1)'
+                    },
+                    ticks: {
+                        color: getComputedStyle(document.documentElement)
+                            .getPropertyValue('--text-dim')
+                    }
+                },
+                y: {
+                    grid: {
+                        color: 'rgba(128, 128, 128, 0.1)'
+                    },
+                    ticks: {
+                        color: getComputedStyle(document.documentElement)
+                            .getPropertyValue('--text-dim')
+                    }
+                }
+            }
+        };
+        
+        function updateChartTheme() {
+            const textColor = getComputedStyle(document.documentElement)
+                .getPropertyValue('--text-dim');
+            
+            if (temperatureChart) {
+                temperatureChart.options.scales.x.ticks.color = textColor;
+                temperatureChart.options.scales.y.ticks.color = textColor;
+                temperatureChart.update();
+            }
+            
+            if (batteryChart) {
+                batteryChart.options.scales.x.ticks.color = textColor;
+                batteryChart.options.scales.y.ticks.color = textColor;
+                batteryChart.update();
+            }
+        }
+        
+        async function fetchSensorData(sensor, hours) {
+            try {
+                const response = await fetch(`/api/v1/sensors/${sensor}/history?hours=${hours}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                return data.data || [];
+            } catch (error) {
+                console.error(`Error fetching ${sensor} data:`, error);
+                showError(`Failed to fetch ${sensor} data`);
+                return [];
+            }
+        }
+        
+        function showError(message) {
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => {
+                errorEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        async function updateCharts() {
+            const hours = parseInt(document.getElementById('timeRange').value);
+            
+            // Fetch data
+            const [tempData, batteryData] = await Promise.all([
+                fetchSensorData('temperature', hours),
+                fetchSensorData('battery', hours)
+            ]);
+            
+            // Update temperature chart
+            if (temperatureChart) {
+                temperatureChart.data.datasets[0].data = tempData;
+                temperatureChart.update();
+            } else {
+                const ctx = document.getElementById('temperatureChart').getContext('2d');
+                temperatureChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [{
+                            label: 'Temperature',
+                            data: tempData,
+                            borderColor: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 4
+                        }]
+                    },
+                    options: {
+                        ...chartOptions,
+                        scales: {
+                            ...chartOptions.scales,
+                            y: {
+                                ...chartOptions.scales.y,
+                                beginAtZero: false,
+                                suggestedMin: 20,
+                                suggestedMax: 60
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update battery chart
+            if (batteryChart) {
+                batteryChart.data.datasets[0].data = batteryData;
+                batteryChart.update();
+            } else {
+                const ctx = document.getElementById('batteryChart').getContext('2d');
+                batteryChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [{
+                            label: 'Battery',
+                            data: batteryData,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 4
+                        }]
+                    },
+                    options: {
+                        ...chartOptions,
+                        scales: {
+                            ...chartOptions.scales,
+                            y: {
+                                ...chartOptions.scales.y,
+                                beginAtZero: true,
+                                suggestedMax: 100
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        function setUpdateInterval() {
+            // Clear existing timer
+            if (updateTimer) {
+                clearInterval(updateTimer);
+                updateTimer = null;
+            }
+            
+            const interval = parseInt(document.getElementById('updateInterval').value);
+            if (interval > 0) {
+                updateTimer = setInterval(updateCharts, interval * 1000);
+            }
+        }
+        
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateCharts();
+            setUpdateInterval();
+        });
+    </script>
+</body>
+</html>

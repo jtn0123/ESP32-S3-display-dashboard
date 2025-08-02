@@ -40,8 +40,9 @@ impl Screen for SettingsScreen {
         
         // Theme selection
         display.draw_card(40, 75, 240, 35, "THEME", theme.colors.secondary);
-        let theme_names = ["Dark", "Readable", "High Contrast"];
-        display.draw_text(45, 90, theme_names[self.theme_index], theme.colors.accent);
+        let theme_name = Theme::get_theme_name(self.theme_index);
+        display.draw_text(45, 90, theme_name, theme.colors.accent);
+        display.draw_text(200, 90, "< >", theme.colors.text_secondary);
         
         // System settings
         display.draw_card(40, 115, 240, 45, "SYSTEM", theme.colors.info);

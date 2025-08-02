@@ -121,7 +121,7 @@ fn load_from_nvs() -> Result<Config> {
 
 fn save_to_nvs(config: &Config) -> Result<()> {
     let nvs_partition = EspDefaultNvsPartition::take()?;
-    let mut nvs = EspNvs::new(nvs_partition, CONFIG_NAMESPACE, false)?;
+    let mut nvs = EspNvs::new(nvs_partition, CONFIG_NAMESPACE, true)?;
     
     let json = serde_json::to_vec(config)?;
     nvs.set_blob(CONFIG_KEY, &json)?;

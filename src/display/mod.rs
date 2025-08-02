@@ -437,7 +437,7 @@ impl DisplayManager {
         self.last_activity = Instant::now();
     }
     
-    pub fn update_auto_dim(&mut self) -> Result<()> {
+    pub fn update_auto_dim(&mut self, should_display_on: bool) -> Result<()> {
         // Only check every 60 seconds instead of every frame
         static mut LAST_CHECK: Option<Instant> = None;
         
@@ -450,11 +450,16 @@ impl DisplayManager {
             LAST_CHECK = Some(Instant::now());
         }
         
-        // Auto-dim disabled - just ensure display stays on
+        // Control backlight based on power manager state
         if let Some(ref mut pin) = self.backlight_pin {
-            pin.set_high()?;
+            if should_display_on {
+                pin.set_high()?;
+            } else {
+                pin.set_low()?;  // Turn off backlight in sleep mode
+            }
         }
         
+        // Keep LCD power on always (turning it off requires re-initialization)
         if let Some(ref mut pin) = self.lcd_power_pin {
             pin.set_high()?;
         }

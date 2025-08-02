@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32-S3 Dashboard Configuration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        /* Theme Variables */
+        :root {
+            /* Light mode colors */
+            --light-bg-main: #f9fafb;
+            --light-bg-card: #ffffff;
+            --light-bg-hover: #f3f4f6;
+            --light-bg-input: #ffffff;
+            --light-accent: #3b82f6;
+            --light-accent-hover: #2563eb;
+            --light-success: #10b981;
+            --light-warning: #f59e0b;
+            --light-danger: #ef4444;
+            --light-text: #111827;
+            --light-text-dim: #6b7280;
+            --light-text-muted: #9ca3af;
+            --light-border: #e5e7eb;
+            --light-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            
+            /* Dark mode colors */
+            --dark-bg-main: #0a0a0a;
+            --dark-bg-card: #1a1a1a;
+            --dark-bg-hover: #2a2a2a;
+            --dark-bg-input: #262626;
+            --dark-accent: #3b82f6;
+            --dark-accent-hover: #2563eb;
+            --dark-success: #10b981;
+            --dark-warning: #f59e0b;
+            --dark-danger: #ef4444;
+            --dark-text: #f9fafb;
+            --dark-text-dim: #9ca3af;
+            --dark-text-muted: #6b7280;
+            --dark-border: #374151;
+            --dark-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Default to dark mode */
+        [data-theme="dark"] {
+            --bg-main: var(--dark-bg-main);
+            --bg-card: var(--dark-bg-card);
+            --bg-hover: var(--dark-bg-hover);
+            --bg-input: var(--dark-bg-input);
+            --accent: var(--dark-accent);
+            --accent-hover: var(--dark-accent-hover);
+            --success: var(--dark-success);
+            --warning: var(--dark-warning);
+            --danger: var(--dark-danger);
+            --text: var(--dark-text);
+            --text-dim: var(--dark-text-dim);
+            --text-muted: var(--dark-text-muted);
+            --border: var(--dark-border);
+            --shadow: var(--dark-shadow);
+        }
+        
+        [data-theme="light"] {
+            --bg-main: var(--light-bg-main);
+            --bg-card: var(--light-bg-card);
+            --bg-hover: var(--light-bg-hover);
+            --bg-input: var(--light-bg-input);
+            --accent: var(--light-accent);
+            --accent-hover: var(--light-accent-hover);
+            --success: var(--light-success);
+            --warning: var(--light-warning);
+            --danger: var(--light-danger);
+            --text: var(--light-text);
+            --text-dim: var(--light-text-dim);
+            --text-muted: var(--light-text-muted);
+            --border: var(--light-border);
+            --shadow: var(--light-shadow);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-main);
+            color: var(--text);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        /* Theme toggle button */
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: var(--shadow);
+            z-index: 1000;
+        }
+        
+        .theme-toggle:hover {
+            background-color: var(--bg-hover);
+            transform: scale(1.05);
+        }
+        
+        .theme-toggle svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text);
+        }
+        
+        .theme-toggle .sun {
+            display: none;
+        }
+        
+        [data-theme="light"] .theme-toggle .sun {
+            display: block;
+        }
+        
+        [data-theme="light"] .theme-toggle .moon {
+            display: none;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: var(--bg-card);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+        h1 {
+            color: var(--text);
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        h2 {
+            color: var(--text);
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--text-dim);
+            font-weight: 500;
+            font-size: 14px;
+        }
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 15px;
+            transition: all 0.2s;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: var(--bg-hover);
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+        }
+        button {
+            background-color: var(--accent);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+        .status {
+            background-color: var(--bg-input);
+            border: 1px solid var(--border);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .status h3 {
+            margin-top: 0;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        .status-label {
+            color: var(--text-dim);
+        }
+        .status-value {
+            color: var(--text);
+            font-weight: 500;
+        }
+        .success {
+            color: var(--success);
+            font-weight: 500;
+        }
+        .error {
+            color: var(--danger);
+            font-weight: 500;
+        }
+        #message {
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 20px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .slider {
+            flex: 1;
+        }
+        .slider-value {
+            min-width: 40px;
+            text-align: right;
+            color: var(--text);
+            font-weight: 500;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--accent);
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            background: var(--accent-hover);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: var(--accent);
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        input[type="range"]::-moz-range-thumb:hover {
+            transform: scale(1.2);
+            background: var(--accent-hover);
+        }
+        .nav-links {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+        .nav-links a {
+            color: var(--accent);
+            text-decoration: none;
+            margin: 0 10px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        /* Loading animation */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--border);
+            border-radius: 50%;
+            border-top-color: var(--accent);
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <svg class="sun" viewBox="0 0 24 24">
+            <path d="M12 17.5C9.5 17.5 7.5 15.5 7.5 13S9.5 8.5 12 8.5 16.5 10.5 16.5 13 14.5 17.5 12 17.5M12 7C8.7 7 6 9.7 6 13S8.7 19 12 19 18 16.3 18 13 15.3 7 12 7M12 2L14.4 6.4L19 5.7L16.2 9.2L18.6 13L14.4 12.3L12 16.5L9.6 12.3L5.4 13L7.8 9.2L5 5.7L9.6 6.4L12 2Z"/>
+        </svg>
+        <svg class="moon" viewBox="0 0 24 24">
+            <path d="M17.75,4.09L15.22,6.03L16.13,9.09L13.5,7.28L10.87,9.09L11.78,6.03L9.25,4.09L12.44,4L13.5,1L14.56,4L17.75,4.09M21.25,11L19.61,12.25L20.2,14.23L18.5,13.06L16.8,14.23L17.39,12.25L15.75,11L17.81,10.95L18.5,9L19.19,10.95L21.25,11M18.97,15.95C19.8,15.87 20.69,17.05 20.16,17.8C19.84,18.25 19.5,18.67 19.08,19.07C15.17,23 8.84,23 4.94,19.07C1.03,15.17 1.03,8.83 4.94,4.93C5.34,4.53 5.76,4.17 6.21,3.85C6.96,3.32 8.14,4.21 8.06,5.04C7.79,7.9 8.75,10.87 10.95,13.06C13.14,15.26 16.1,16.22 18.97,15.95M17.33,17.97C14.5,17.81 11.7,16.64 9.53,14.5C7.36,12.31 6.2,9.5 6.04,6.68C3.23,9.82 3.34,14.64 6.35,17.66C9.37,20.67 14.19,20.78 17.33,17.97Z"/>
+        </svg>
+    </button>
+
+    <div class="container">
+        <h1>ESP32-S3 Dashboard</h1>
+        
+        <div id="message" style="display: none;"></div>
+        
+        <div class="status">
+            <h3>Device Status</h3>
+            <div class="status-item">
+                <span class="status-label">Version:</span>
+                <span class="status-value">{{VERSION}}</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">WiFi Status:</span>
+                <span class="status-value {{#if is_connected}}success{{else}}error{{/if}}">
+                    {{#if is_connected}}Connected{{else}}Disconnected{{/if}}
+                </span>
+            </div>
+            {{#if is_connected}}
+            <div class="status-item">
+                <span class="status-label">IP Address:</span>
+                <span class="status-value">{{ip_address}}</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Signal Strength:</span>
+                <span class="status-value">{{signal_strength}} dBm</span>
+            </div>
+            {{/if}}
+            <div class="status-item">
+                <span class="status-label">Free Heap:</span>
+                <span class="status-value">{{free_heap_kb}} KB</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Uptime:</span>
+                <span class="status-value">{{uptime}}</span>
+            </div>
+        </div>
+
+        <form id="configForm">
+            <h2>WiFi Configuration</h2>
+            
+            <div class="form-group">
+                <label for="ssid">WiFi Network Name (SSID)</label>
+                <input type="text" id="ssid" name="ssid" value="{{ssid}}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">WiFi Password</label>
+                <input type="password" id="password" name="password" value="{{password}}">
+            </div>
+            
+            <h2>Display Settings</h2>
+            
+            <div class="form-group">
+                <label for="brightness">Display Brightness</label>
+                <div class="slider-container">
+                    <input type="range" id="brightness" name="brightness" 
+                           min="10" max="100" value="{{brightness}}" 
+                           oninput="updateSliderValue(this)">
+                    <span class="slider-value">{{brightness}}%</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="auto_dim" name="auto_dim" {{#if auto_dim}}checked{{/if}}>
+                    Auto-dim display when idle
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label for="dim_timeout">Dim Timeout (seconds)</label>
+                <input type="number" id="dim_timeout" name="dim_timeout" 
+                       value="{{dim_timeout}}" min="10" max="300">
+            </div>
+            
+            <h2>Update Settings</h2>
+            
+            <div class="form-group">
+                <label for="ota_url">OTA Update URL</label>
+                <input type="text" id="ota_url" name="ota_url" value="{{ota_url}}">
+            </div>
+            
+            <div class="form-group">
+                <label for="update_interval">Update Check Interval (minutes)</label>
+                <input type="number" id="update_interval" name="update_interval" 
+                       value="{{update_interval}}" min="5" max="1440">
+            </div>
+            
+            <button type="submit">Save Configuration</button>
+            <button type="button" onclick="restartDevice()" style="background-color: var(--warning);">
+                Restart Device
+            </button>
+        </form>
+        
+        <h2>Configuration Management</h2>
+        
+        <div class="form-group" style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button type="button" onclick="backupConfig()" style="background-color: var(--success);">
+                📥 Backup Config
+            </button>
+            <label for="configFile" style="margin: 0;">
+                <input type="file" id="configFile" accept=".json" onchange="restoreConfig(event)" style="display: none;">
+                <button type="button" onclick="document.getElementById('configFile').click()" style="background-color: var(--accent);">
+                    📤 Restore Config
+                </button>
+            </label>
+        </div>
+        
+        <div class="nav-links">
+            <a href="/dashboard">Live Dashboard</a>
+            <a href="/graphs">Sensor Graphs</a>
+            <a href="/logs">View Logs</a>
+            <a href="/ota">OTA Update</a>
+            <a href="/files">File Manager</a>
+        </div>
+    </div>
+
+    <script>
+        // Theme management
+        function getTheme() {
+            return localStorage.getItem('theme') || 'dark';
+        }
+        
+        function setTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        }
+        
+        function toggleTheme() {
+            const currentTheme = document.body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            setTheme(newTheme);
+        }
+        
+        // Initialize theme
+        setTheme(getTheme());
+        
+        function updateSliderValue(slider) {
+            slider.nextElementSibling.textContent = slider.value + '%';
+        }
+        
+        function showMessage(message, isError = false) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = message;
+            messageEl.style.display = 'block';
+            messageEl.style.backgroundColor = isError ? 'var(--danger)' : 'var(--success)';
+            messageEl.style.color = 'white';
+            messageEl.style.border = 'none';
+            
+            setTimeout(() => {
+                messageEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const config = {
+                ssid: formData.get('ssid'),
+                password: formData.get('password'),
+                brightness: parseInt(formData.get('brightness')),
+                auto_dim: formData.get('auto_dim') === 'on',
+                dim_timeout: parseInt(formData.get('dim_timeout')),
+                ota_url: formData.get('ota_url'),
+                update_interval: parseInt(formData.get('update_interval'))
+            };
+            
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    showMessage('Configuration saved successfully!');
+                    if (config.ssid !== '{{ssid}}') {
+                        setTimeout(() => {
+                            showMessage('WiFi settings changed. Device will restart...');
+                            setTimeout(() => location.reload(), 3000);
+                        }, 2000);
+                    }
+                } else {
+                    showMessage('Failed to save configuration', true);
+                }
+            } catch (error) {
+                showMessage('Error: ' + error.message, true);
+            }
+        });
+        
+        async function restartDevice() {
+            if (confirm('Are you sure you want to restart the device?')) {
+                try {
+                    const response = await fetch('/restart', { method: 'POST' });
+                    if (response.ok) {
+                        showMessage('Device is restarting...');
+                        setTimeout(() => {
+                            showMessage('Waiting for device to come back online...');
+                        }, 3000);
+                    }
+                } catch (error) {
+                    showMessage('Failed to restart device', true);
+                }
+            }
+        }
+        
+        async function backupConfig() {
+            try {
+                const response = await fetch('/api/config/backup');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `esp32-config-backup-${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    showMessage('Configuration backed up successfully!');
+                } else {
+                    showMessage('Failed to backup configuration', true);
+                }
+            } catch (error) {
+                showMessage('Error: ' + error.message, true);
+            }
+        }
+        
+        async function restoreConfig(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!confirm('Are you sure you want to restore this configuration? Current settings will be overwritten.')) {
+                event.target.value = ''; // Clear file input
+                return;
+            }
+            
+            try {
+                const text = await file.text();
+                // Validate JSON
+                JSON.parse(text);
+                
+                const response = await fetch('/api/config/restore', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: text
+                });
+                
+                if (response.ok) {
+                    showMessage('Configuration restored successfully! Reloading page...');
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    const error = await response.text();
+                    showMessage('Failed to restore: ' + error, true);
+                }
+            } catch (error) {
+                showMessage('Invalid configuration file: ' + error.message, true);
+            }
+            
+            event.target.value = ''; // Clear file input
+        }
+    </script>
+</body>
+</html>

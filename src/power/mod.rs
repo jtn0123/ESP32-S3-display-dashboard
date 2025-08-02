@@ -1,8 +1,8 @@
 // Power management system for ESP32-S3 dashboard
 
-use embassy_time::{Duration, Instant, Timer};
+use std::time::{Duration, Instant};
 use esp_idf_hal::gpio::{AnyIOPin, Output, PinDriver};
-use crate::hardware::SensorData;
+use crate::sensors::SensorData;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PowerMode {
@@ -58,7 +58,8 @@ impl PowerManager {
         }
     }
     
-    pub fn with_backlight(mut self, backlight_pin: PinDriver<'static, AnyPin, Output>) -> Self {
+    #[allow(dead_code)] // Future use for PWM brightness control
+    pub fn with_backlight(mut self, backlight_pin: PinDriver<'static, AnyIOPin, Output>) -> Self {
         self.backlight_pin = Some(backlight_pin);
         self
     }
@@ -76,9 +77,9 @@ impl PowerManager {
         let idle_duration = self.last_activity.elapsed();
         
         // Check for low battery condition
-        if sensor_data.battery_percentage < self.config.low_battery_threshold {
+        if sensor_data._battery_percentage < self.config.low_battery_threshold {
             self.force_power_save = true;
-        } else if sensor_data.battery_percentage > self.config.low_battery_threshold + 10 {
+        } else if sensor_data._battery_percentage > self.config.low_battery_threshold + 10 {
             // Hysteresis to prevent oscillation
             self.force_power_save = false;
         }
@@ -128,14 +129,17 @@ impl PowerManager {
         }
     }
     
+    #[allow(dead_code)] // Will be used for UI display
     pub fn get_mode(&self) -> PowerMode {
         self.current_mode
     }
     
+    #[allow(dead_code)] // Will be used for UI display
     pub fn get_brightness(&self) -> u8 {
         self.brightness_level
     }
     
+    #[allow(dead_code)] // Will be used for adaptive frame rate
     pub fn get_update_rate(&self) -> Duration {
         match self.current_mode {
             PowerMode::Active => Duration::from_millis(33),      // 30 FPS
@@ -149,6 +153,7 @@ impl PowerManager {
         self.current_mode != PowerMode::Sleep
     }
     
+    #[allow(dead_code)] // Will be used for manual brightness control
     pub fn set_brightness(&mut self, brightness: u8) {
         // Manual brightness adjustment
         self.brightness_level = brightness.min(100);
@@ -160,6 +165,7 @@ impl PowerManager {
         }
     }
     
+    #[allow(dead_code)] // Will be used for power monitoring UI
     pub fn get_power_stats(&self) -> PowerStats {
         PowerStats {
             mode: self.current_mode,
@@ -171,6 +177,7 @@ impl PowerManager {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // Will be used for power monitoring UI
 pub struct PowerStats {
     pub mode: PowerMode,
     pub brightness: u8,
@@ -179,12 +186,14 @@ pub struct PowerStats {
 }
 
 // Task-specific power management
+#[allow(dead_code)] // Future use for dynamic power optimization
 pub struct TaskPowerManager {
     wifi_enabled: bool,
     sensor_polling_rate: Duration,
     display_refresh_rate: Duration,
 }
 
+#[allow(dead_code)] // Future use for dynamic power optimization
 impl TaskPowerManager {
     pub fn new() -> Self {
         Self {
@@ -233,6 +242,7 @@ impl TaskPowerManager {
 }
 
 // Battery-aware power optimization
+#[allow(dead_code)] // Will be used when light sensor is added
 pub fn calculate_optimal_brightness(battery_percentage: u8, ambient_light: u16) -> u8 {
     // Base brightness on ambient light
     let base_brightness = if ambient_light < 100 {

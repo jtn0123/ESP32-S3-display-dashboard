@@ -230,15 +230,24 @@ impl SensorManager {
                 let ret = temperature_sensor_get_celsius(handle, &mut temp_celsius);
                 if ret != 0 {
                     log::warn!("Failed to read temperature: {}", ret);
-                    99.9 // Changed default to verify if sensor is failing
+                    25.0 // Default to reasonable ambient temp
                 } else {
-                    log::info!("Temperature sensor read successfully: {:.1}°C", temp_celsius);
-                    temp_celsius
+                    // Note: ESP32-S3 internal temperature sensor reads the die temperature,
+                    // which is typically 20-40°C above ambient temperature.
+                    // For user display, we estimate ambient by subtracting an offset.
+                    const DIE_TO_AMBIENT_OFFSET: f32 = 35.0; // Typical offset at normal operation
+                    let ambient_estimate = temp_celsius - DIE_TO_AMBIENT_OFFSET;
+                    
+                    log::info!("Temperature sensor: Die={:.1}°C, Ambient≈{:.1}°C", 
+                              temp_celsius, ambient_estimate);
+                    
+                    // Return estimated ambient temperature for display
+                    ambient_estimate
                 }
             }
         } else {
             log::warn!("Temperature sensor not initialized, using default");
-            88.8 // Changed default to verify sensor init issue
+            25.0 // Default ambient temperature
         }
     }
     
