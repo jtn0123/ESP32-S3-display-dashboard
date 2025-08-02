@@ -65,16 +65,20 @@ impl PowerManager {
     }
     
     pub fn activity_detected(&mut self) {
+        log::info!("PowerManager: activity_detected called, current_mode = {:?}", self.current_mode);
         self.last_activity = Instant::now();
         
         // Wake from sleep or power save
         if self.current_mode == PowerMode::Sleep || self.current_mode == PowerMode::PowerSave {
+            log::info!("PowerManager: waking from sleep/power save to Active mode");
             self.set_mode(PowerMode::Active);
         }
     }
     
     pub fn update(&mut self, sensor_data: &SensorData) {
         let idle_duration = self.last_activity.elapsed();
+        log::info!("PowerManager update: idle_duration = {:?}, battery = {}%", 
+                  idle_duration, sensor_data._battery_percentage);
         
         // Check for low battery condition
         if sensor_data._battery_percentage < self.config.low_battery_threshold {
@@ -86,18 +90,24 @@ impl PowerManager {
         
         // Determine target mode based on idle time and battery
         let target_mode = if self.force_power_save {
+            log::info!("PowerManager: force_power_save is true, target = PowerSave");
             PowerMode::PowerSave
         } else if idle_duration >= self.config.sleep_timeout {
+            log::info!("PowerManager: idle >= sleep_timeout ({:?}), target = Sleep", self.config.sleep_timeout);
             PowerMode::Sleep
         } else if idle_duration >= self.config.power_save_timeout {
+            log::info!("PowerManager: idle >= power_save_timeout ({:?}), target = PowerSave", self.config.power_save_timeout);
             PowerMode::PowerSave
         } else if idle_duration >= self.config.dim_timeout {
+            log::info!("PowerManager: idle >= dim_timeout ({:?}), target = Dimmed", self.config.dim_timeout);
             PowerMode::Dimmed
         } else {
+            log::info!("PowerManager: idle < all timeouts, target = Active");
             PowerMode::Active
         };
         
         if target_mode != self.current_mode {
+            log::info!("PowerManager: changing mode from {:?} to {:?}", self.current_mode, target_mode);
             self.set_mode(target_mode);
         }
     }
@@ -150,7 +160,9 @@ impl PowerManager {
     }
     
     pub fn should_update_display(&self) -> bool {
-        self.current_mode != PowerMode::Sleep
+        let result = self.current_mode != PowerMode::Sleep;
+        log::info!("PowerManager: current_mode = {:?}, should_update_display = {}", self.current_mode, result);
+        result
     }
     
     #[allow(dead_code)] // Will be used for manual brightness control

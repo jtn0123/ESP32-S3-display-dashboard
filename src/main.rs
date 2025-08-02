@@ -611,7 +611,7 @@ fn main() -> Result<()> {
     };
     
     // Extract network manager back and track connection status
-    let (mut network_manager, wifi_connected) = match wifi_result {
+    let (network_manager, wifi_connected) = match wifi_result {
         Ok(mgr) => (mgr, true),
         Err(mgr) => (mgr, false),
     };
@@ -844,6 +844,10 @@ fn run_app(
     };
     let mut power_manager = PowerManager::new(power_config);
     
+    // CRITICAL: Mark activity immediately to prevent instant sleep
+    power_manager.activity_detected();
+    log::info!("Power manager created and marked as active");
+    
     // Initialize uptime tracker
     let uptime_tracker = match system::UptimeTracker::new() {
         Ok(tracker) => {
@@ -888,6 +892,10 @@ fn run_app(
     let mut last_cpu_check = Instant::now();
     let cpu_check_interval = Duration::from_secs(2);
     let mut last_cpu0_usage = 0u8;
+    
+    // Power manager startup grace period - prevent sleep during initialization
+    let startup_time = Instant::now();
+    let startup_grace_period = Duration::from_secs(30); // 30 seconds grace period
     let mut last_cpu1_usage = 0u8;
     
     // Button polling optimization - only check every 20ms
@@ -1079,15 +1087,20 @@ fn run_app(
                 }
             }
             
-            // Update power manager with sensor data
-            power_manager.update(&sensors::SensorData {
-                _temperature: processed_data.temperature,
-                _battery_percentage: processed_data.battery_percentage,
-                _battery_voltage: processed_data.battery_voltage,
-                _is_charging: processed_data.is_charging,
-                _is_on_usb: processed_data.is_on_usb,
-                _light_level: 0,
-            });
+            // TEMPORARILY DISABLED: Update power manager with sensor data (skip during startup grace period)
+            // if startup_time.elapsed() > startup_grace_period {
+            //     power_manager.update(&sensors::SensorData {
+            //         _temperature: processed_data.temperature,
+            //         _battery_percentage: processed_data.battery_percentage,
+            //         _battery_voltage: processed_data.battery_voltage,
+            //         _is_charging: processed_data.is_charging,
+            //         _is_on_usb: processed_data.is_on_usb,
+            //         _light_level: 0,
+            //     });
+            // } else {
+            //     log::info!("Skipping power manager update during startup grace period ({:.1}s remaining)", 
+            //               (startup_grace_period - startup_time.elapsed()).as_secs_f32());
+            // }
             
             last_sensor_update = Instant::now();
         }
@@ -1146,8 +1159,8 @@ fn run_app(
         if rendered {
             perf_metrics.record_render_time(render_time);
             
-            // Update auto-dim based on power manager state
-            display_manager.update_auto_dim(power_manager.should_update_display())?;
+            // TEMPORARILY HARDCODED: Always keep display on
+            display_manager.update_auto_dim(true)?;
             
             // Flush to display
             let flush_start = Instant::now();
@@ -1158,8 +1171,8 @@ fn run_app(
             // Frame was skipped by UI manager
             perf_metrics.fps_tracker.frame_skipped();
             
-            // Still update auto-dim even on skipped frames
-            display_manager.update_auto_dim(power_manager.should_update_display())?;
+            // TEMPORARILY HARDCODED: Always keep display on
+            display_manager.update_auto_dim(true)?;
         }
         
         // Track ALL loop iterations for accurate main loop FPS

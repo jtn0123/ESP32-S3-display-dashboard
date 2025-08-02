@@ -12,7 +12,7 @@ use self::lcd_bus::LcdBus;
 use self::dirty_rect_manager::DirtyRectManager;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Output};
 use esp_idf_hal::delay::FreeRtos;
-use std::time::{Instant, Duration};
+use std::time::Instant;
 
 
 // Display boundaries - Discovered values from Arduino testing
@@ -123,8 +123,9 @@ impl DisplayManager {
         
         // Set up backlight
         let mut backlight_pin = PinDriver::output(backlight.into())?;
+        log::info!("About to set backlight HIGH during initialization");
         backlight_pin.set_high()?;
-        log::info!("Backlight enabled (GPIO high)");
+        log::info!("Backlight enabled (GPIO high) - display should be visible now");
         
         
         let mut display = Self {
@@ -438,18 +439,6 @@ impl DisplayManager {
     }
     
     pub fn update_auto_dim(&mut self, should_display_on: bool) -> Result<()> {
-        // Only check every 60 seconds instead of every frame
-        static mut LAST_CHECK: Option<Instant> = None;
-        
-        unsafe {
-            if let Some(last) = LAST_CHECK {
-                if last.elapsed() < Duration::from_secs(60) {
-                    return Ok(());  // Skip check
-                }
-            }
-            LAST_CHECK = Some(Instant::now());
-        }
-        
         // Control backlight based on power manager state
         if let Some(ref mut pin) = self.backlight_pin {
             if should_display_on {
