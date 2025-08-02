@@ -1,6 +1,7 @@
 pub mod wifi;
 pub mod wifi_reconnect;
 pub mod web_server;
+pub mod simple_retry;
 pub mod telnet_server;
 pub mod sse_broadcaster;
 pub mod api_routes;
@@ -69,13 +70,21 @@ impl NetworkManager {
     }
     
     fn start_mdns(&mut self) -> Result<()> {
-        let mut mdns = EspMdns::take()?;
+        // Try to take mDNS, but it might already be taken
+        let mdns_result = EspMdns::take();
+        let mut mdns = match mdns_result {
+            Ok(m) => m,
+            Err(_) => {
+                log::warn!("mDNS already initialized, skipping");
+                return Ok(());
+            }
+        };
         mdns.set_hostname("esp32")?;
         
         // Properties are set via service text records in esp-idf-svc
         
         // Add service for OTA discovery
-        mdns.add_service(None, "_esp32-ota", "_tcp", 8080, &[
+        mdns.add_service(None, "_esp32-ota", "_tcp", 80, &[
             ("path", "/ota"),
             ("version", crate::version::DISPLAY_VERSION),
         ])?;

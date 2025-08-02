@@ -367,34 +367,32 @@ fn main() -> Result<()> {
         
         // Start web server after telnet so errors are logged
         let web_server = if network_manager.is_connected() {
-            log::info!("Network is connected, starting web server...");
-            match network::web_server::WebConfigServer::new_with_ota(config.clone(), ota_manager.clone()) {
-                Ok(server) => {
-                    log::info!("Web server started successfully on port 80");
-                    Some(server)
-                }
-                Err(e) => {
-                    let error_msg = format!("Web server failed: {}", e);
-                    log::error!("Failed to start web server: {:?}", e);
-                    log::error!("Web server error details: {}", e);
-                    log::error!("This error prevents OTA updates from working");
-                    
-                    // Store error globally
-                    unsafe {
-                        WEB_SERVER_ERROR = Some(error_msg.clone());
-                    }
-                    
-                    // Log multiple times to ensure it's captured
-                    for _ in 0..3 {
-                        esp_idf_hal::delay::FreeRtos::delay_ms(100);
-                        log::error!("WEB SERVER FAILED TO START: {}", e);
-                    }
-                    None
-                }
-            }
+            log::info!("Network is connected, starting web server with retries...");
+            network::simple_retry::try_start_web_server_with_retries(
+                config.clone(),
+                ota_manager.clone(),
+                true,  // network is connected
+                10     // wait up to 10 seconds
+            )
         } else {
-            log::info!("Skipping web server - no network connection");
-            None
+            log::info!("Network not ready, attempting web server with extended timeout...");
+            let server = network::simple_retry::try_start_web_server_with_retries(
+                config.clone(),
+                ota_manager.clone(),
+                false, // network not connected yet
+                30     // wait up to 30 seconds
+            );
+            
+            // Also spawn background retry if initial attempt fails
+            if server.is_none() {
+                log::info!("Spawning background web server retry task...");
+                network::simple_retry::spawn_web_server_retry_task(
+                    config.clone(),
+                    ota_manager.clone()
+                );
+            }
+            
+            server
         };
         
         // Start Core 1 tasks
@@ -894,8 +892,8 @@ fn run_app(
     let mut last_cpu0_usage = 0u8;
     
     // Power manager startup grace period - prevent sleep during initialization
-    let startup_time = Instant::now();
-    let startup_grace_period = Duration::from_secs(30); // 30 seconds grace period
+    let _startup_time = Instant::now();
+    let _startup_grace_period = Duration::from_secs(30); // 30 seconds grace period
     let mut last_cpu1_usage = 0u8;
     
     // Button polling optimization - only check every 20ms

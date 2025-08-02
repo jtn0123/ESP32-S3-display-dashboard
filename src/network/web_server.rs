@@ -204,9 +204,20 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // Restart endpoint for remote device management
+        // Restart endpoint for remote device management - protected
         server.fn_handler("/restart", esp_idf_svc::http::Method::Post, move |req| {
-            log::warn!("Restart requested via HTTP");
+            // Check for authentication header
+            const RESTART_TOKEN: &str = "esp32-restart";
+            let auth_header = req.header("X-Restart-Token").unwrap_or("");
+            
+            if auth_header != RESTART_TOKEN {
+                log::warn!("Restart rejected - invalid or missing authentication token");
+                let mut response = req.into_status_response(403)?;
+                response.write_all(b"Forbidden - Invalid restart token")?;
+                return Ok(());
+            }
+            
+            log::warn!("Authenticated restart requested via HTTP");
             
             // Schedule restart after response
             std::thread::spawn(|| {
@@ -757,9 +768,20 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // Restart endpoint
+        // Restart endpoint - protected
         server.fn_handler("/api/restart", esp_idf_svc::http::Method::Post, move |req| {
-            log::warn!("Device restart requested via web interface");
+            // Check for authentication header
+            const RESTART_TOKEN: &str = "esp32-restart";
+            let auth_header = req.header("X-Restart-Token").unwrap_or("");
+            
+            if auth_header != RESTART_TOKEN {
+                log::warn!("API restart rejected - invalid or missing authentication token");
+                let mut response = req.into_status_response(403)?;
+                response.write_all(br#"{"error":"Forbidden","message":"Invalid restart token"}"#)?;
+                return Ok(());
+            }
+            
+            log::warn!("Authenticated device restart requested via web API");
             
             let mut response = req.into_ok_response()?;
             response.write_all(br#"{"status":"restarting"}"#)?;
