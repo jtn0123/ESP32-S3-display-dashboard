@@ -1,0 +1,1 @@
+# Pytest plugins for ESP32 testing

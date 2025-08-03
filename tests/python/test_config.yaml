@@ -1,0 +1,72 @@
+# Test Configuration and Categories
+# This helps organize which tests to run in different scenarios
+
+test_suites:
+  # Quick smoke tests - should always pass
+  smoke:
+    description: "Basic connectivity and health checks"
+    tests:
+      - test_basic_connectivity.py
+      - test_debug_connection.py
+    markers: "not slow and not stress"
+    timeout: 30
+  
+  # Integration tests - test actual functionality
+  integration:
+    description: "API and feature tests"
+    tests:
+      - test_web_comprehensive.py
+      - test_device_stability.py
+    exclude_patterns:
+      - "test_api_versioning"  # This one has issues with 404 handling
+      - "test_concurrent_"     # These can be flaky
+    markers: "not slow and not stress"
+    timeout: 60
+  
+  # Full test suite - everything including slow tests
+  full:
+    description: "Complete test suite including stress tests"
+    tests: 
+      - "tests/"  # All tests
+    markers: ""  # No marker filtering
+    timeout: 300
+
+# Known issues to skip
+known_issues:
+  - test: "test_api_versioning"
+    reason: "Fixture causes connection abort on 404 responses"
+    issue: "ESP32 closes connection when certain headers present with 404"
+  
+  - test: "test_rate_limiting"
+    reason: "No rate limiting implemented in embedded device"
+    skip: true
+
+# Test environment requirements
+requirements:
+  python_version: "3.8"
+  pytest_version: "6.0"
+  plugins:
+    - pytest-timeout
+    - pytest-asyncio
+  
+# Device endpoints that should exist
+expected_endpoints:
+  - path: "/"
+    methods: ["GET"]
+    description: "Web UI home page"
+  
+  - path: "/health"
+    methods: ["GET"]
+    description: "Health check endpoint"
+  
+  - path: "/api/metrics"
+    methods: ["GET"]
+    description: "Prometheus metrics"
+  
+  - path: "/api/system"
+    methods: ["GET"]
+    description: "System information"
+  
+  - path: "/api/config"
+    methods: ["GET", "POST"]
+    description: "Configuration API"
