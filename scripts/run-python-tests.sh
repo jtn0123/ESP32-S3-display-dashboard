@@ -145,8 +145,8 @@ if run_command "curl -s -f -m 5 http://$DEVICE_IP/health" "Device health check";
             # Run tests sequentially to prevent device crashes
             echo -e "\n${YELLOW}Running tests sequentially with ${DELAY}s delay...${NC}"
             
-            # Get list of all tests
-            TEST_LIST=$(pytest --collect-only -q tests/test_web_comprehensive.py 2>/dev/null | grep "<Function" | sed 's/.*<Function //' | sed 's/>//' | grep -v "test_config_api_properly" | grep -v "test_api_versioning" || true)
+            # Get list of all tests from all test files
+            TEST_LIST=$(pytest --collect-only -q tests/ 2>/dev/null | grep "<Function" | sed 's/.*<Function //' | sed 's/>//' | sort | uniq || true)
             
             if [ -z "$TEST_LIST" ]; then
                 echo -e "${RED}No tests found!${NC}"
