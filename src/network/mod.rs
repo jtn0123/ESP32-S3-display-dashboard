@@ -35,6 +35,8 @@ pub struct NetworkManager {
     _mdns: Option<EspMdns>,
     signal_strength: i8,
     _reconnect_manager: Option<Arc<WifiReconnectManager>>,
+    disconnect_count: Arc<Mutex<u32>>,
+    reconnect_count: Arc<Mutex<u32>>,
 }
 
 impl NetworkManager {
@@ -57,6 +59,8 @@ impl NetworkManager {
             _mdns: None,
             signal_strength: -100,
             _reconnect_manager: Some(reconnect_manager),
+            disconnect_count: Arc::new(Mutex::new(0)),
+            reconnect_count: Arc::new(Mutex::new(0)),
         })
     }
 
@@ -139,5 +143,26 @@ impl NetworkManager {
     
     pub fn get_mac(&self) -> String {
         self.wifi.get_mac()
+    }
+    
+    /// Increment disconnect counter
+    pub fn increment_disconnect_count(&self) {
+        if let Ok(mut count) = self.disconnect_count.lock() {
+            *count += 1;
+        }
+    }
+    
+    /// Increment reconnect counter
+    pub fn increment_reconnect_count(&self) {
+        if let Ok(mut count) = self.reconnect_count.lock() {
+            *count += 1;
+        }
+    }
+    
+    /// Get connection stats
+    pub fn get_connection_stats(&self) -> (u32, u32) {
+        let disconnects = self.disconnect_count.lock().map(|c| *c).unwrap_or(0);
+        let reconnects = self.reconnect_count.lock().map(|c| *c).unwrap_or(0);
+        (disconnects, reconnects)
     }
 }

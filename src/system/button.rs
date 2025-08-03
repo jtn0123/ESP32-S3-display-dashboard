@@ -15,6 +15,7 @@ pub enum ButtonEvent {
     Button2Release,
     Button2Click,
     Button2LongPress,
+    BothButtonsLongPress, // Shutdown trigger
 }
 
 pub struct ButtonManager {
@@ -63,14 +64,33 @@ impl ButtonManager {
     }
 
     pub fn poll(&mut self) -> Option<ButtonEvent> {
-        // Check button 1
+        // Check button states
         let button1_pressed = self.button1.is_low(); // Active low
+        let button2_pressed = self.button2.is_low(); // Active low
+        
+        // Check for both buttons long press (shutdown trigger)
+        if button1_pressed && button2_pressed {
+            if let (Some(press1), Some(press2)) = (self.button1_state.press_time, self.button2_state.press_time) {
+                let now = Instant::now();
+                let duration1 = now.duration_since(press1);
+                let duration2 = now.duration_since(press2);
+                
+                // Both held for long press time and we haven't fired this event yet
+                if duration1 >= LONG_PRESS_TIME && duration2 >= LONG_PRESS_TIME 
+                    && !self.button1_state.long_press_fired && !self.button2_state.long_press_fired {
+                    self.button1_state.long_press_fired = true;
+                    self.button2_state.long_press_fired = true;
+                    return Some(ButtonEvent::BothButtonsLongPress);
+                }
+            }
+        }
+        
+        // Check button 1
         if let Some(event) = Self::check_button_state(button1_pressed, &mut self.button1_state, 1) {
             return Some(event);
         }
 
         // Check button 2
-        let button2_pressed = self.button2.is_low(); // Active low
         if let Some(event) = Self::check_button_state(button2_pressed, &mut self.button2_state, 2) {
             return Some(event);
         }

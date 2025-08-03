@@ -48,6 +48,7 @@ use crate::display::{DisplayManager, colors};
 use crate::network::{NetworkManager, telnet_server::TelnetLogServer};
 use crate::ota::OtaManager;
 use crate::ui::UiManager;
+use crate::system::{ShutdownManager, ShutdownSignal};
 use crate::dual_core::{DualCoreProcessor, CpuMonitor};
 use crate::performance::PerformanceMetrics;
 use crate::power::{PowerManager, PowerConfig};
@@ -277,6 +278,11 @@ fn main() -> Result<()> {
     // Initialize metrics system AFTER display is working
     crate::metrics::init_metrics();
     info!("Metrics system initialized");
+    
+    // Initialize shutdown manager
+    let shutdown_manager = Arc::new(Mutex::new(ShutdownManager::new()));
+    let shutdown_signal = shutdown_manager.lock().unwrap().get_signal();
+    info!("Shutdown manager initialized");
 
     // ESP_LCD: Fast initialization path
     #[cfg(feature = "esp_lcd_driver")]
@@ -379,7 +385,9 @@ fn main() -> Result<()> {
         
         // Start telnet server first so we can capture web server errors
         let telnet_server = if network_manager.is_connected() {
-            let server = Arc::new(TelnetLogServer::new(23));
+            let mut server = TelnetLogServer::new(23);
+            server.set_shutdown_signal(shutdown_signal.clone());
+            let server = Arc::new(server);
             logging::set_telnet_server(Arc::clone(&server));
             match Arc::clone(&server).start() {
                 Ok(_) => {
@@ -478,6 +486,8 @@ fn main() -> Result<()> {
             ota_manager,
             telnet_server,
             core1_channels,
+            shutdown_manager,
+            shutdown_signal,
         );
     }
 
@@ -736,7 +746,9 @@ fn main() -> Result<()> {
     
     // Start telnet log server if we have network
     let telnet_server = if network_manager.is_connected() {
-        let server = Arc::new(TelnetLogServer::new(23));
+        let mut server = TelnetLogServer::new(23);
+        server.set_shutdown_signal(shutdown_signal.clone());
+        let server = Arc::new(server);
         
         // Set the telnet server in our custom logger
         logging::set_telnet_server(Arc::clone(&server));
@@ -849,6 +861,8 @@ fn main() -> Result<()> {
         ota_manager,
         telnet_server,
         core1_channels,
+        shutdown_manager,
+        shutdown_signal,
     ) {
         Ok(_) => {
             log::warn!("UI loop exited normally (shouldn't happen)");
@@ -874,6 +888,8 @@ fn run_app(
     ota_manager: Option<Arc<Mutex<OtaManager>>>,
     _telnet_server: Option<Arc<TelnetLogServer>>,
     core1_channels: core1_tasks::Core1Channels,
+    shutdown_manager: Arc<Mutex<ShutdownManager>>,
+    shutdown_signal: ShutdownSignal,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
 
@@ -978,6 +994,12 @@ fn run_app(
     let sensor_tx = core1_channels.sensor_tx.clone();
     
     loop {
+        // Check for shutdown signal
+        if shutdown_signal.is_shutdown_requested() {
+            log::info!("Shutdown requested, exiting main loop...");
+            break;
+        }
+        
         // Start frame timing
         let frame_start = Instant::now();
         
@@ -1016,6 +1038,13 @@ fn run_app(
                     response_time.as_secs_f32() * 1000.0,
                     last_button_check.elapsed().as_secs_f32() * 1000.0
                 );
+                
+                // Check for shutdown trigger
+                if event == system::ButtonEvent::BothButtonsLongPress {
+                    log::warn!("Shutdown triggered by button combination!");
+                    shutdown_manager.lock().unwrap().shutdown()?;
+                    break;
+                }
                 
                 let ui_start = Instant::now();
                 ui_manager.handle_button_event(event)?;
@@ -1373,7 +1402,21 @@ fn run_app(
                     metrics.update_psram(psram_free, psram_total);
                 }
                 
+                // Connection monitoring
+                let (disconnects, reconnects) = network_manager.get_connection_stats();
+                metrics.update_wifi_reconnects(disconnects, reconnects);
+                
+                // Uptime tracking
+                if let Some(ref tracker) = uptime_tracker {
+                    if let Ok(t) = tracker.lock() {
+                        let uptime_secs = t.get_current_session_uptime().as_secs();
+                        metrics.update_uptime(uptime_secs);
+                    }
+                }
+                
                 // Note: Temperature and battery are updated from Core 1 data elsewhere
+                // HTTP connection metrics are updated by the web server
+                // Telnet connection metrics are updated by the telnet server
             }
             
             // Reset report timer
@@ -1405,4 +1448,23 @@ fn run_app(
             }
         }
     }
+    
+    // Graceful shutdown
+    log::info!("Beginning graceful shutdown...");
+    
+    // Trigger shutdown manager
+    if let Ok(mut mgr) = shutdown_manager.lock() {
+        let _ = mgr.shutdown();
+    }
+    
+    // Clear display
+    display_manager.clear(colors::BLACK)?;
+    display_manager.draw_text_centered(80, "Shutting down...", colors::WHITE, None, 2)?;
+    display_manager.flush()?;
+    
+    // Wait a moment for services to stop
+    esp_idf_hal::delay::FreeRtos::delay_ms(1000);
+    
+    log::info!("Shutdown complete");
+    Ok(())
 }

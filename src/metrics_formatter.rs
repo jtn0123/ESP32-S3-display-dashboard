@@ -112,6 +112,15 @@ impl MetricsFormatter {
             self.write_simple_metric("esp32_button_events_total", "Total button events", "counter", metrics_data.button_events_total as f64)?;
             self.write_simple_metric("esp32_button_events_per_second", "Button events per second", "gauge", metrics_data.button_events_per_second as f64)?;
         }
+        
+        // Connection monitoring metrics
+        self.write_simple_metric("esp32_http_connections_active", "Currently active HTTP connections", "gauge", metrics_data.http_connections_active as f64)?;
+        self.write_simple_metric("esp32_http_connections_total", "Total HTTP connections handled", "counter", metrics_data.http_connections_total as f64)?;
+        self.write_simple_metric("esp32_telnet_connections_active", "Currently active telnet connections", "gauge", metrics_data.telnet_connections_active as f64)?;
+        self.write_simple_metric("esp32_telnet_connections_total", "Total telnet connections handled", "counter", metrics_data.telnet_connections_total as f64)?;
+        self.write_simple_metric("esp32_wifi_disconnects_total", "Total WiFi disconnections", "counter", metrics_data.wifi_disconnects as f64)?;
+        self.write_simple_metric("esp32_wifi_reconnects_total", "Total WiFi reconnections", "counter", metrics_data.wifi_reconnects as f64)?;
+        self.write_simple_metric("esp32_session_uptime_seconds", "Current session uptime in seconds", "counter", metrics_data.uptime_seconds as f64)?;
 
         Ok(self.buffer.clone())
     }

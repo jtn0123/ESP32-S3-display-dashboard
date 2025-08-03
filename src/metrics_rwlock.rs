@@ -46,6 +46,15 @@ pub struct MetricsStore {
     // Button metrics
     button_events_total: AtomicU32,
     
+    // Connection monitoring
+    http_connections_active: AtomicU32,
+    http_connections_total: AtomicU32,
+    telnet_connections_active: AtomicU32,
+    telnet_connections_total: AtomicU32,
+    wifi_disconnects: AtomicU32,
+    wifi_reconnects: AtomicU32,
+    uptime_seconds: AtomicU32,
+    
     // Complex data that requires locking
     complex_data: RwLock<ComplexMetrics>,
 }
@@ -121,6 +130,13 @@ impl MetricsStore {
             psram_free: AtomicU32::new(0),
             psram_total: AtomicU32::new(0),
             button_events_total: AtomicU32::new(0),
+            http_connections_active: AtomicU32::new(0),
+            http_connections_total: AtomicU32::new(0),
+            telnet_connections_active: AtomicU32::new(0),
+            telnet_connections_total: AtomicU32::new(0),
+            wifi_disconnects: AtomicU32::new(0),
+            wifi_reconnects: AtomicU32::new(0),
+            uptime_seconds: AtomicU32::new(0),
             complex_data: RwLock::new(ComplexMetrics::default()),
         }
     }
@@ -199,6 +215,25 @@ impl MetricsStore {
         }
     }
     
+    pub fn update_http_connections(&self, active: u32, total: u64) {
+        self.http_connections_active.store(active, Ordering::Relaxed);
+        self.http_connections_total.store(total as u32, Ordering::Relaxed);
+    }
+    
+    pub fn update_telnet_connections(&self, active: u32, total: u64) {
+        self.telnet_connections_active.store(active, Ordering::Relaxed);
+        self.telnet_connections_total.store(total as u32, Ordering::Relaxed);
+    }
+    
+    pub fn update_wifi_reconnects(&self, disconnects: u32, reconnects: u32) {
+        self.wifi_disconnects.store(disconnects, Ordering::Relaxed);
+        self.wifi_reconnects.store(reconnects, Ordering::Relaxed);
+    }
+    
+    pub fn update_uptime(&self, seconds: u64) {
+        self.uptime_seconds.store(seconds as u32, Ordering::Relaxed);
+    }
+    
     /// Get a snapshot of all metrics for export
     pub fn snapshot(&self) -> crate::metrics::MetricsData {
         let complex = self.complex_data.read().unwrap_or_else(|e| e.into_inner()).clone();
@@ -233,6 +268,13 @@ impl MetricsStore {
             button_max_response_ms: complex.button_max_response_ms,
             button_events_total: self.button_events_total.load(Ordering::Relaxed) as u64,
             button_events_per_second: complex.button_events_per_second,
+            http_connections_active: self.http_connections_active.load(Ordering::Relaxed),
+            http_connections_total: self.http_connections_total.load(Ordering::Relaxed) as u64,
+            telnet_connections_active: self.telnet_connections_active.load(Ordering::Relaxed),
+            telnet_connections_total: self.telnet_connections_total.load(Ordering::Relaxed) as u64,
+            wifi_disconnects: self.wifi_disconnects.load(Ordering::Relaxed),
+            wifi_reconnects: self.wifi_reconnects.load(Ordering::Relaxed),
+            uptime_seconds: self.uptime_seconds.load(Ordering::Relaxed) as u64,
         }
     }
 }

@@ -87,6 +87,10 @@ impl Drop for MetricsGuard {
             self.data.button_events_per_second,
         );
         self.store.update_fps(self.data.fps_actual, self.data.fps_target);
+        self.store.update_http_connections(self.data.http_connections_active, self.data.http_connections_total);
+        self.store.update_telnet_connections(self.data.telnet_connections_active, self.data.telnet_connections_total);
+        self.store.update_wifi_reconnects(self.data.wifi_disconnects, self.data.wifi_reconnects);
+        self.store.update_uptime(self.data.uptime_seconds);
     }
 }
 
@@ -137,6 +141,15 @@ pub struct MetricsData {
     pub button_max_response_ms: f32,
     pub button_events_total: u64,
     pub button_events_per_second: f32,
+    
+    // Connection monitoring
+    pub http_connections_active: u32,
+    pub http_connections_total: u64,
+    pub telnet_connections_active: u32,
+    pub telnet_connections_total: u64,
+    pub wifi_disconnects: u32,
+    pub wifi_reconnects: u32,
+    pub uptime_seconds: u64,
 }
 
 impl MetricsData {
@@ -200,5 +213,24 @@ impl MetricsData {
     pub fn update_fps(&mut self, actual: f32, target: f32) {
         self.fps_actual = actual;
         self.fps_target = target;
+    }
+    
+    pub fn update_http_connections(&mut self, active: u32, total: u64) {
+        self.http_connections_active = active;
+        self.http_connections_total = total;
+    }
+    
+    pub fn update_telnet_connections(&mut self, active: u32, total: u64) {
+        self.telnet_connections_active = active;
+        self.telnet_connections_total = total;
+    }
+    
+    pub fn update_wifi_reconnects(&mut self, disconnects: u32, reconnects: u32) {
+        self.wifi_disconnects = disconnects;
+        self.wifi_reconnects = reconnects;
+    }
+    
+    pub fn update_uptime(&mut self, seconds: u64) {
+        self.uptime_seconds = seconds;
     }
 }

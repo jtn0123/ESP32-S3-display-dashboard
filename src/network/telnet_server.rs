@@ -56,6 +56,8 @@ pub struct TelnetLogServer {
     log_buffer: Arc<Mutex<LogBuffer>>,
     clients: Arc<Mutex<Vec<Arc<Mutex<TcpStream>>>>>,
     port: u16,
+    shutdown_signal: Option<crate::system::ShutdownSignal>,
+    total_connections: Arc<Mutex<u64>>,
 }
 
 impl TelnetLogServer {
@@ -64,7 +66,14 @@ impl TelnetLogServer {
             log_buffer: Arc::new(Mutex::new(LogBuffer::new(100))), // Keep last 100 messages
             clients: Arc::new(Mutex::new(Vec::new())),
             port,
+            shutdown_signal: None,
+            total_connections: Arc::new(Mutex::new(0)),
         }
+    }
+    
+    /// Set shutdown signal for graceful shutdown
+    pub fn set_shutdown_signal(&mut self, signal: crate::system::ShutdownSignal) {
+        self.shutdown_signal = Some(signal);
     }
     
     /// Start the telnet server in a background thread
@@ -90,11 +99,18 @@ impl TelnetLogServer {
     /// Main server loop
     fn run_server(&self) -> Result<()> {
         let listener = TcpListener::bind(format!("0.0.0.0:{}", self.port))?;
-        listener.set_nonblocking(false)?;
+        listener.set_nonblocking(true)?; // Non-blocking for shutdown check
         
         log::info!("Telnet server listening on port {}", self.port);
         
         loop {
+            // Check for shutdown signal
+            if let Some(ref signal) = self.shutdown_signal {
+                if signal.is_shutdown_requested() {
+                    log::info!("Telnet server shutting down...");
+                    break;
+                }
+            }
             match listener.accept() {
                 Ok((stream, addr)) => {
                     log::info!("Telnet client connected from {}", addr);
@@ -128,6 +144,14 @@ impl TelnetLogServer {
                         clients.push(stream);
                     }
                     
+                    // Increment total connections
+                    if let Ok(mut total) = self.total_connections.lock() {
+                        *total += 1;
+                    }
+                    
+                    // Update metrics
+                    self.update_metrics();
+                    
                     // Clean up disconnected clients
                     self.cleanup_clients();
                 }
@@ -139,6 +163,19 @@ impl TelnetLogServer {
                 }
             }
         }
+        
+        // Disconnect all clients on shutdown
+        if let Ok(mut clients) = self.clients.lock() {
+            for client in clients.iter() {
+                if let Ok(mut stream) = client.lock() {
+                    let _ = writeln!(stream, "\r\n\r\n=== Server shutting down ===\r\n");
+                }
+            }
+            clients.clear();
+        }
+        
+        log::info!("Telnet server stopped");
+        Ok(())
     }
     
     /// Remove disconnected clients
@@ -158,6 +195,9 @@ impl TelnetLogServer {
                     false
                 }
             });
+            
+            // Update metrics after cleanup
+            self.update_metrics();
         }
     }
     
@@ -188,6 +228,17 @@ impl TelnetLogServer {
             buffer.get_recent(count)
         } else {
             Vec::new()
+        }
+    }
+    
+    /// Update telnet connection metrics
+    fn update_metrics(&self) {
+        let active_clients = self.clients.lock().map(|c| c.len() as u32).unwrap_or(0);
+        let total_connections = self.total_connections.lock().map(|t| *t).unwrap_or(0);
+        
+        // Update metrics
+        if let Ok(mut metrics) = crate::metrics::metrics().lock() {
+            metrics.update_telnet_connections(active_clients, total_connections);
         }
     }
 }
