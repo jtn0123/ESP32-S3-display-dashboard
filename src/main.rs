@@ -312,6 +312,13 @@ fn main() -> Result<()> {
             
             if network_manager.is_connected() {
                 log::info!("IP address obtained: {:?}", network_manager.get_ip());
+                
+                // CRITICAL: Wait for WiFi to fully stabilize before starting services
+                // This prevents the 0x6374c0 disconnection error that occurs when
+                // servers start too quickly after connection
+                log::info!("Waiting for WiFi to stabilize before starting services...");
+                esp_idf_hal::delay::FreeRtos::delay_ms(3000);
+                log::info!("WiFi stabilization complete");
             } else {
                 log::warn!("Failed to obtain IP address after 10 seconds");
             }

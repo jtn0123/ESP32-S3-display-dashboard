@@ -106,6 +106,16 @@ impl WifiManager {
     fn try_connect(&mut self) -> Result<i8> {
         log::info!("Starting WiFi...");
         self.wifi.start()?;
+        
+        // Disable power save mode immediately after starting WiFi
+        // This helps prevent disconnections during initial setup
+        unsafe {
+            use esp_idf_sys::*;
+            let result = esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE);
+            if result == ESP_OK {
+                log::info!("WiFi power save disabled at startup");
+            }
+        }
 
         log::info!("Scanning for networks...");
         
@@ -196,6 +206,9 @@ impl WifiManager {
         // MIN_MODEM mode can cause disconnections during web server activity
         // The ESP32 may disconnect with error code 0x6374c0 when power save is active
         // and there's significant network traffic (web requests, telnet, etc.)
+        // IMPORTANT: We must wait a bit for WiFi to stabilize before disabling power save
+        esp_idf_hal::delay::FreeRtos::delay_ms(500);
+        
         unsafe {
             use esp_idf_sys::*;
             let result = esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE);
@@ -205,6 +218,10 @@ impl WifiManager {
                 log::warn!("Failed to set WiFi power save mode: {:?}", result);
             }
         }
+        
+        // Give WiFi more time to stabilize with power save disabled
+        esp_idf_hal::delay::FreeRtos::delay_ms(1000);
+        log::info!("WiFi connection stabilized");
         
         Ok(signal_strength)
     }

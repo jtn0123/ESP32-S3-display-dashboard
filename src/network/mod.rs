@@ -11,6 +11,7 @@ pub mod log_streamer;
 pub mod file_manager;
 pub mod compression;
 pub mod binary_protocol;
+pub mod http_config;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;

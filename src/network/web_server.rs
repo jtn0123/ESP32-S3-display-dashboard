@@ -1,5 +1,5 @@
 use anyhow::Result;
-use esp_idf_svc::http::server::{Configuration, EspHttpServer};
+use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
 use crate::config::Config;
@@ -49,13 +49,8 @@ impl WebConfigServer {
             esp_idf_hal::delay::FreeRtos::delay_ms(500);
         }
         
-        // Create custom configuration with increased handler limit
-        // We have ~33 total routes (22 base + 6 API v1 + 5 file manager)
-        let server_config = Configuration {
-            stack_size: 8192, // Increase stack size for handlers
-            max_uri_handlers: 40, // Increase to support all routes with some headroom
-            ..Default::default()
-        };
+        // Use optimized configuration to prevent socket exhaustion
+        let server_config = crate::network::http_config::create_http_config();
         let mut server = EspHttpServer::new(&server_config)?;
         
         let config_clone = config.clone();
@@ -76,7 +71,18 @@ impl WebConfigServer {
             // Render template with dynamic content
             let html = crate::templates::render_home_page(version, &ssid, free_heap, uptime_ms);
             
-            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+            // TEMPORARY: Disable compression for home page to debug freeze issue
+            // The 22KB template may be causing memory issues during compression
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[
+                    ("Content-Type", "text/html; charset=utf-8"),
+                    ("Connection", "close"), // Prevent socket exhaustion
+                ]
+            )?;
+            response.write_all(html.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // Get current configuration

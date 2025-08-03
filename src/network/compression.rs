@@ -33,18 +33,33 @@ pub fn write_compressed_response<'a>(
                         ("Content-Type", content_type),
                         ("Content-Encoding", "gzip"),
                         ("Vary", "Accept-Encoding"),
+                        ("Connection", "close"), // Prevent socket exhaustion
                     ]
                 )?;
                 response.write_all(&compressed)?;
             }
             Err(e) => {
                 log::warn!("Compression failed: {}", e);
-                let mut response = req.into_ok_response()?;
+                let mut response = req.into_response(
+                    200,
+                    Some("OK"),
+                    &[
+                        ("Content-Type", content_type),
+                        ("Connection", "close"), // Prevent socket exhaustion
+                    ]
+                )?;
                 response.write_all(content)?;
             }
         }
     } else {
-        let mut response = req.into_ok_response()?;
+        let mut response = req.into_response(
+            200,
+            Some("OK"),
+            &[
+                ("Content-Type", content_type),
+                ("Connection", "close"), // Prevent socket exhaustion
+            ]
+        )?;
         response.write_all(content)?;
     }
     
