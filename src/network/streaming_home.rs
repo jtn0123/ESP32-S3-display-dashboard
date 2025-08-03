@@ -1,7 +1,6 @@
 /// Simplified streaming home page handler
 use esp_idf_svc::http::server::{EspHttpConnection, Request};
 use esp_idf_svc::io::Write;
-use core::fmt::Write as FmtWrite;
 
 /// Handle home page with direct streaming (no intermediate buffers)
 pub fn handle_home_streaming(req: Request<&mut EspHttpConnection>) -> Result<(), Box<dyn std::error::Error>> {

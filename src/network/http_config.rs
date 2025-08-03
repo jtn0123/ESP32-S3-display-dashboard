@@ -1,5 +1,4 @@
 use esp_idf_svc::http::server::Configuration;
-use std::time::Duration;
 
 /// Create optimized HTTP server configuration to prevent socket exhaustion and memory issues
 pub fn create_http_config() -> Configuration {
