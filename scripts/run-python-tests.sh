@@ -154,7 +154,17 @@ if run_command "curl -s -f -m 5 http://$DEVICE_IP/health" "Device health check";
             else
                 # Run each test individually
                 while IFS= read -r test; do
-                    PYTEST_ARGS="-v --tb=short --device-ip $DEVICE_IP tests/test_web_comprehensive.py::TestWebComprehensive::${test}"
+                    # Find which test file contains this test
+                    TEST_FILE=$(pytest --collect-only -q tests/ 2>/dev/null | grep -B1 "$test" | grep "\.py::" | head -1 | cut -d':' -f1 || echo "")
+                    
+                    if [ -n "$TEST_FILE" ]; then
+                        # Get the full test path
+                        FULL_TEST=$(pytest --collect-only -q tests/ 2>/dev/null | grep "$test" | head -1 || echo "")
+                        PYTEST_ARGS="-v --tb=short --device-ip $DEVICE_IP $FULL_TEST"
+                    else
+                        # Fallback to searching in specific test files
+                        PYTEST_ARGS="-v --tb=short --device-ip $DEVICE_IP -k $test"
+                    fi
                     if [ "$VERBOSE" = true ]; then
                         PYTEST_ARGS="$PYTEST_ARGS -s"
                     fi
