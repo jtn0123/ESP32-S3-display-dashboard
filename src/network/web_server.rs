@@ -2,11 +2,15 @@ use anyhow::Result;
 use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::Config;
 use crate::ota::OtaManager;
 use crate::metrics_formatter::MetricsFormatter;
 use crate::network::compression::write_compressed_response;
 use crate::network::binary_protocol::MetricsBinaryPacket;
+
+// Global flag to prevent heavy operations during OTA
+static OTA_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 pub struct WebConfigServer {
     _server: EspHttpServer<'static>,
@@ -272,6 +276,13 @@ impl WebConfigServer {
 
         // Prometheus metrics endpoint - optimized with formatter
         server.fn_handler("/metrics", esp_idf_svc::http::Method::Get, move |req| {
+            // Check if OTA is in progress
+            if OTA_IN_PROGRESS.load(Ordering::Acquire) {
+                let mut response = req.into_status_response(503)?;
+                response.write_all(b"Service temporarily unavailable - OTA in progress")?;
+                return Ok(());
+            }
+            
             // Get system metrics
             let uptime_seconds = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u64;
             let heap_free = unsafe { esp_idf_sys::esp_get_free_heap_size() };
@@ -392,12 +403,16 @@ impl WebConfigServer {
                     log::info!("OTA Expected SHA256: {}", sha);
                 }
                 
+                // Set OTA in progress flag
+                OTA_IN_PROGRESS.store(true, Ordering::Release);
+                
                 // Perform the OTA update
                 let result = {
                     let mut ota = match ota_mgr.lock() {
                         Ok(mgr) => mgr,
                         Err(e) => {
                             log::error!("Failed to lock OTA manager: {}", e);
+                            OTA_IN_PROGRESS.store(false, Ordering::Release);  // Clear flag on error
                             let mut response = req.into_status_response(503)?;
                             response.write_all(b"Internal server error")?;
                             return Ok::<(), anyhow::Error>(());
@@ -415,7 +430,7 @@ impl WebConfigServer {
                         Err(anyhow::anyhow!("Failed to begin OTA: {:?}", e))
                     } else {
                         // Read and write firmware in chunks
-                        let mut buffer = vec![0u8; 4096];
+                        let mut buffer = [0u8; 4096];  // Stack allocated to reduce heap pressure
                         let mut total_read = 0;
                         let mut write_error = None;
                         
@@ -457,6 +472,9 @@ impl WebConfigServer {
                         }
                     }
                 };
+                
+                // Always clear the OTA flag
+                OTA_IN_PROGRESS.store(false, Ordering::Release);
                 
                 // Handle the result and send response
                 match result {
