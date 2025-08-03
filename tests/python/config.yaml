@@ -1,0 +1,6 @@
+device_ip: 10.27.27.201
+serial_port: null
+test_settings:
+  retries: 3
+  timeout: 30
+  verbose: true

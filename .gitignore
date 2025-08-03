@@ -46,3 +46,46 @@ mcp-monitor/
 prometheus.yml
 grafana.db
 *.log
+
+# Python test artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+pytest-logs/
+test-results/
+tests/python/logs/
+tests/python/.pytest_cache/
+tests/python/__pycache__/
+tests/python/tests/__pycache__/
+tests/python/venv/
+tests/python/.env
+tests/python/*.log
+tests/python/test-*.xml
+tests/python/coverage.xml
+tests/python/.coverage
+
+# Test outputs
+test_output/
+test_artifacts/
+*.test.log
+test-report.html
+test-report.xml
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE test runners
+.vscode/test/
+.idea/testData/
+
+# Performance test results
+perf_results/
+benchmark_results/
