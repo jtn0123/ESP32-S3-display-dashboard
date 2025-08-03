@@ -10,6 +10,16 @@ import select
 from typing import Dict, Any, Optional, Generator
 
 
+def pytest_addoption(parser):
+    """Add custom command line options"""
+    parser.addoption(
+        "--device-ip",
+        action="store",
+        default="10.27.27.201",
+        help="IP address of ESP32 device"
+    )
+
+
 def pytest_configure(config):
     """Configure pytest with custom markers"""
     config.addinivalue_line("markers", "web: Web server tests")
@@ -28,9 +38,18 @@ def config_file():
 
 
 @pytest.fixture(scope="session")
-def device_info(config_file):
-    """Get device information from config or discovery"""
-    # Try to use configured device
+def device_info(request, config_file):
+    """Get device information from command line, config, or discovery"""
+    # First priority: command line argument
+    device_ip = request.config.getoption("--device-ip")
+    if device_ip:
+        return {
+            'ip': device_ip,
+            'hostname': 'esp32.local',
+            'port': 80
+        }
+    
+    # Second priority: config file
     if 'device' in config_file:
         device = config_file['device']
         if 'ip' in device:
@@ -40,7 +59,7 @@ def device_info(config_file):
                 'port': device.get('port', 80)
             }
     
-    # Try to discover device
+    # Third priority: discovery
     device_ip = discover_device()
     if device_ip:
         return {
