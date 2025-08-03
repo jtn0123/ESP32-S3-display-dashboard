@@ -1,0 +1,78 @@
+/* Minimal CSS for streaming response */
+body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #f9fafb;
+    margin: 0;
+    padding: 20px;
+    color: #111827;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+}
+
+.card h2 {
+    margin: 0 0 16px 0;
+    font-size: 1.5rem;
+    color: #111827;
+}
+
+.card-content {
+    color: #6b7280;
+}
+
+.metric {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.metric:last-child {
+    border-bottom: none;
+}
+
+.metric-label {
+    font-weight: 500;
+    color: #111827;
+}
+
+.metric-value {
+    color: #3b82f6;
+    font-family: monospace;
+}
+
+.status-healthy {
+    color: #10b981;
+}
+
+.status-warning {
+    color: #f59e0b;
+}
+
+.status-critical {
+    color: #ef4444;
+}
+
+button {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+button:hover {
+    background: #2563eb;
+}

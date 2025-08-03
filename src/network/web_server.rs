@@ -53,10 +53,18 @@ impl WebConfigServer {
         let server_config = crate::network::http_config::create_http_config();
         let mut server = EspHttpServer::new(&server_config)?;
         
-        let config_clone = config.clone();
+        // Home page with streaming response (prevents memory fragmentation)
+        server.fn_handler("/", esp_idf_svc::http::Method::Get, |req| {
+            // Use streaming handler
+            crate::network::streaming_home::handle_home_streaming(req)
+        })?;
         
-        // Home page with dynamic content
-        server.fn_handler("/", esp_idf_svc::http::Method::Get, move |req| {
+        // Legacy home page handler (removed - was causing memory fragmentation)
+        // The old handler built a 22KB string in memory which fragmented internal DRAM
+        // New streaming handler above prevents this issue
+        
+        /*  Old handler for reference:
+        server.fn_handler("/legacy", esp_idf_svc::http::Method::Get, move |req| {
             // Log memory state before handling request
             crate::memory_diagnostics::log_memory_state("Home page - start");
             
@@ -105,6 +113,7 @@ impl WebConfigServer {
             
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
+        */
 
         // Get current configuration
         let config_clone2 = config.clone();

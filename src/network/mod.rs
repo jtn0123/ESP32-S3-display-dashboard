@@ -12,6 +12,9 @@ pub mod file_manager;
 pub mod compression;
 pub mod binary_protocol;
 pub mod http_config;
+pub mod streaming;
+pub mod streaming_handlers;
+pub mod streaming_home;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;
