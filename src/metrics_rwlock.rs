@@ -215,10 +215,6 @@ impl MetricsStore {
         }
     }
     
-    pub fn update_http_connections(&self, active: u32, total: u64) {
-        self.http_connections_active.store(active, Ordering::Relaxed);
-        self.http_connections_total.store(total as u32, Ordering::Relaxed);
-    }
     
     pub fn update_telnet_connections(&self, active: u32, total: u64) {
         self.telnet_connections_active.store(active, Ordering::Relaxed);

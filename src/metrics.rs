@@ -87,7 +87,6 @@ impl Drop for MetricsGuard {
             self.data.button_events_per_second,
         );
         self.store.update_fps(self.data.fps_actual, self.data.fps_target);
-        self.store.update_http_connections(self.data.http_connections_active, self.data.http_connections_total);
         self.store.update_telnet_connections(self.data.telnet_connections_active, self.data.telnet_connections_total);
         self.store.update_wifi_reconnects(self.data.wifi_disconnects, self.data.wifi_reconnects);
         self.store.update_uptime(self.data.uptime_seconds);
@@ -215,10 +214,6 @@ impl MetricsData {
         self.fps_target = target;
     }
     
-    pub fn update_http_connections(&mut self, active: u32, total: u64) {
-        self.http_connections_active = active;
-        self.http_connections_total = total;
-    }
     
     pub fn update_telnet_connections(&mut self, active: u32, total: u64) {
         self.telnet_connections_active = active;

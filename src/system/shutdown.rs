@@ -1,6 +1,5 @@
 /// Graceful shutdown management for ESP32 services
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::time::Duration;
 use anyhow::Result;
 
 /// Shutdown signal that can be shared across threads
@@ -32,18 +31,6 @@ impl ShutdownSignal {
     /// Mark shutdown as complete
     pub fn mark_complete(&self) {
         self.shutdown_complete.store(true, Ordering::Relaxed);
-    }
-    
-    /// Wait for shutdown to complete
-    pub fn wait_for_completion(&self, timeout: Duration) -> bool {
-        let start = std::time::Instant::now();
-        while !self.shutdown_complete.load(Ordering::Relaxed) {
-            if start.elapsed() > timeout {
-                return false;
-            }
-            esp_idf_hal::delay::FreeRtos::delay_ms(100);
-        }
-        true
     }
 }
 
@@ -104,89 +91,6 @@ pub trait ShutdownHandler: Send {
     
     /// Perform shutdown
     fn shutdown(&mut self) -> Result<()>;
-}
-
-
-/// Telnet server shutdown handler
-pub struct TelnetServerShutdown {
-    shutdown_signal: ShutdownSignal,
-}
-
-impl TelnetServerShutdown {
-    pub fn new(signal: ShutdownSignal) -> Self {
-        Self {
-            shutdown_signal: signal,
-        }
-    }
-}
-
-impl ShutdownHandler for TelnetServerShutdown {
-    fn name(&self) -> &str {
-        "TelnetServer"
-    }
-    
-    fn shutdown(&mut self) -> Result<()> {
-        // Telnet server checks shutdown signal in its loop
-        log::info!("Telnet server signaled to stop");
-        Ok(())
-    }
-}
-
-/// WiFi shutdown handler
-pub struct WiFiShutdown {
-    wifi_handle: Option<Box<esp_idf_svc::wifi::EspWifi<'static>>>,
-}
-
-impl WiFiShutdown {
-    pub fn new(wifi: Box<esp_idf_svc::wifi::EspWifi<'static>>) -> Self {
-        Self {
-            wifi_handle: Some(wifi),
-        }
-    }
-}
-
-impl ShutdownHandler for WiFiShutdown {
-    fn name(&self) -> &str {
-        "WiFi"
-    }
-    
-    fn shutdown(&mut self) -> Result<()> {
-        if let Some(mut wifi) = self.wifi_handle.take() {
-            log::info!("Disconnecting WiFi...");
-            let _ = wifi.disconnect();
-            let _ = wifi.stop();
-            log::info!("WiFi stopped");
-        }
-        Ok(())
-    }
-}
-
-/// Display shutdown handler
-pub struct DisplayShutdown {
-    power_off_on_shutdown: bool,
-}
-
-impl DisplayShutdown {
-    pub fn new(power_off: bool) -> Self {
-        Self {
-            power_off_on_shutdown: power_off,
-        }
-    }
-}
-
-impl ShutdownHandler for DisplayShutdown {
-    fn name(&self) -> &str {
-        "Display"
-    }
-    
-    fn shutdown(&mut self) -> Result<()> {
-        if self.power_off_on_shutdown {
-            log::info!("Powering off display...");
-            // Clear display
-            // Note: Actual display manager would be passed in real implementation
-        }
-        Ok(())
-    }
 }
 
 

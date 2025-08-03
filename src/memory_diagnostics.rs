@@ -49,8 +49,6 @@ pub struct MemoryStats {
     pub internal_free_kb: u32,
     pub internal_largest_kb: u32,
     pub psram_free_kb: u32,
-    pub psram_largest_kb: u32,
-    pub stack_remaining: u32,
 }
 
 impl MemoryStats {
@@ -60,8 +58,6 @@ impl MemoryStats {
                 internal_free_kb: (heap_caps_get_free_size(MALLOC_CAP_INTERNAL as u32) / 1024) as u32,
                 internal_largest_kb: (heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL as u32) / 1024) as u32,
                 psram_free_kb: (heap_caps_get_free_size(MALLOC_CAP_SPIRAM as u32) / 1024) as u32,
-                psram_largest_kb: (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM as u32) / 1024) as u32,
-                stack_remaining: uxTaskGetStackHighWaterMark(std::ptr::null_mut()),
             }
         }
     }
