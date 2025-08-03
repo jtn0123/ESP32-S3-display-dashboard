@@ -60,7 +60,11 @@ impl WebConfigServer {
             };
             
             let json = serde_json::to_string(&status)?;
-            let mut response = req.into_ok_response()?;
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "application/json")]
+            )?;
             response.write_all(json.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;

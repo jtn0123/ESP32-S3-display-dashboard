@@ -56,7 +56,11 @@ pub fn register_file_routes(server: &mut EspHttpServer<'static>) -> Result<()> {
         });
 
         let json = serde_json::to_string(&response)?;
-        let mut http_response = req.into_ok_response()?;
+        let mut http_response = req.into_response(
+            200,
+            Some("OK"),
+            &[("Content-Type", "application/json")]
+        )?;
         http_response.write_all(json.as_bytes())?;
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
@@ -106,7 +110,11 @@ pub fn register_file_routes(server: &mut EspHttpServer<'static>) -> Result<()> {
         });
 
         let json = serde_json::to_string(&response)?;
-        let mut http_response = req.into_ok_response()?;
+        let mut http_response = req.into_response(
+            200,
+            Some("OK"),
+            &[("Content-Type", "application/json")]
+        )?;
         http_response.write_all(json.as_bytes())?;
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
@@ -169,7 +177,11 @@ pub fn register_file_routes(server: &mut EspHttpServer<'static>) -> Result<()> {
         });
 
         let json = serde_json::to_string(&response)?;
-        let mut http_response = req.into_ok_response()?;
+        let mut http_response = req.into_response(
+            200,
+            Some("OK"),
+            &[("Content-Type", "application/json")]
+        )?;
         http_response.write_all(json.as_bytes())?;
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
@@ -225,7 +237,11 @@ pub fn register_file_routes(server: &mut EspHttpServer<'static>) -> Result<()> {
         });
 
         let json = serde_json::to_string(&response)?;
-        let mut http_response = req.into_ok_response()?;
+        let mut http_response = req.into_response(
+            200,
+            Some("OK"),
+            &[("Content-Type", "application/json")]
+        )?;
         http_response.write_all(json.as_bytes())?;
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
@@ -268,7 +284,11 @@ pub fn register_file_routes(server: &mut EspHttpServer<'static>) -> Result<()> {
         });
 
         let json = serde_json::to_string(&response)?;
-        let mut http_response = req.into_ok_response()?;
+        let mut http_response = req.into_response(
+            200,
+            Some("OK"),
+            &[("Content-Type", "application/json")]
+        )?;
         http_response.write_all(json.as_bytes())?;
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;

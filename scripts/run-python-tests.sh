@@ -17,6 +17,8 @@ NC='\033[0m' # No Color
 DEVICE_IP="10.27.27.201"
 VERBOSE=false
 TEST_SUITE="simple"  # simple or full
+SEQUENTIAL=true      # Run tests sequentially by default
+DELAY=3             # Delay between sequential tests
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -28,6 +30,14 @@ while [[ $# -gt 0 ]]; do
             TEST_SUITE="full"
             shift
             ;;
+        --parallel)
+            SEQUENTIAL=false
+            shift
+            ;;
+        --delay)
+            DELAY="$2"
+            shift 2
+            ;;
         --verbose|-v)
             VERBOSE=true
             shift
@@ -38,6 +48,8 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --device-ip IP  Device IP address (default: 10.27.27.201)"
             echo "  --full          Run full test suite (default: simple suite)"
+            echo "  --parallel      Run tests in parallel (default: sequential)"
+            echo "  --delay SECS    Delay between sequential tests (default: 3)"
             echo "  --verbose, -v   Verbose output"
             echo "  --help, -h      Show this help"
             echo ""
@@ -59,6 +71,7 @@ done
 
 echo "Device IP: $DEVICE_IP"
 echo "Test Suite: $TEST_SUITE"
+echo "Mode: $([ "$SEQUENTIAL" = true ] && echo "Sequential (delay: ${DELAY}s)" || echo "Parallel")"
 
 # Function to run command with proper error handling
 run_command() {
@@ -127,17 +140,51 @@ if run_command "curl -s -f -m 5 http://$DEVICE_IP/health" "Device health check";
             ((TESTS_FAILED++))
         fi
     else
-        # Full test suite with all tests
-        PYTEST_ARGS="-v --tb=short --device-ip $DEVICE_IP"
-        if [ "$VERBOSE" = true ]; then
-            PYTEST_ARGS="$PYTEST_ARGS -s"
-        fi
-        
-        # Run pytest with proper arguments
-        if run_command "pytest $PYTEST_ARGS tests/" "Full pytest suite"; then
-            ((TESTS_PASSED++))
+        # Full test suite
+        if [ "$SEQUENTIAL" = true ]; then
+            # Run tests sequentially to prevent device crashes
+            echo -e "\n${YELLOW}Running tests sequentially with ${DELAY}s delay...${NC}"
+            
+            # Get list of all tests
+            TEST_LIST=$(pytest --collect-only -q tests/test_web_comprehensive.py 2>/dev/null | grep "<Function" | sed 's/.*<Function //' | sed 's/>//' | grep -v "test_config_api_properly" | grep -v "test_api_versioning" || true)
+            
+            if [ -z "$TEST_LIST" ]; then
+                echo -e "${RED}No tests found!${NC}"
+                ((TESTS_FAILED++))
+            else
+                # Run each test individually
+                while IFS= read -r test; do
+                    PYTEST_ARGS="-v --tb=short --device-ip $DEVICE_IP tests/test_web_comprehensive.py::TestWebComprehensive::${test}"
+                    if [ "$VERBOSE" = true ]; then
+                        PYTEST_ARGS="$PYTEST_ARGS -s"
+                    fi
+                    
+                    if run_command "pytest $PYTEST_ARGS" "Test: $test"; then
+                        ((TESTS_PASSED++))
+                    else
+                        ((TESTS_FAILED++))
+                    fi
+                    
+                    # Delay between tests
+                    if [ -n "$TEST_LIST" ]; then
+                        echo -e "${YELLOW}Waiting ${DELAY}s...${NC}"
+                        sleep $DELAY
+                    fi
+                done <<< "$TEST_LIST"
+            fi
         else
-            ((TESTS_FAILED++))
+            # Run all tests in parallel (original behavior)
+            PYTEST_ARGS="-v --tb=short --device-ip $DEVICE_IP"
+            if [ "$VERBOSE" = true ]; then
+                PYTEST_ARGS="$PYTEST_ARGS -s"
+            fi
+            
+            # Run pytest with proper arguments
+            if run_command "pytest $PYTEST_ARGS tests/" "Full pytest suite (parallel)"; then
+                ((TESTS_PASSED++))
+            else
+                ((TESTS_FAILED++))
+            fi
         fi
     fi
 else

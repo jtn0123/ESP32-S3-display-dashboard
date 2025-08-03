@@ -14,6 +14,9 @@ pub mod binary_protocol;
 pub mod http_config;
 pub mod streaming_home;
 pub mod streaming_ota;
+pub mod streaming_metrics;
+pub mod streaming_dashboard;
+pub mod rate_limiter;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;

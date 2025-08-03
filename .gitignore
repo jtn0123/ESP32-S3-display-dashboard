@@ -89,3 +89,37 @@ ENV/
 # Performance test results
 perf_results/
 benchmark_results/
+
+# Test JSON data files
+tests/python/*.json
+concurrent_limits.json
+device_health_data.json
+endpoint_memory_impact.json
+memory_leak_analysis.json
+request_rate_limits.json
+stress_test_results.json
+
+# Temporary documentation/debug files
+*_SUMMARY.md
+*_STATUS.md
+*_ANALYSIS.md
+*_RESULTS.md
+*_REPORT.md
+*_DEBUG*.md
+*_TEST*.md
+FREEZE_*.md
+SOCKET_*.md
+TESTING_*.md
+DEPLOYMENT_*.md
+OPTIMIZATION_*.md
+VERIFICATION_*.md
+SESSION_*.md
+STABILITY_*.md
+RECOMMENDATIONS_*.md
+SEQUENTIAL_*.md
+
+# MyPy cache
+.mypy_cache/
+
+# VS Code settings
+.vscode/*.json

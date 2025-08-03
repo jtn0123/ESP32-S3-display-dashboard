@@ -133,7 +133,11 @@ impl WebConfigServer {
             };
             let json = serde_json::to_string(&*config)?;
             
-            let mut response = req.into_ok_response()?;
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "application/json")]
+            )?;
             response.write_all(json.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
@@ -200,7 +204,11 @@ impl WebConfigServer {
             };
             
             let json = serde_json::to_string(&info)?;
-            let mut response = req.into_ok_response()?;
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "application/json")]
+            )?;
             response.write_all(json.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
@@ -242,7 +250,11 @@ impl WebConfigServer {
                 issues
             );
             
-            let mut response = req.into_ok_response()?;
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "application/json")]
+            )?;
             response.write_all(health_json.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
@@ -537,13 +549,14 @@ impl WebConfigServer {
             log::info!("OTA endpoints registered on main web server");
         }
 
-        // Dashboard route
+        // Dashboard route - using streaming to avoid memory exhaustion
         server.fn_handler("/dashboard", esp_idf_svc::http::Method::Get, move |req| {
-            let version = crate::version::DISPLAY_VERSION;
-            let html = include_str!("../templates/dashboard.html")
-                .replace("{{VERSION}}", version);
-            
-            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+            crate::network::streaming_dashboard::handle_dashboard_streaming(req)
+        })?;
+        
+        // Dashboard CSS endpoint (for async loading)
+        server.fn_handler("/dashboard.css", esp_idf_svc::http::Method::Get, move |req| {
+            crate::network::streaming_dashboard::handle_dashboard_css(req)
         })?;
         
         // Sensor graphs route
@@ -713,7 +726,11 @@ impl WebConfigServer {
             };
             
             let json_string = serde_json::to_string(&metrics_json)?;
-            let mut response = req.into_ok_response()?;
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "application/json")]
+            )?;
             response.write_all(json_string.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
