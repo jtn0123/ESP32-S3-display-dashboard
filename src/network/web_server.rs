@@ -57,6 +57,17 @@ impl WebConfigServer {
         
         // Home page with dynamic content
         server.fn_handler("/", esp_idf_svc::http::Method::Get, move |req| {
+            // Log memory state before handling request
+            crate::memory_diagnostics::log_memory_state("Home page - start");
+            
+            // Check if memory is critical
+            if crate::memory_diagnostics::is_memory_critical() {
+                log::error!("Memory critical - refusing request");
+                let mut response = req.into_status_response(503)?;
+                response.write_all(b"Service temporarily unavailable - low memory")?;
+                return Ok(()) as Result<(), Box<dyn std::error::Error>>;
+            }
+            
             // Get system info for template
             let version = crate::version::DISPLAY_VERSION;
             let free_heap = unsafe { esp_idf_sys::esp_get_free_heap_size() };
@@ -68,8 +79,14 @@ impl WebConfigServer {
                 Err(_) => "Not connected".to_string(),
             };
             
+            // Log before template rendering
+            crate::memory_diagnostics::log_memory_state("Home page - before render");
+            
             // Render template with dynamic content
             let html = crate::templates::render_home_page(version, &ssid, free_heap, uptime_ms);
+            
+            // Log after template rendering
+            crate::memory_diagnostics::log_memory_state("Home page - after render");
             
             // TEMPORARY: Disable compression for home page to debug freeze issue
             // The 22KB template may be causing memory issues during compression
@@ -82,6 +99,10 @@ impl WebConfigServer {
                 ]
             )?;
             response.write_all(html.as_bytes())?;
+            
+            // Log memory state after response
+            crate::memory_diagnostics::log_memory_state("Home page - complete");
+            
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
@@ -174,6 +195,9 @@ impl WebConfigServer {
         // Health check endpoint - simple and lightweight
         let metrics_health = metrics.clone();
         server.fn_handler("/health", esp_idf_svc::http::Method::Get, move |req| {
+            // Log memory for debugging
+            crate::memory_diagnostics::log_memory_state("Health check - start");
+            
             let uptime = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u64;
             let heap = unsafe { esp_idf_sys::esp_get_free_heap_size() };
             

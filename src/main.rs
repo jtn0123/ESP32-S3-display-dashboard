@@ -28,6 +28,7 @@ mod network;
 mod ota;
 mod sensors;
 mod system;
+mod memory_diagnostics;
 mod ui;
 mod version;
 mod dual_core;
