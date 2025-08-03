@@ -12,8 +12,6 @@ pub mod file_manager;
 pub mod compression;
 pub mod binary_protocol;
 pub mod http_config;
-pub mod streaming;
-pub mod streaming_handlers;
 pub mod streaming_home;
 pub mod streaming_ota;
 
@@ -145,19 +143,6 @@ impl NetworkManager {
         self.wifi.get_mac()
     }
     
-    /// Increment disconnect counter
-    pub fn increment_disconnect_count(&self) {
-        if let Ok(mut count) = self.disconnect_count.lock() {
-            *count += 1;
-        }
-    }
-    
-    /// Increment reconnect counter
-    pub fn increment_reconnect_count(&self) {
-        if let Ok(mut count) = self.reconnect_count.lock() {
-            *count += 1;
-        }
-    }
     
     /// Get connection stats
     pub fn get_connection_stats(&self) -> (u32, u32) {

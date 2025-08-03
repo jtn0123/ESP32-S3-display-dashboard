@@ -1,5 +1,5 @@
 /// Graceful shutdown management for ESP32 services
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
 use anyhow::Result;
 
@@ -66,10 +66,6 @@ impl ShutdownManager {
         self.signal.clone()
     }
     
-    /// Register a service for shutdown
-    pub fn register_service(&mut self, service: Box<dyn ShutdownHandler>) {
-        self.services.push(service);
-    }
     
     /// Perform graceful shutdown of all services
     pub fn shutdown(&mut self) -> Result<()> {
@@ -193,26 +189,6 @@ impl ShutdownHandler for DisplayShutdown {
     }
 }
 
-/// Helper to handle shutdown signals (Ctrl+C, panic, etc)
-pub fn setup_shutdown_handler(shutdown_manager: Arc<Mutex<ShutdownManager>>) {
-    // Register panic handler
-    let shutdown_mgr = shutdown_manager.clone();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        log::error!("🚨 PANIC: {:?}", panic_info);
-        
-        // Try graceful shutdown
-        if let Ok(mut mgr) = shutdown_mgr.lock() {
-            let _ = mgr.shutdown();
-        }
-        
-        // Force restart after delay
-        esp_idf_hal::delay::FreeRtos::delay_ms(2000);
-        unsafe { esp_idf_sys::esp_restart(); }
-    }));
-    
-    // Note: Signal handling (SIGINT, etc) doesn't apply to embedded systems
-    // but we could add button press handlers here
-}
 
 /// Macro to safely shutdown on error
 #[macro_export]

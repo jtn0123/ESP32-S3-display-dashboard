@@ -57,7 +57,7 @@ use crate::power::{PowerManager, PowerConfig};
 static mut WEB_SERVER_ERROR: Option<String> = None;
 
 // FreeRTOS constant
-const portTICK_PERIOD_MS: u32 = 1;
+const PORT_TICK_PERIOD_MS: u32 = 1;
 
 fn main() -> Result<()> {
     // Initialize ESP-IDF
@@ -98,7 +98,7 @@ fn main() -> Result<()> {
         // Restart after panic
         log::error!("Restarting in 3 seconds...");
         unsafe {
-            esp_idf_sys::vTaskDelay(3000 / portTICK_PERIOD_MS);
+            esp_idf_sys::vTaskDelay(3000 / PORT_TICK_PERIOD_MS);
             esp_idf_sys::esp_restart();
         }
     }));
@@ -899,13 +899,8 @@ fn run_app(
     
     // Initialize power manager with custom config
     let power_config = PowerConfig {
-        dim_timeout: Duration::from_secs(60),      // Dim after 1 minute
-        power_save_timeout: Duration::from_secs(300), // Power save after 5 minutes
-        sleep_timeout: Duration::from_secs(600),   // Sleep after 10 minutes
         active_brightness: 100,
-        dimmed_brightness: 30,
         power_save_brightness: 10,
-        low_battery_threshold: 20,
     };
     let mut power_manager = PowerManager::new(power_config);
     

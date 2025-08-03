@@ -23,10 +23,3 @@ pub fn create_http_config() -> Configuration {
         ..Default::default()
     }
 }
-
-/// Create enhanced HTTP server configuration with larger stack for complex handlers
-pub fn create_enhanced_http_config() -> Configuration {
-    let mut config = create_http_config();
-    config.stack_size = 16384; // Larger stack for enhanced handlers
-    config
-}

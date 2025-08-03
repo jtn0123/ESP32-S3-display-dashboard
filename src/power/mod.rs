@@ -2,37 +2,25 @@
 
 use std::time::{Duration, Instant};
 use esp_idf_hal::gpio::{AnyIOPin, Output, PinDriver};
-use crate::sensors::SensorData;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PowerMode {
     Active,      // Full brightness, all features enabled
-    Dimmed,      // Reduced brightness, all features enabled
     PowerSave,   // Minimal brightness, reduced update rate
     Sleep,       // Display off, wake on button press
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PowerConfig {
-    pub dim_timeout: Duration,         // Time before dimming
-    pub power_save_timeout: Duration,  // Time before power save mode
-    pub sleep_timeout: Duration,       // Time before sleep
     pub active_brightness: u8,         // 0-100
-    pub dimmed_brightness: u8,         // 0-100
     pub power_save_brightness: u8,     // 0-100
-    pub low_battery_threshold: u8,    // Battery % to enable power save
 }
 
 impl Default for PowerConfig {
     fn default() -> Self {
         Self {
-            dim_timeout: Duration::from_secs(30),
-            power_save_timeout: Duration::from_secs(120),
-            sleep_timeout: Duration::from_secs(300),
             active_brightness: 100,
-            dimmed_brightness: 50,
             power_save_brightness: 20,
-            low_battery_threshold: 20,
         }
     }
 }
@@ -75,42 +63,6 @@ impl PowerManager {
         }
     }
     
-    pub fn update(&mut self, sensor_data: &SensorData) {
-        let idle_duration = self.last_activity.elapsed();
-        log::info!("PowerManager update: idle_duration = {:?}, battery = {}%", 
-                  idle_duration, sensor_data._battery_percentage);
-        
-        // Check for low battery condition
-        if sensor_data._battery_percentage < self.config.low_battery_threshold {
-            self.force_power_save = true;
-        } else if sensor_data._battery_percentage > self.config.low_battery_threshold + 10 {
-            // Hysteresis to prevent oscillation
-            self.force_power_save = false;
-        }
-        
-        // Determine target mode based on idle time and battery
-        let target_mode = if self.force_power_save {
-            log::info!("PowerManager: force_power_save is true, target = PowerSave");
-            PowerMode::PowerSave
-        } else if idle_duration >= self.config.sleep_timeout {
-            log::info!("PowerManager: idle >= sleep_timeout ({:?}), target = Sleep", self.config.sleep_timeout);
-            PowerMode::Sleep
-        } else if idle_duration >= self.config.power_save_timeout {
-            log::info!("PowerManager: idle >= power_save_timeout ({:?}), target = PowerSave", self.config.power_save_timeout);
-            PowerMode::PowerSave
-        } else if idle_duration >= self.config.dim_timeout {
-            log::info!("PowerManager: idle >= dim_timeout ({:?}), target = Dimmed", self.config.dim_timeout);
-            PowerMode::Dimmed
-        } else {
-            log::info!("PowerManager: idle < all timeouts, target = Active");
-            PowerMode::Active
-        };
-        
-        if target_mode != self.current_mode {
-            log::info!("PowerManager: changing mode from {:?} to {:?}", self.current_mode, target_mode);
-            self.set_mode(target_mode);
-        }
-    }
     
     fn set_mode(&mut self, mode: PowerMode) {
         self.current_mode = mode;
@@ -118,7 +70,6 @@ impl PowerManager {
         // Update brightness based on mode
         self.brightness_level = match mode {
             PowerMode::Active => self.config.active_brightness,
-            PowerMode::Dimmed => self.config.dimmed_brightness,
             PowerMode::PowerSave => self.config.power_save_brightness,
             PowerMode::Sleep => 0,
         };
@@ -153,17 +104,11 @@ impl PowerManager {
     pub fn get_update_rate(&self) -> Duration {
         match self.current_mode {
             PowerMode::Active => Duration::from_millis(33),      // 30 FPS
-            PowerMode::Dimmed => Duration::from_millis(50),      // 20 FPS
             PowerMode::PowerSave => Duration::from_millis(100),  // 10 FPS
             PowerMode::Sleep => Duration::from_secs(1),          // 1 FPS (minimal)
         }
     }
     
-    pub fn should_update_display(&self) -> bool {
-        let result = self.current_mode != PowerMode::Sleep;
-        log::info!("PowerManager: current_mode = {:?}, should_update_display = {}", self.current_mode, result);
-        result
-    }
     
     #[allow(dead_code)] // Will be used for manual brightness control
     pub fn set_brightness(&mut self, brightness: u8) {
@@ -221,11 +166,6 @@ impl TaskPowerManager {
                 self.wifi_enabled = true;
                 self.sensor_polling_rate = Duration::from_secs(5);
                 self.display_refresh_rate = Duration::from_millis(33);
-            }
-            PowerMode::Dimmed => {
-                self.wifi_enabled = true;
-                self.sensor_polling_rate = Duration::from_secs(10);
-                self.display_refresh_rate = Duration::from_millis(50);
             }
             PowerMode::PowerSave => {
                 self.wifi_enabled = false;

@@ -8,4 +8,4 @@ pub use button::{ButtonManager, ButtonEvent};
 pub use info::SystemInfo;
 // pub use reset::perform_deep_reset; // Unused - kept for future use
 pub use uptime_tracker::UptimeTracker;
-pub use shutdown::{ShutdownManager, ShutdownSignal, ShutdownHandler};
+pub use shutdown::{ShutdownManager, ShutdownSignal};
