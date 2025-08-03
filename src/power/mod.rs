@@ -289,8 +289,8 @@ mod tests {
         assert_eq!(pm.get_mode(), PowerMode::Active);
         
         // Simulate low battery
-        let mut sensor_data = SensorData::new();
-        sensor_data.battery_percentage = 15;
+        let mut sensor_data = SensorData::default();
+        sensor_data._battery_percentage = 15;
         pm.update(&sensor_data);
         
         // Should be in power save due to low battery

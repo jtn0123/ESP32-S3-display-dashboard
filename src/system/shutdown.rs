@@ -110,33 +110,6 @@ pub trait ShutdownHandler: Send {
     fn shutdown(&mut self) -> Result<()>;
 }
 
-/// Web server shutdown handler
-pub struct WebServerShutdown {
-    server_handle: Option<esp_idf_svc::http::server::EspHttpServer>,
-}
-
-impl WebServerShutdown {
-    pub fn new(server: esp_idf_svc::http::server::EspHttpServer) -> Self {
-        Self {
-            server_handle: Some(server),
-        }
-    }
-}
-
-impl ShutdownHandler for WebServerShutdown {
-    fn name(&self) -> &str {
-        "WebServer"
-    }
-    
-    fn shutdown(&mut self) -> Result<()> {
-        if let Some(server) = self.server_handle.take() {
-            // Server drops automatically when out of scope
-            drop(server);
-            log::info!("Web server stopped");
-        }
-        Ok(())
-    }
-}
 
 /// Telnet server shutdown handler
 pub struct TelnetServerShutdown {

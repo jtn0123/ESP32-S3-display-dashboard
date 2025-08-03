@@ -135,6 +135,10 @@ impl UiManager {
             ButtonEvent::Button2Press | ButtonEvent::Button2Release => {
                 // Ignore press/release events, only handle clicks
             }
+            ButtonEvent::BothButtonsLongPress => {
+                // Shutdown is handled in main loop, ignore here
+                log::info!("UI: Shutdown button combination detected");
+            }
         }
         Ok(())
     }

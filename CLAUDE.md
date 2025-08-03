@@ -226,3 +226,52 @@ For enhanced debugging and monitoring, these MCP servers can be integrated:
 - **Usage**: Monitor ESP32 alongside development machine
 
 See `MCP_INTEGRATION_GUIDE.md` for detailed setup instructions.
+
+## Testing Infrastructure
+
+The project has comprehensive testing infrastructure with clear separation between Rust unit tests and Python integration tests.
+
+### Test Scripts
+
+1. **`scripts/run-rust-tests.sh`** - Host-based Rust unit tests
+   - Runs in `host-tests/` directory with standard toolchain
+   - No ESP32 hardware required
+   - Fast execution for development iteration
+
+2. **`scripts/run-python-tests.sh`** - Python integration tests
+   - Tests against live ESP32 device over network
+   - Validates web server, OTA updates, telnet, etc.
+   - Default device IP: 10.27.27.201
+
+3. **`scripts/run-tests.sh`** - Unified test runner
+   - Can run Rust tests, Python tests, or both
+   - Use `--all` to run complete test suite
+
+### Running Tests
+
+```bash
+# Quick Rust unit tests (no device needed)
+./scripts/run-rust-tests.sh
+
+# Python tests against device
+./scripts/run-python-tests.sh --device-ip 192.168.1.100
+
+# Run everything
+./scripts/run-tests.sh --all --verbose
+```
+
+### Test Locations
+
+- **Rust unit tests**: In source files with `#[cfg(test)]` modules (11 files)
+- **Host tests**: `host-tests/` directory for platform-independent testing
+- **Python tests**: `tests/python/` with multiple test suites
+  - `run_tests_simple.py` - Basic smoke tests
+  - `run_all_tests.py` - Comprehensive test suite
+  - Individual test files for specific features
+
+### Current Test Status
+
+✅ **Rust Tests**: All passing (1 host test + 11 source files with tests)
+✅ **Python Tests**: Device connectivity confirmed, integration tests available
+
+When making changes, always run relevant tests before committing. The CI/CD pipeline will also run these tests automatically.

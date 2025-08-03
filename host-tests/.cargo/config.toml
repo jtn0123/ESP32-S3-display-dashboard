@@ -1,0 +1,3 @@
+# Override parent config for host tests
+[build]
+# Use default host target instead of ESP32

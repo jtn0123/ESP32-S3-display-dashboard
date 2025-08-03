@@ -399,12 +399,43 @@ If the bootloader reports 4MB instead of 16MB:
 - **[WIFI_SETUP.md](WIFI_SETUP.md)** - WiFi configuration instructions
 - **[FLASHING_GUIDE.md](FLASHING_GUIDE.md)** - Detailed flashing procedures
 
+## 🧪 Testing
+
+The project includes comprehensive testing infrastructure:
+
+### Test Runners
+- **`./scripts/run-rust-tests.sh`** - Run host-based Rust unit tests
+- **`./scripts/run-python-tests.sh`** - Run Python integration tests against device
+- **`./scripts/run-tests.sh`** - Run all tests (Rust + Python)
+
+### Running Tests
+
+```bash
+# Run only Rust unit tests (fast, no device needed)
+./scripts/run-rust-tests.sh
+
+# Run Python integration tests (requires device)
+./scripts/run-python-tests.sh --device-ip 192.168.1.100
+
+# Run all tests
+./scripts/run-tests.sh --all
+
+# Run with verbose output
+./scripts/run-rust-tests.sh --verbose
+```
+
+### Test Structure
+- **Rust Unit Tests**: Located in `src/` files with `#[cfg(test)]` modules
+- **Host Tests**: Platform-independent tests in `host-tests/` directory  
+- **Python Integration Tests**: End-to-end tests in `tests/python/`
+
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create your feature branch
-3. Test thoroughly on hardware
-4. Submit pull request
+3. Run tests: `./scripts/run-tests.sh --all`
+4. Test thoroughly on hardware
+5. Submit pull request
 
 ## 🔄 CI/CD
 

@@ -1409,7 +1409,7 @@ fn run_app(
                 // Uptime tracking
                 if let Some(ref tracker) = uptime_tracker {
                     if let Ok(t) = tracker.lock() {
-                        let uptime_secs = t.get_current_session_uptime().as_secs();
+                        let uptime_secs = t.get_session_uptime().as_secs();
                         metrics.update_uptime(uptime_secs);
                     }
                 }
