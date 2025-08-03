@@ -355,17 +355,17 @@ impl WebConfigServer {
             log::info!("Adding OTA endpoints to web server...");
             let ota_mgr_clone = ota_manager.clone();
             
-            // OTA web interface
+            // OTA web interface with streaming
             server.fn_handler("/ota", esp_idf_svc::http::Method::Get, move |req| {
-                let html = if ota_mgr_clone.is_some() {
-                    crate::templates::OTA_PAGE
-                } else {
-                    // Show message that OTA will be available after first USB update
-                    crate::templates::OTA_UNAVAILABLE_PAGE
-                };
+                log::info!("OTA page requested");
                 
-                write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
-                    .map_err(|e| anyhow::anyhow!("Response error: {}", e))
+                // Use streaming handler to avoid large allocations
+                let has_manager = ota_mgr_clone.is_some();
+                crate::network::streaming_ota::handle_ota_streaming(req, has_manager)
+                    .map_err(|e| {
+                        log::error!("OTA page error: {}", e);
+                        anyhow::anyhow!("Failed to serve OTA page: {}", e)
+                    })
             })?;
             
             // OTA update endpoint

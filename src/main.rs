@@ -55,9 +55,52 @@ use crate::power::{PowerManager, PowerConfig};
 // Global error storage for web server initialization
 static mut WEB_SERVER_ERROR: Option<String> = None;
 
+// FreeRTOS constant
+const portTICK_PERIOD_MS: u32 = 1;
+
 fn main() -> Result<()> {
     // Initialize ESP-IDF
     esp_idf_svc::sys::link_patches();
+    
+    // Setup enhanced panic handler
+    std::panic::set_hook(Box::new(|panic_info| {
+        // Get panic location
+        let location = if let Some(location) = panic_info.location() {
+            format!("{}:{}:{}", location.file(), location.line(), location.column())
+        } else {
+            "unknown location".to_string()
+        };
+        
+        // Get panic message
+        let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic".to_string()
+        };
+        
+        // Log to serial
+        log::error!("🚨 PANIC at {}: {}", location, message);
+        
+        // Try to log memory state
+        crate::memory_diagnostics::log_memory_state("PANIC");
+        
+        // Log backtrace if available
+        // Note: Backtrace not available in no_std environment
+        
+        // Give time for logs to flush
+        unsafe {
+            esp_idf_sys::vTaskDelay(100);
+        }
+        
+        // Restart after panic
+        log::error!("Restarting in 3 seconds...");
+        unsafe {
+            esp_idf_sys::vTaskDelay(3000 / portTICK_PERIOD_MS);
+            esp_idf_sys::esp_restart();
+        }
+    }));
     
     // Initialize our logger with colors and timestamps
     logging::init_logger().expect("Failed to initialize logger");

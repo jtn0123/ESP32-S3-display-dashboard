@@ -15,6 +15,7 @@ pub mod http_config;
 pub mod streaming;
 pub mod streaming_handlers;
 pub mod streaming_home;
+pub mod streaming_ota;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;
