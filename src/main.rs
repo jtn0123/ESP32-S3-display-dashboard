@@ -29,6 +29,8 @@ mod ota;
 mod sensors;
 mod system;
 mod memory_diagnostics;
+mod diagnostics;
+mod crash_diagnostics;
 mod ui;
 mod version;
 mod dual_core;

@@ -78,7 +78,7 @@ impl RequestTracker {
         
         if DIAGNOSTIC_MODE.load(Ordering::Relaxed) {
             info!("REQ[{}] START: {} (heap={}, stack={})", 
-                id, path, memory_before, stack_before);
+                id, path, memory_before, _stack_before);
         }
         
         // Store in history

@@ -182,7 +182,7 @@ pub fn log_watchdog_feed(_task: &str) {
 }
 
 /// Power supply diagnostics
-pub fn log_power_issue(context: &str, report: &crate::power::VoltageReport) {
+pub fn log_power_issue(context: &str, report: &crate::power::voltage_monitor::VoltageReport) {
     POWER_ISSUES.fetch_add(1, Ordering::Relaxed);
     
     error!("POWER ISSUE DETECTED: {}", context);

@@ -1,5 +1,7 @@
 // Power management system for ESP32-S3 dashboard
 
+pub mod voltage_monitor;
+
 use std::time::{Duration, Instant};
 use esp_idf_hal::gpio::{AnyIOPin, Output, PinDriver};
 
