@@ -97,27 +97,23 @@ impl SseManager {
         
         server.fn_handler("/sse/logs", Method::Get, move |req| {
             handle_sse_connection(req, &manager, "logs", |response, _heartbeat_count| {
-                // Get recent log entries from telnet server
-                if let Some(telnet_server) = crate::logging::get_telnet_server() {
-                    let logs = telnet_server.get_recent_logs(5);
-                    for entry in logs {
-                            let event = format!(
-                                "event: log\ndata: {}\n\n",
-                                serde_json::json!({
-                                    "level": "INFO",
-                                    "msg": entry,
-                                    "timestamp": std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_secs()
-                                })
-                            );
-                            
-                            if response.write_all(event.as_bytes()).is_err() {
-                                return Err(anyhow::anyhow!("Failed to write log event"));
-                            }
-                        }
+                // Get recent log entries from the in-memory log streamer
+                let streamer = crate::network::log_streamer::init(None);
+                let logs = streamer.get_recent_logs(50);
+                for entry in logs {
+                    let event = format!(
+                        "event: log\ndata: {}\n\n",
+                        serde_json::json!({
+                            "level": entry.level,
+                            "module": entry.module.unwrap_or_else(|| "unknown".to_string()),
+                            "msg": entry.message,
+                            "timestamp_ms": entry.timestamp
+                        })
+                    );
+                    if response.write_all(event.as_bytes()).is_err() {
+                        return Err(anyhow::anyhow!("Failed to write log event"));
                     }
+                }
                 Ok(())
             })
         })?;

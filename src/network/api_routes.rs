@@ -23,7 +23,14 @@ pub fn register_api_v1_routes(
             .and_then(|h| h.parse::<u32>().ok())
             .unwrap_or(24);
 
-        let history = history_clone.lock().unwrap();
+        let history = match history_clone.lock() {
+            Ok(h) => h,
+            Err(e) => {
+                let mut response = req.into_status_response(500)?;
+                response.write_all(format!("{{\"error\":\"history lock failed: {}\"}}", e).as_bytes())?;
+                return Ok(());
+            }
+        };
         let data = history.get_temperature_history(hours);
         
         let response = serde_json::json!({
@@ -53,7 +60,14 @@ pub fn register_api_v1_routes(
             .and_then(|h| h.parse::<u32>().ok())
             .unwrap_or(24);
 
-        let history = history_clone2.lock().unwrap();
+        let history = match history_clone2.lock() {
+            Ok(h) => h,
+            Err(e) => {
+                let mut response = req.into_status_response(500)?;
+                response.write_all(format!("{{\"error\":\"history lock failed: {}\"}}", e).as_bytes())?;
+                return Ok(());
+            }
+        };
         let data = history.get_battery_history(hours);
         
         let response = serde_json::json!({
@@ -162,7 +176,14 @@ pub fn register_api_v1_routes(
         let value: serde_json::Value = serde_json::from_str(json_str)?;
 
         // Apply patch based on field
-        let mut cfg = config_clone.lock().unwrap();
+        let mut cfg = match config_clone.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                let mut response = req.into_status_response(500)?;
+                response.write_all(format!("{{\"error\":\"config lock failed: {}\"}}", e).as_bytes())?;
+                return Ok(());
+            }
+        };
         match field.as_str() {
             "wifi_ssid" => {
                 if let Some(ssid) = value.as_str() {

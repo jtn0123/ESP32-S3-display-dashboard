@@ -35,19 +35,31 @@ impl WebSocketServer {
         // WebSocket endpoint
         server.ws_handler("/ws", move |ws| {
             // Get next connection ID
-            let conn_id = {
-                let mut id = next_id.lock().unwrap();
-                let current = *id;
-                *id += 1;
-                current
+            let conn_id = match next_id.lock() {
+                Ok(mut id) => {
+                    let current = *id;
+                    *id += 1;
+                    current
+                }
+                Err(e) => {
+                    log::error!("WebSocket: next_id lock poisoned: {}", e);
+                    return Err(AcceptorError::Other);
+                }
             };
 
             // Check connection limit
             {
-                let conns = connections.lock().unwrap();
-                if conns.len() >= MAX_CONNECTIONS {
-                    log::warn!("WebSocket connection limit reached");
-                    return Err(AcceptorError::OutOfMemory);
+                match connections.lock() {
+                    Ok(conns) => {
+                        if conns.len() >= MAX_CONNECTIONS {
+                            log::warn!("WebSocket connection limit reached");
+                            return Err(AcceptorError::OutOfMemory);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("WebSocket: connections lock poisoned: {}", e);
+                        return Err(AcceptorError::Other);
+                    }
                 }
             }
 
@@ -59,18 +71,24 @@ impl WebSocketServer {
 
             // Store connection
             {
-                let mut conns = connections.lock().unwrap();
-                conns.insert(conn_id, WsConnection {
-                    id: conn_id,
-                    last_ping: Instant::now(),
-                    sender: sender.clone(),
-                });
+                if let Ok(mut conns) = connections.lock() {
+                    conns.insert(conn_id, WsConnection {
+                        id: conn_id,
+                        last_ping: Instant::now(),
+                        sender: sender.clone(),
+                    });
+                } else {
+                    log::error!("WebSocket: failed to lock connections for insert");
+                }
             }
 
             // Send initial data
             if let Ok(metrics) = crate::metrics::get_current_metrics() {
-                let json = serde_json::to_string(&metrics).unwrap_or_default();
-                let _ = sender.lock().unwrap().send(FrameType::Text(false), json.as_bytes());
+                if let Ok(json) = serde_json::to_string(&metrics) {
+                    if let Ok(sender_guard) = sender.lock() {
+                        let _ = sender_guard.send(FrameType::Text(false), json.as_bytes());
+                    }
+                }
             }
 
             // Handle incoming messages
@@ -106,7 +124,9 @@ impl WebSocketServer {
                 }
 
                 // Remove connection
-                connections_clone.lock().unwrap().remove(&conn_id);
+                if let Ok(mut conns) = connections_clone.lock() {
+                    conns.remove(&conn_id);
+                }
             });
 
             Ok(())
@@ -127,7 +147,13 @@ impl WebSocketServer {
         let mut dead_connections = Vec::new();
 
         {
-            let connections = self.connections.lock().unwrap();
+            let connections = match self.connections.lock() {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("WebSocket: connections lock poisoned during broadcast: {}", e);
+                    return Ok(());
+                }
+            };
             for (id, conn) in connections.iter() {
                 if let Ok(mut sender) = conn.sender.try_lock() {
                     if let Err(e) = sender.send(frame_type, data) {
@@ -140,10 +166,11 @@ impl WebSocketServer {
 
         // Remove dead connections
         if !dead_connections.is_empty() {
-            let mut connections = self.connections.lock().unwrap();
-            for id in dead_connections {
-                connections.remove(&id);
-                log::info!("Removed dead WebSocket connection {}", id);
+            if let Ok(mut connections) = self.connections.lock() {
+                for id in dead_connections {
+                    connections.remove(&id);
+                    log::info!("Removed dead WebSocket connection {}", id);
+                }
             }
         }
 
@@ -160,7 +187,13 @@ impl WebSocketServer {
                 let mut dead_connections = Vec::new();
 
                 {
-                    let conns = connections.lock().unwrap();
+                    let conns = match connections.lock() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("WebSocket: connections lock poisoned during ping: {}", e);
+                            continue;
+                        }
+                    };
                     for (id, conn) in conns.iter() {
                         if conn.last_ping.elapsed() > PING_INTERVAL * 2 {
                             dead_connections.push(*id);
@@ -174,10 +207,11 @@ impl WebSocketServer {
 
                 // Remove dead connections
                 if !dead_connections.is_empty() {
-                    let mut conns = connections.lock().unwrap();
-                    for id in dead_connections {
-                        conns.remove(&id);
-                        log::info!("Removed inactive WebSocket connection {}", id);
+                    if let Ok(mut conns) = connections.lock() {
+                        for id in dead_connections {
+                            conns.remove(&id);
+                            log::info!("Removed inactive WebSocket connection {}", id);
+                        }
                     }
                 }
             }
@@ -185,7 +219,7 @@ impl WebSocketServer {
     }
 
     pub fn connection_count(&self) -> usize {
-        self.connections.lock().unwrap().len()
+        self.connections.lock().map(|c| c.len()).unwrap_or(0)
     }
 }
 

@@ -1,7 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::collections::VecDeque;
 
-const MAX_LOG_LINES: usize = 10000;
+// Keep memory use bounded. Target ~2K entries by default; adjust if PSRAM abundant.
+const MAX_LOG_LINES: usize = 2000;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LogEntry {
@@ -23,6 +24,17 @@ impl LogStreamer {
         }
     }
 
+    /// Non-blocking append; if the mutex is contended, drop the entry.
+    pub fn try_append(&self, entry: LogEntry) {
+        // Avoid blocking logging path; if we cannot get the lock immediately, drop.
+        if let Ok(mut guard) = self.buffer.try_lock() {
+            if guard.len() >= MAX_LOG_LINES {
+                guard.pop_front();
+            }
+            guard.push_back(entry);
+        }
+    }
+
     pub fn get_recent_logs(&self, count: usize) -> Vec<LogEntry> {
         let buffer = self.buffer.lock().unwrap();
         buffer.iter()
@@ -34,10 +46,21 @@ impl LogStreamer {
     }
 }
 
-// Global log streamer instance using OnceLock for safety
-use std::sync::OnceLock;
 static LOG_STREAMER: OnceLock<Arc<LogStreamer>> = OnceLock::new();
 
 pub fn init(telnet_buffer: Option<Arc<Mutex<VecDeque<String>>>>) -> Arc<LogStreamer> {
     LOG_STREAMER.get_or_init(|| Arc::new(LogStreamer::new(telnet_buffer))).clone()
+}
+
+/// Append a log entry to the global buffer (non-blocking). Safe to call from logger.
+pub fn append(level: &str, module: Option<&str>, message: &str, timestamp_ms: u64) {
+    if let Some(streamer) = LOG_STREAMER.get() {
+        let entry = LogEntry {
+            timestamp: timestamp_ms,
+            level: level.to_string(),
+            message: message.to_string(),
+            module: module.map(|m| m.to_string()),
+        };
+        streamer.try_append(entry);
+    }
 }

@@ -55,8 +55,12 @@ use crate::dual_core::{DualCoreProcessor, CpuMonitor};
 use crate::performance::PerformanceMetrics;
 use crate::power::{PowerManager, PowerConfig};
 
-// Global error storage for web server initialization
-static mut WEB_SERVER_ERROR: Option<String> = None;
+// Global error storage for web server initialization (safe)
+use std::sync::OnceLock;
+static WEB_SERVER_ERROR: OnceLock<std::sync::Mutex<Option<String>>> = OnceLock::new();
+fn web_server_error() -> &'static std::sync::Mutex<Option<String>> {
+    WEB_SERVER_ERROR.get_or_init(|| std::sync::Mutex::new(None))
+}
 
 // FreeRTOS constant
 const PORT_TICK_PERIOD_MS: u32 = 1;
@@ -86,8 +90,9 @@ fn main() -> Result<()> {
         // Log to serial
         log::error!("🚨 PANIC at {}: {}", location, message);
         
-        // Try to log memory state
+        // Try to log memory state and crash diagnostics
         crate::memory_diagnostics::log_memory_state("PANIC");
+        crate::crash_diagnostics::dump_diagnostics();
         
         // Log backtrace if available
         // Note: Backtrace not available in no_std environment
@@ -398,8 +403,8 @@ fn main() -> Result<()> {
                     log::info!("Web interface available at http://{}/", network_manager.get_ip().unwrap_or_default());
                     
                     // Check for stored web server error
-                    unsafe {
-                        if let Some(ref error) = WEB_SERVER_ERROR {
+                    if let Ok(slot) = web_server_error().lock() {
+                        if let Some(ref error) = *slot {
                             log::error!("STORED WEB SERVER ERROR: {}", error);
                             log::error!("The web server failed to start earlier!");
                             log::error!("This prevents OTA updates from working!");
@@ -729,8 +734,8 @@ fn main() -> Result<()> {
                 log::error!("This error prevents OTA updates from working");
                 
                 // Store error globally
-                unsafe {
-                    WEB_SERVER_ERROR = Some(error_msg.clone());
+                if let Ok(mut slot) = web_server_error().lock() {
+                    *slot = Some(error_msg.clone());
                 }
                 
                 // Log multiple times to ensure it's captured
@@ -766,8 +771,8 @@ fn main() -> Result<()> {
                 log::info!("Logs can be viewed at http://{}/logs", network_manager.get_ip().unwrap_or_default());
                 
                 // Check for stored web server error
-                unsafe {
-                    if let Some(ref error) = WEB_SERVER_ERROR {
+                if let Ok(slot) = web_server_error().lock() {
+                    if let Some(ref error) = *slot {
                         log::error!("STORED WEB SERVER ERROR: {}", error);
                         log::error!("The web server failed to start earlier!");
                         log::error!("This prevents OTA updates from working!");

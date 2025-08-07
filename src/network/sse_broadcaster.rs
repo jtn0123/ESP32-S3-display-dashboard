@@ -27,15 +27,24 @@ impl SseBroadcaster {
             // Check connection limit
             const MAX_SSE_CONNECTIONS: u32 = 5;
             {
-                let mut count = connections.lock().unwrap();
-                if *count >= MAX_SSE_CONNECTIONS {
-                    log::warn!("SSE connection limit reached ({} connections)", *count);
-                    let mut response = req.into_status_response(503)?;
-                    response.write_all(b"Too many connections")?;
-                    return Ok(());
+                match connections.lock() {
+                    Ok(mut count) => {
+                        if *count >= MAX_SSE_CONNECTIONS {
+                            log::warn!("SSE connection limit reached ({} connections)", *count);
+                            let mut response = req.into_status_response(503)?;
+                            response.write_all(b"Too many connections")?;
+                            return Ok(());
+                        }
+                        *count += 1;
+                        log::info!("SSE client connected, total: {}", *count);
+                    }
+                    Err(e) => {
+                        log::error!("SSE: connections lock poisoned: {}", e);
+                        let mut response = req.into_status_response(500)?;
+                        response.write_all(b"Internal server error")?;
+                        return Ok(());
+                    }
                 }
-                *count += 1;
-                log::info!("SSE client connected, total: {}", *count);
             }
 
             // Set SSE headers
@@ -102,9 +111,12 @@ impl SseBroadcaster {
             }
 
             // Decrement connection count on disconnect
-            let mut count = connections.lock().unwrap();
-            *count = count.saturating_sub(1);
-            log::info!("SSE client disconnected, remaining: {}", *count);
+            if let Ok(mut count) = connections.lock() {
+                *count = count.saturating_sub(1);
+                log::info!("SSE client disconnected, remaining: {}", *count);
+            } else {
+                log::warn!("SSE: failed to lock connections for decrement on disconnect");
+            }
 
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
