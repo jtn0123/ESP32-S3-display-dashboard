@@ -119,17 +119,32 @@ pub fn handle_dashboard_streaming(req: Request<&mut EspHttpConnection>) -> Resul
     <script>
     // Minimal dashboard functionality
     let updateInterval;
+    let errorCount = 0;
     
     async function updateDashboard() {
         try {
             const [systemRes, metricsRes] = await Promise.all([
-                fetch('/api/system'),
-                fetch('/api/metrics')
+                fetch('/api/system', { timeout: 5000 }),
+                fetch('/api/metrics', { timeout: 5000 })
             ]);
             
             if (!systemRes.ok || !metricsRes.ok) {
                 document.getElementById('status').textContent = 'Error';
+                errorCount++;
+                if (errorCount > 3) {
+                    // Slow down updates if errors persist
+                    clearInterval(updateInterval);
+                    updateInterval = setInterval(updateDashboard, 5000);
+                }
                 return;
+            }
+            
+            // Reset error count on success
+            if (errorCount > 0) {
+                errorCount = 0;
+                // Resume normal update speed after recovery
+                clearInterval(updateInterval);
+                updateInterval = setInterval(updateDashboard, 2000);
             }
             
             const system = await systemRes.json();
@@ -139,6 +154,9 @@ pub fn handle_dashboard_streaming(req: Request<&mut EspHttpConnection>) -> Resul
             document.getElementById('uptime').textContent = formatUptime(system.uptime_ms);
             document.getElementById('heap').textContent = Math.round(system.free_heap / 1024) + ' KB';
             document.getElementById('ssid').textContent = system.ssid;
+            if (system.ip) {
+                document.getElementById('ip').textContent = system.ip;
+            }
             
             // Update metrics
             document.getElementById('cpu').textContent = metrics.cpu_usage.toFixed(1) + '%';
