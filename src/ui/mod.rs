@@ -67,6 +67,8 @@ pub struct UiManager {
     temperature_alert: bool,
     wifi_signal_alert: bool,
     battery_alert: bool,
+    // Request a full re-render when dynamic state changes
+    render_dirty: bool,
 }
 
 impl UiManager {
@@ -112,6 +114,7 @@ impl UiManager {
             temperature_alert: false,
             wifi_signal_alert: false,
             battery_alert: false,
+            render_dirty: true,
         })
     }
 
@@ -154,6 +157,7 @@ impl UiManager {
         
         // Force render when sensor data updates
         self.force_next_render();
+        self.render_dirty = true;
     }
     
     pub fn update_network_status(&mut self, connected: bool, ip: Option<String>, ssid: String, signal: i8, gateway: Option<String>, mac: String) {
@@ -166,6 +170,8 @@ impl UiManager {
         
         // Check for WiFi signal alert (<-80 dBm is poor signal)
         self.wifi_signal_alert = connected && signal < -80;
+        // Mark UI dirty so the Network screen re-renders immediately
+        self.render_dirty = true;
     }
     
     pub fn update_ota_status(&mut self, status: OtaStatus) {
@@ -215,6 +221,12 @@ impl UiManager {
         static mut RENDER_NEEDED: bool = true;
         
         self.total_renders += 1;
+        // If state changed, request a render
+        unsafe {
+            if self.render_dirty {
+                RENDER_NEEDED = true;
+            }
+        }
         
         // Check if screen changed
         let screen_changed = self.last_rendered_screen != Some(self.current_screen);
@@ -274,6 +286,8 @@ impl UiManager {
         // Render alerts if any are active
         self.render_alerts(display)?;
         
+        // Frame was rendered; clear dirty flag
+        self.render_dirty = false;
         Ok(true) // Frame was rendered
     }
 

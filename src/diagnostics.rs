@@ -167,7 +167,7 @@ pub fn log_panic_info(panic_msg: &str) {
 }
 
 /// Watchdog timer diagnostics
-pub fn log_watchdog_feed(_task_name: &str) {
+pub fn log_watchdog_feed(task_name: &str) {
     #[cfg(debug_assertions)]
     {
         static mut LAST_FEED: i64 = 0;

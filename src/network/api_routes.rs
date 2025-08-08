@@ -301,6 +301,7 @@ pub fn register_api_v1_routes(
         let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         let heap_free = unsafe { esp_idf_sys::esp_get_free_heap_size() };
         let heap_min = unsafe { esp_idf_sys::esp_get_minimum_free_heap_size() };
+        let pressure = 0u8; // monitor disabled for now
         // Check Wi‑Fi connection and get SSID/IP
         let wifi_connected = unsafe {
             let mut ap_info: esp_idf_sys::wifi_ap_record_t = core::mem::zeroed();
@@ -326,7 +327,8 @@ pub fn register_api_v1_routes(
                 "memory": {
                     "status": if heap_free > 50000 { "ok" } else { "low" },
                     "free": heap_free,
-                    "minimum": heap_min
+                    "minimum": heap_min,
+                    "pressure": pressure
                 },
                 "temperature": {
                     "status": if temp < 70.0 { "ok" } else if temp < 80.0 { "warm" } else { "hot" },

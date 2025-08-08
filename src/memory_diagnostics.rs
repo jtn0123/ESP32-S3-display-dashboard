@@ -1,5 +1,6 @@
 /// Memory diagnostics utilities for debugging heap fragmentation issues
 use esp_idf_sys::*;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 /// Log current memory state with detailed breakdown
 pub fn log_memory_state(label: &str) {
@@ -43,6 +44,31 @@ pub fn is_memory_critical() -> bool {
         
         internal_largest < 4096 || stack_watermark < 1024
     }
+}
+
+// Global heap pressure state
+static HEAP_PRESSURE_LEVEL: AtomicU8 = AtomicU8::new(0); // 0=Normal,1=Warn,2=Critical
+
+pub fn heap_pressure_level() -> u8 {
+    HEAP_PRESSURE_LEVEL.load(Ordering::Relaxed)
+}
+
+pub fn start_heap_pressure_monitor() {
+    std::thread::spawn(|| loop {
+        unsafe {
+            let internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL as u32);
+            let largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL as u32);
+            let level = if largest < 6 * 1024 || internal_free < 40 * 1024 {
+                2
+            } else if largest < 12 * 1024 || internal_free < 80 * 1024 {
+                1
+            } else {
+                0
+            };
+            HEAP_PRESSURE_LEVEL.store(level, Ordering::Relaxed);
+        }
+        std::thread::sleep(core::time::Duration::from_millis(500));
+    });
 }
 
 /// Get memory statistics for JSON response

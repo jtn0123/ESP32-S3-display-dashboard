@@ -296,6 +296,7 @@ fn main() -> Result<()> {
     // Initialize metrics system AFTER display is working
     crate::metrics::init_metrics();
     info!("Metrics system initialized");
+    // Heap pressure monitor temporarily disabled due to early-boot instability; will re-enable after validation
     
     // Initialize shutdown manager
     let shutdown_manager = Arc::new(Mutex::new(ShutdownManager::new()));
@@ -953,6 +954,8 @@ fn run_app(
     let _target_frame_time = Duration::from_millis(100); // ~10 FPS
     let mut last_sensor_update = Instant::now();
     let sensor_update_interval = Duration::from_secs(10); // Reduced from 5s to 10s
+    let mut last_network_update = Instant::now();
+    let network_update_interval = Duration::from_millis(500); // refresh network status twice per second
     
     // Performance tracking
     let mut perf_metrics = PerformanceMetrics::new();
@@ -1197,18 +1200,17 @@ fn run_app(
         }
         
         // Update network status periodically
-        if last_sensor_update.elapsed() >= sensor_update_interval {
-            // Update network status
+        // Update network status frequently so on-device screen reflects real state
+        if last_network_update.elapsed() >= network_update_interval {
             ui_manager.update_network_status(
                 network_manager.is_connected(),
                 network_manager.get_ip(),
                 network_manager.get_ssid().to_string(),
                 network_manager.get_signal_strength(),
                 network_manager.get_gateway(),
-                network_manager.get_mac()
+                network_manager.get_mac(),
             );
-            
-            last_sensor_update = Instant::now();
+            last_network_update = Instant::now();
         }
         
         // Update OTA status periodically (if OTA is available)

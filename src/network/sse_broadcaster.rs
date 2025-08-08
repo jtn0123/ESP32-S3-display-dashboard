@@ -73,7 +73,10 @@ impl SseBroadcaster {
                     break;
                 }
                 
-                std::thread::sleep(Duration::from_secs(1));
+                // Adjust tick based on heap pressure: normal=1s, warn=2s, critical=4s
+                let pressure = 0u8; // temporarily fixed until monitor is re-enabled
+                let tick = 1;
+                std::thread::sleep(Duration::from_secs(tick));
                 
                 // Send metrics update
                 if let Ok(metrics) = crate::metrics::metrics().try_lock() {
@@ -85,7 +88,8 @@ impl SseBroadcaster {
                             "cpu_usage": metrics.cpu_usage,
                             "wifi_rssi": metrics.wifi_rssi,
                             "battery_percentage": metrics.battery_percentage,
-                        }
+                        },
+                        "pressure": pressure,
                     });
                     
                     let data = format!("data: {}\n\n", serde_json::to_string(&event)?);

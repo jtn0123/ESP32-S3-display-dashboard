@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 
 // Keep memory use bounded. Target ~2K entries by default; adjust if PSRAM abundant.
 const MAX_LOG_LINES: usize = 2000;
+const MAX_LOG_LINES_CRITICAL: usize = 500; // shrink under pressure
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LogEntry {
@@ -28,7 +29,9 @@ impl LogStreamer {
     pub fn try_append(&self, entry: LogEntry) {
         // Avoid blocking logging path; if we cannot get the lock immediately, drop.
         if let Ok(mut guard) = self.buffer.try_lock() {
-            if guard.len() >= MAX_LOG_LINES {
+            // Apply backpressure under heap pressure (temporarily disabled)
+            let cap = MAX_LOG_LINES;
+            if guard.len() >= cap {
                 guard.pop_front();
             }
             guard.push_back(entry);
