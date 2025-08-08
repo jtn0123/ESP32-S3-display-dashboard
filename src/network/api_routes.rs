@@ -16,6 +16,7 @@ pub fn register_api_v1_routes(
     // GET /api/v1/sensors/temperature/history?hours=24
     let history_clone = sensor_history.clone();
     server.fn_handler("/api/v1/sensors/temperature/history", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         let hours = req.uri()
             .split('?')
             .nth(1)
@@ -45,12 +46,14 @@ pub fn register_api_v1_routes(
             &[("Content-Type", "application/json")]
         )?;
         http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/sensors/temperature/history", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     // GET /api/v1/sensors/battery/history?hours=24
     let history_clone2 = sensor_history.clone();
     server.fn_handler("/api/v1/sensors/battery/history", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         let hours = req.uri()
             .split('?')
             .nth(1)
@@ -80,11 +83,13 @@ pub fn register_api_v1_routes(
             &[("Content-Type", "application/json")]
         )?;
         http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/sensors/battery/history", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     // GET /api/v1/system/processes
     server.fn_handler("/api/v1/system/processes", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         let mut processes = Vec::new();
         
         // Get current task info using available ESP-IDF APIs
@@ -118,11 +123,13 @@ pub fn register_api_v1_routes(
             &[("Content-Type", "application/json")]
         )?;
         http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/system/processes", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     // POST /api/v1/display/screenshot
     server.fn_handler("/api/v1/display/screenshot", Method::Post, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         // For now, return a placeholder response
         // TODO: Implement actual screenshot capture once display module supports it
         
@@ -145,12 +152,14 @@ pub fn register_api_v1_routes(
             &[("Content-Type", "application/json")]
         )?;
         http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/display/screenshot", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     // PATCH /api/v1/config/:field
     let config_clone = config.clone();
     server.fn_handler("/api/v1/config/*", Method::Patch, move |mut req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         // Extract field name from URL (before any mutable borrows)
         let uri = req.uri().to_string();
         let field = uri
@@ -162,9 +171,12 @@ pub fn register_api_v1_routes(
             return ErrorResponse::bad_request("Missing field name").send(req);
         }
 
-        // Read patch data
+        // Read patch data with size cap
         let mut buf = vec![0; 512];
         let len = req.read(&mut buf)?;
+        if len > buf.len() {
+            return ErrorResponse::bad_request("payload too large").send(req);
+        }
         buf.truncate(len);
         
         let json_str = std::str::from_utf8(&buf)?;
@@ -223,11 +235,13 @@ pub fn register_api_v1_routes(
             &[("Content-Type", "application/json")]
         )?;
         http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/config/*", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     // POST /api/v1/debug/log-level {"level":"trace|debug|info|warn|error|off"} (also supports ?level=)
     server.fn_handler("/api/v1/debug/log-level", Method::Post, move |mut req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         // Read body
         let mut buf = [0u8; 64];
         let len = req.read(&mut buf)?;
@@ -254,6 +268,7 @@ pub fn register_api_v1_routes(
             let json = serde_json::to_string(&resp)?;
             let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
             http_response.write_all(json.as_bytes())?;
+            instr.log_completion("/api/v1/debug/log-level", 200);
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         } else {
             ErrorResponse::bad_request("invalid level; use off|error|warn|info|debug|trace").send(req)
@@ -262,6 +277,7 @@ pub fn register_api_v1_routes(
 
     // GET /api/v1/logs/recent?count=50
     server.fn_handler("/api/v1/logs/recent", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         let count = req.uri()
             .split('?')
             .nth(1)
@@ -276,11 +292,13 @@ pub fn register_api_v1_routes(
         let json = serde_json::to_string(&logs)?;
         let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
         http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/logs/recent", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     // GET /api/v1/diagnostics/health
     server.fn_handler("/api/v1/diagnostics/health", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         let heap_free = unsafe { esp_idf_sys::esp_get_free_heap_size() };
         let heap_min = unsafe { esp_idf_sys::esp_get_minimum_free_heap_size() };
         // Get temperature from system (placeholder for now)
@@ -315,21 +333,25 @@ pub fn register_api_v1_routes(
             &[("Content-Type", "application/json")]
         )?;
         http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/diagnostics/health", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     // GET /api/v1/diagnostics/last-crash
     server.fn_handler("/api/v1/diagnostics/last-crash", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         match crate::crash_persist::read_last_crash() {
             Ok(Some(record)) => {
                 let json = serde_json::to_string(&record)?;
                 let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
                 http_response.write_all(json.as_bytes())?;
+                instr.log_completion("/api/v1/diagnostics/last-crash", 200);
                 Ok(()) as Result<(), Box<dyn std::error::Error>>
             }
             Ok(None) => {
                 let mut http_response = req.into_response(204, Some("No Content"), &[])?;
                 http_response.write_all(&[])?;
+                instr.log_completion("/api/v1/diagnostics/last-crash", 204);
                 Ok(()) as Result<(), Box<dyn std::error::Error>>
             }
             Err(e) => ErrorResponse::new(crate::network::error_handler::ErrorCode::BadRequest, format!("Failed to read crash record: {}", e)).send(req)
@@ -338,14 +360,35 @@ pub fn register_api_v1_routes(
 
     // DELETE /api/v1/diagnostics/last-crash
     server.fn_handler("/api/v1/diagnostics/last-crash", Method::Delete, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         match crate::crash_persist::clear_last_crash() {
             Ok(()) => {
                 let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
                 http_response.write_all(b"{\"status\":\"cleared\"}")?;
+                instr.log_completion("/api/v1/diagnostics/last-crash", 200);
                 Ok(()) as Result<(), Box<dyn std::error::Error>>
             }
             Err(e) => ErrorResponse::new(crate::network::error_handler::ErrorCode::BadRequest, format!("Failed to clear crash record: {}", e)).send(req),
         }
+    })?;
+
+    // GET /api/v1/power/voltage
+    server.fn_handler("/api/v1/power/voltage", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
+        let current_mv = crate::power::voltage_monitor::get_current_voltage();
+        let (min_mv, max_mv, last_mv, drop_count) = crate::power::voltage_monitor::get_voltage_stats();
+        let payload = serde_json::json!({
+            "current_mv": current_mv,
+            "min_mv": min_mv,
+            "max_mv": max_mv,
+            "last_mv": last_mv,
+            "drop_count": drop_count,
+        });
+        let json = serde_json::to_string(&payload)?;
+        let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+        http_response.write_all(json.as_bytes())?;
+        instr.log_completion("/api/v1/power/voltage", 200);
+        Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
     log::info!("API v1 routes registered");

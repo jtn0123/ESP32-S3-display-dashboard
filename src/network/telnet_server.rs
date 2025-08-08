@@ -44,6 +44,7 @@ impl LogBuffer {
         }
     }
     
+    #[allow(dead_code)]
     pub(super) fn get_recent(&self, count: usize) -> Vec<String> {
         let all_logs = self.get_all();
         let start = all_logs.len().saturating_sub(count);
@@ -223,6 +224,7 @@ impl TelnetLogServer {
     }
     
     /// Get recent logs from the buffer
+    #[allow(dead_code)]
     pub fn get_recent_logs(&self, count: usize) -> Vec<String> {
         if let Ok(buffer) = self.log_buffer.lock() {
             buffer.get_recent(count)

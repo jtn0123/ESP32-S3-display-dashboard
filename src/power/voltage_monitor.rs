@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Voltage monitoring for power supply diagnostics
 // Especially useful during high-power operations like WiFi initialization
 
@@ -194,11 +195,10 @@ where
     
     // Sample voltage every 100ms in background
     let monitor_handle = Arc::new(Mutex::new(monitor));
-    let monitor_clone = Arc::clone(&monitor_handle);
+    // Removed unused clone
     
     // Start background sampling thread
-    let sampling_active = Arc::new(AtomicBool::new(true));
-    let sampling_active_clone = Arc::clone(&sampling_active);
+    // Background sampling disabled in this path; take manual samples around the operation
     
     // Since we're on ESP32, we can't use std::thread::spawn
     // Instead, we'll take a few manual samples before and after

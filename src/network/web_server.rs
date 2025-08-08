@@ -61,7 +61,11 @@ impl WebConfigServer {
         
         // Home page (templated, fast and memory-safe)
         server.fn_handler("/", esp_idf_svc::http::Method::Get, |req| {
-            crate::network::templated_home::handle_home_templated(req)
+            let instr = crate::network::server_config::RequestInstrumentation::capture(None);
+            let result = crate::network::templated_home::handle_home_templated(req);
+            let status = if result.is_ok() { 200 } else { 500 };
+            instr.log_completion("/", status);
+            result
         })?;
         
         // Legacy home page handler (removed - was causing memory fragmentation)
@@ -142,8 +146,12 @@ impl WebConfigServer {
         // Update configuration
         let config_clone3 = config.clone();
         server.fn_handler("/api/config", esp_idf_svc::http::Method::Post, move |mut req| {
+            // Cap config payload size to 1KB
             let mut buf = vec![0; 1024];
             let len = req.read(&mut buf)?;
+            if len > buf.len() {
+                return error_response(req, 413, "Payload too large (max 1KB)");
+            }
             buf.truncate(len);
             
             let json_str = std::str::from_utf8(&buf)?;
@@ -185,6 +193,7 @@ impl WebConfigServer {
         // System info endpoint
         let config_clone_system = config.clone();
         server.fn_handler("/api/system", esp_idf_svc::http::Method::Get, move |req| {
+            let instr = crate::network::server_config::RequestInstrumentation::capture(None);
             // Get SSID from config
             let ssid = match config_clone_system.lock() {
                 Ok(cfg) => cfg.wifi_ssid.clone(),
@@ -205,6 +214,7 @@ impl WebConfigServer {
                 &[("Content-Type", "application/json")]
             )?;
             response.write_all(json.as_bytes())?;
+            instr.log_completion("/api/system", 200);
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
@@ -281,9 +291,12 @@ impl WebConfigServer {
 
         // Prometheus metrics endpoint - optimized with formatter
         server.fn_handler("/metrics", esp_idf_svc::http::Method::Get, move |req| {
+            let instr = crate::network::server_config::RequestInstrumentation::capture(None);
             // Check if OTA is in progress
             if OTA_IN_PROGRESS.load(Ordering::Acquire) {
-                return error_response(req, 503, "Service temporarily unavailable - OTA in progress");
+                let _ = error_response(req, 503, "Service temporarily unavailable - OTA in progress");
+                instr.log_completion("/metrics", 503);
+                return Ok(());
             }
             
             // Get system metrics
@@ -334,7 +347,7 @@ impl WebConfigServer {
                 }
             };
             
-            match formatted_metrics {
+            let result = match formatted_metrics {
                 Ok(metrics) => {
                     let mut response = req.into_response(
                         200,
@@ -342,14 +355,17 @@ impl WebConfigServer {
                         &[("Content-Type", "text/plain; version=0.0.4")]
                     )?;
                     response.write_all(metrics.as_bytes())?;
+                    Ok(())
                 },
                 Err(e) => {
                     log::error!("Failed to format metrics: {}", e);
-                    return error_response(req, 500, "Internal Server Error");
+                    error_response(req, 500, "Internal Server Error")
                 }
-            }
-            
-            Ok(()) as Result<(), Box<dyn std::error::Error>>
+            };
+
+            let status = if result.is_ok() { 200 } else { 500 };
+            instr.log_completion("/metrics", status);
+            result
         })?;
 
         // Always add OTA endpoints (they'll show error if OTA not available)
@@ -532,7 +548,11 @@ impl WebConfigServer {
 
         // Dashboard route - enhanced dashboard with SSE-ready UI
         server.fn_handler("/dashboard", esp_idf_svc::http::Method::Get, move |req| {
-            crate::network::streaming_dashboard::handle_dashboard_enhanced(req)
+            let instr = crate::network::server_config::RequestInstrumentation::capture(None);
+            let result = crate::network::streaming_dashboard::handle_dashboard_enhanced(req);
+            let status = if result.is_ok() { 200 } else { 500 };
+            instr.log_completion("/dashboard", status);
+            result
         })?;
         
         // Dashboard CSS endpoint (for async loading)
@@ -543,6 +563,12 @@ impl WebConfigServer {
         // Control Center page (static template streamed by the engine)
         server.fn_handler("/control", esp_idf_svc::http::Method::Get, move |req| {
             let html = include_str!("../templates/control.html");
+            crate::network::compression::write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+        })?;
+
+        // Dev Tools page (network/debug utilities)
+        server.fn_handler("/dev", esp_idf_svc::http::Method::Get, move |req| {
+            let html = include_str!("../templates/dev.html");
             crate::network::compression::write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
         })?;
         
@@ -582,9 +608,12 @@ impl WebConfigServer {
         // Config restore endpoint - imports config from JSON
         let config_restore = config.clone();
         server.fn_handler("/api/config/restore", esp_idf_svc::http::Method::Post, move |mut req| {
-            // Read uploaded JSON
-            let mut buf = vec![0; 4096]; // Larger buffer for full config
+            // Read uploaded JSON with 4KB cap
+            let mut buf = vec![0; 4096];
             let len = req.read(&mut buf)?;
+            if len > buf.len() {
+                return error_response(req, 413, "Payload too large (max 4KB)");
+            }
             buf.truncate(len);
             
             let json_str = std::str::from_utf8(&buf)?;
@@ -745,6 +774,9 @@ impl WebConfigServer {
         server.fn_handler("/api/control", esp_idf_svc::http::Method::Post, move |mut req| {
             let mut buf = vec![0; 512];
             let len = req.read(&mut buf)?;
+            if len > buf.len() {
+                return error_response(req, 413, "Payload too large (max 512B)");
+            }
             buf.truncate(len);
             
             let json_str = std::str::from_utf8(&buf)?;
@@ -829,7 +861,7 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // SSE (Server-Sent Events) endpoint - register with broadcaster
+        // SSE (Server-Sent Events) endpoint - register with broadcaster (ensure early registration)
         let sse_broadcaster = crate::network::sse_broadcaster::init();
         sse_broadcaster.register_endpoints(&mut server)?;
 

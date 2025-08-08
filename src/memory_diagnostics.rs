@@ -35,6 +35,7 @@ pub fn log_memory_state(label: &str) {
 }
 
 /// Check if memory is critically low
+#[allow(dead_code)]
 pub fn is_memory_critical() -> bool {
     unsafe {
         let internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL as u32);

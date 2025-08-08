@@ -13,6 +13,7 @@ pub mod file_manager;
 pub mod compression;
 pub mod binary_protocol;
 pub mod http_config;
+pub mod server_config;
 pub mod streaming_home;
 pub mod streaming_ota;
 pub mod streaming_dashboard;

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<!-- Dev Tools page: quick links and live diagnostics -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dev Tools - ESP32-S3</title>
+  <style>
+    body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:#0a0a0a; color:#f9fafb }
+    header { display:flex; justify-content:space-between; align-items:center; padding:1rem; border-bottom:1px solid #374151; background:#1a1a1a }
+    main { max-width: 960px; margin: 0 auto; padding: 1rem }
+    h1 { font-size: 1.5rem; margin: .5rem 0 1rem }
+    section { background:#1a1a1a; border:1px solid #374151; border-radius:8px; padding:1rem; margin-bottom:1rem }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem }
+    a.button { display:inline-block; padding:.5rem .75rem; border:1px solid #374151; border-radius:6px; color:#f9fafb; text-decoration:none; background:#2a2a2a }
+    a.button:hover { background:#333333 }
+    code { background:#111827; padding:2px 4px; border-radius:4px }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:.4rem; border-bottom:1px solid #2a2a2a; text-align:left; font-size:.9rem }
+    .muted { color:#9ca3af }
+  </style>
+</head>
+<body>
+  <header>
+    <div>ESP32-S3 Dev Tools</div>
+    <nav style="display:flex; gap:.5rem">
+      <a class="button" href="/">Home</a>
+      <a class="button" href="/dashboard">Dashboard</a>
+      <a class="button" href="/control">Control</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Developer Utilities</h1>
+
+    <section>
+      <h2>Quick Links</h2>
+      <div class="grid" style="margin-top:.5rem">
+        <a class="button" href="/metrics">/metrics (Prometheus)</a>
+        <a class="button" href="/api/metrics">/api/metrics (JSON)</a>
+        <a class="button" href="/api/v1/power/voltage">/api/v1/power/voltage</a>
+        <a class="button" href="/api/logs">/api/logs (recent)</a>
+        <a class="button" href="/api/v1/logs/recent?count=200">/api/v1/logs/recent?count=200</a>
+        <a class="button" href="/api/v1/diagnostics/health">/api/v1/diagnostics/health</a>
+        <a class="button" href="/api/v1/diagnostics/last-crash">/api/v1/diagnostics/last-crash</a>
+        <a class="button" href="/api/ota/status">/api/ota/status</a>
+      </div>
+    </section>
+
+    <section>
+      <h2>Live System Info</h2>
+      <table>
+        <tbody>
+          <tr><th>Version</th><td id="ver" class="muted">—</td></tr>
+          <tr><th>Wi‑Fi</th><td id="wifi" class="muted">—</td></tr>
+          <tr><th>IP</th><td id="ip" class="muted">—</td></tr>
+          <tr><th>RSSI</th><td id="rssi" class="muted">—</td></tr>
+          <tr><th>Heap Free</th><td id="heap" class="muted">—</td></tr>
+          <tr><th>PSRAM Free</th><td id="psram" class="muted">—</td></tr>
+          <tr><th>Uptime</th><td id="uptime" class="muted">—</td></tr>
+        </tbody>
+      </table>
+      <div class="muted" style="margin-top:.5rem">SSE: <code id="sse">disconnected</code></div>
+    </section>
+
+    <section>
+      <h2>Log Level</h2>
+      <div class="grid">
+        <a class="button" href="#" onclick="setLevel('error');return false;">error</a>
+        <a class="button" href="#" onclick="setLevel('warn');return false;">warn</a>
+        <a class="button" href="#" onclick="setLevel('info');return false;">info</a>
+        <a class="button" href="#" onclick="setLevel('debug');return false;">debug</a>
+        <a class="button" href="#" onclick="setLevel('trace');return false;">trace</a>
+      </div>
+      <div class="muted" id="levelResult" style="margin-top:.5rem"></div>
+    </section>
+  </main>
+
+  <script>
+    async function setLevel(level){
+      try{
+        const r = await fetch('/api/v1/debug/log-level', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({level})});
+        const t = await r.text();
+        document.getElementById('levelResult').textContent = `Set: ${level} (${r.status}) ${t}`;
+      }catch(e){ document.getElementById('levelResult').textContent = 'Failed'; }
+    }
+
+    function formatUptime(ms){
+      const s = Math.floor(ms/1000); const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const ss=s%60; return `${h}:${m.toString().padStart(2,'0')}:${ss.toString().padStart(2,'0')}`;
+    }
+
+    async function refresh(){
+      try{
+        const [sys, met] = await Promise.all([
+          fetch('/api/system').then(r=>r.json()),
+          fetch('/api/metrics').then(r=>r.json()).catch(()=>({}))
+        ]);
+        document.getElementById('ver').textContent = sys.version;
+        document.getElementById('wifi').textContent = sys.ssid;
+        document.getElementById('uptime').textContent = formatUptime(sys.uptime_ms);
+        document.getElementById('heap').textContent = (met.heap_free||sys.free_heap) + ' B';
+        document.getElementById('rssi').textContent = met.wifi_rssi ?? '—';
+        document.getElementById('psram').textContent = (met.psram_free_kb? met.psram_free_kb+' KB':'—');
+        if (met.ip_address) document.getElementById('ip').textContent = met.ip_address;
+      }catch(e){}
+    }
+
+    let es; function connectSSE(){
+      es = new EventSource('/api/events');
+      es.onopen = ()=>{ document.getElementById('sse').textContent='connected'; };
+      es.onerror = ()=>{ document.getElementById('sse').textContent='disconnected'; setTimeout(connectSSE, 5000); };
+      es.onmessage = ev=>{ try{ const d=JSON.parse(ev.data); if(d.uptime_ms){ document.getElementById('uptime').textContent = formatUptime(d.uptime_ms);} if(d.heap_free_kb){ document.getElementById('heap').textContent = (d.heap_free_kb*1024)+' B'; } if(d.wifi_rssi!==undefined){ document.getElementById('rssi').textContent=d.wifi_rssi; } if(d.ip_address){ document.getElementById('ip').textContent=d.ip_address; } }catch(e){} };
+    }
+
+    window.addEventListener('load', ()=>{ refresh(); connectSSE(); setInterval(refresh, 5000); });
+  </script>
+</body>
+</html>
+
+

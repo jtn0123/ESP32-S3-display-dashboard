@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use esp_idf_svc::http::server::{EspHttpConnection, Request};
 use esp_idf_svc::io::Write;

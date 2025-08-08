@@ -127,6 +127,7 @@ pub fn set_telnet_server(server: Arc<TelnetLogServer>) {
 }
 
 /// Get the telnet server if it's been set (used in a few places)
+#[allow(dead_code)]
 pub fn get_telnet_server() -> Option<Arc<TelnetLogServer>> {
     TELNET_SERVER.get().cloned()
 }
@@ -152,6 +153,7 @@ pub fn set_max_level_from_str(level: &str) -> bool {
 }
 
 /// Current global max level
+#[allow(dead_code)]
 pub fn current_max_level() -> LevelFilter {
     log::max_level()
 }

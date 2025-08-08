@@ -203,7 +203,7 @@ impl SseManager {
                                 metrics.skip_count as f32 / metrics.frame_count as f32 * 100.0
                             } else { 0.0 },
                             "render_time_ms": metrics.render_time_ms,
-                            "ip_address": "10.27.27.201", // TODO: Get actual IP
+                            // ip_address intentionally omitted here to avoid stale values
                         })
                     );
                     

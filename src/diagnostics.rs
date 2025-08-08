@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use log::{error, warn, info};
 use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 
@@ -166,7 +167,7 @@ pub fn log_panic_info(panic_msg: &str) {
 }
 
 /// Watchdog timer diagnostics
-pub fn log_watchdog_feed(task: &str) {
+pub fn log_watchdog_feed(_task_name: &str) {
     #[cfg(debug_assertions)]
     {
         static mut LAST_FEED: i64 = 0;
@@ -174,7 +175,7 @@ pub fn log_watchdog_feed(task: &str) {
             let now = esp_idf_sys::esp_timer_get_time();
             let delta = now - LAST_FEED;
             if delta > 5_000_000 { // More than 5 seconds
-                warn!("WATCHDOG: Long gap in {} task: {}ms", task, delta / 1000);
+                warn!("WATCHDOG: Long gap in {} task: {}ms", task_name, delta / 1000);
             }
             LAST_FEED = now;
         }

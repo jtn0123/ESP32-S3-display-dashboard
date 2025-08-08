@@ -4,6 +4,7 @@ use esp_idf_svc::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Wrap a handler with comprehensive error handling
+#[allow(dead_code)]
 pub fn wrap_handler<F, R>(
     handler_name: &'static str,
     handler: F,
@@ -61,6 +62,7 @@ pub fn error_response(
 }
 
 /// Log and create error response
+#[allow(dead_code)]
 pub fn handle_error(
     req: Request<&mut EspHttpConnection>,
     error: Box<dyn std::error::Error>,
