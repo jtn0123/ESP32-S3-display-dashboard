@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::Config;
 use crate::sensors::history::SensorHistory;
 use crate::network::validators;
+use crate::network::error_handler::ErrorResponse;
 
 pub fn register_api_v1_routes(
     server: &mut EspHttpServer<'static>,
@@ -26,9 +27,7 @@ pub fn register_api_v1_routes(
         let history = match history_clone.lock() {
             Ok(h) => h,
             Err(e) => {
-                let mut response = req.into_status_response(500)?;
-                response.write_all(format!("{{\"error\":\"history lock failed: {}\"}}", e).as_bytes())?;
-                return Ok(());
+                return ErrorResponse::bad_request(format!("history lock failed: {}", e)).send(req);
             }
         };
         let data = history.get_temperature_history(hours);
@@ -63,9 +62,7 @@ pub fn register_api_v1_routes(
         let history = match history_clone2.lock() {
             Ok(h) => h,
             Err(e) => {
-                let mut response = req.into_status_response(500)?;
-                response.write_all(format!("{{\"error\":\"history lock failed: {}\"}}", e).as_bytes())?;
-                return Ok(());
+                return ErrorResponse::bad_request(format!("history lock failed: {}", e)).send(req);
             }
         };
         let data = history.get_battery_history(hours);
@@ -162,9 +159,7 @@ pub fn register_api_v1_routes(
             .to_string();
 
         if field.is_empty() {
-            let mut response = req.into_status_response(400)?;
-            response.write_all(b"{\"error\":\"Missing field name\"}")?;
-            return Ok(());
+            return ErrorResponse::bad_request("Missing field name").send(req);
         }
 
         // Read patch data
@@ -179,9 +174,7 @@ pub fn register_api_v1_routes(
         let mut cfg = match config_clone.lock() {
             Ok(c) => c,
             Err(e) => {
-                let mut response = req.into_status_response(500)?;
-                response.write_all(format!("{{\"error\":\"config lock failed: {}\"}}", e).as_bytes())?;
-                return Ok(());
+                return ErrorResponse::bad_request(format!("config lock failed: {}", e)).send(req);
             }
         };
         match field.as_str() {
@@ -190,9 +183,7 @@ pub fn register_api_v1_routes(
                     validators::validate_ssid(ssid)?;
                     cfg.wifi_ssid = ssid.to_string();
                 } else {
-                    let mut response = req.into_status_response(400)?;
-                    response.write_all(b"{\"error\":\"wifi_ssid must be a string\"}")?;
-                    return Ok(());
+                    return ErrorResponse::bad_request("wifi_ssid must be a string").send(req);
                 }
             }
             "brightness" => {
@@ -200,25 +191,18 @@ pub fn register_api_v1_routes(
                     validators::validate_brightness(brightness as u8)?;
                     cfg.brightness = brightness as u8;
                 } else {
-                    let mut response = req.into_status_response(400)?;
-                    response.write_all(b"{\"error\":\"brightness must be 0-255\"}")?;
-                    return Ok(());
+                    return ErrorResponse::bad_request("brightness must be 0-255").send(req);
                 }
             }
             "auto_brightness" => {
                 if let Some(auto) = value.as_bool() {
                     cfg.auto_brightness = auto;
                 } else {
-                    let mut response = req.into_status_response(400)?;
-                    response.write_all(b"{\"error\":\"auto_brightness must be boolean\"}")?;
-                    return Ok(());
+                    return ErrorResponse::bad_request("auto_brightness must be boolean").send(req);
                 }
             }
             _ => {
-                let error_msg = format!("{{\"error\":\"Unknown field: {}\"}}", field);
-                let mut response = req.into_status_response(400)?;
-                response.write_all(error_msg.as_bytes())?;
-                return Ok(());
+                return ErrorResponse::bad_request(format!("Unknown field: {}", field)).send(req);
             }
         }
 
@@ -238,6 +222,59 @@ pub fn register_api_v1_routes(
             Some("OK"),
             &[("Content-Type", "application/json")]
         )?;
+        http_response.write_all(json.as_bytes())?;
+        Ok(()) as Result<(), Box<dyn std::error::Error>>
+    })?;
+
+    // POST /api/v1/debug/log-level {"level":"trace|debug|info|warn|error|off"} (also supports ?level=)
+    server.fn_handler("/api/v1/debug/log-level", Method::Post, move |mut req| {
+        // Read body
+        let mut buf = [0u8; 64];
+        let len = req.read(&mut buf)?;
+        let body = core::str::from_utf8(&buf[..len]).unwrap_or("");
+        let level = serde_json::from_str::<serde_json::Value>(body)
+            .ok()
+            .and_then(|v| v.get("level").and_then(|s| s.as_str()).map(|s| s.to_owned()))
+            .or_else(|| {
+                // Fallback to query string: ?level=debug
+                req.uri().split('?').nth(1)
+                    .and_then(|q| q.split('&').find(|p| p.starts_with("level=")))
+                    .and_then(|p| p.strip_prefix("level=")).map(|s| s.to_string())
+            });
+
+        let Some(level_str) = level else {
+            return ErrorResponse::bad_request("missing 'level'").send(req);
+        };
+
+        if crate::logging::set_max_level_from_str(&level_str) {
+            let resp = serde_json::json!({
+                "ok": true,
+                "level": level_str,
+            });
+            let json = serde_json::to_string(&resp)?;
+            let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+            http_response.write_all(json.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        } else {
+            ErrorResponse::bad_request("invalid level; use off|error|warn|info|debug|trace").send(req)
+        }
+    })?;
+
+    // GET /api/v1/logs/recent?count=50
+    server.fn_handler("/api/v1/logs/recent", Method::Get, move |req| {
+        let count = req.uri()
+            .split('?')
+            .nth(1)
+            .and_then(|query| query.split('&').find(|p| p.starts_with("count=")))
+            .and_then(|p| p.strip_prefix("count="))
+            .and_then(|h| h.parse::<usize>().ok())
+            .map(|n| n.min(500))
+            .unwrap_or(50);
+
+        let streamer = crate::network::log_streamer::init(None);
+        let logs = streamer.get_recent_logs(count);
+        let json = serde_json::to_string(&logs)?;
+        let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
         http_response.write_all(json.as_bytes())?;
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;

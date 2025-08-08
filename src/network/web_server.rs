@@ -8,6 +8,8 @@ use crate::ota::OtaManager;
 use crate::metrics_formatter::MetricsFormatter;
 use crate::network::compression::write_compressed_response;
 use crate::network::binary_protocol::MetricsBinaryPacket;
+use crate::network::error_wrapper::error_response;
+use crate::network::error_handler::ErrorResponse;
 
 // Global flag to prevent heavy operations during OTA
 static OTA_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
@@ -75,9 +77,7 @@ impl WebConfigServer {
             // Check if memory is critical
             if crate::memory_diagnostics::is_memory_critical() {
                 log::error!("Memory critical - refusing request");
-                let mut response = req.into_status_response(503)?;
-                response.write_all(b"Service temporarily unavailable - low memory")?;
-                return Ok(()) as Result<(), Box<dyn std::error::Error>>;
+                return error_response(req, 503, "Service temporarily unavailable - low memory");
             }
             
             // Get system info for template
@@ -126,9 +126,7 @@ impl WebConfigServer {
                 Ok(cfg) => cfg,
                 Err(e) => {
                     log::error!("Failed to lock config: {}", e);
-                    let mut response = req.into_status_response(503)?;
-                    response.write_all(b"Configuration lock failed")?;
-                    return Ok(());
+                    return ErrorResponse::bad_request("Configuration lock failed").send(req);
                 }
             };
             let json = serde_json::to_string(&*config)?;
@@ -174,9 +172,7 @@ impl WebConfigServer {
                     Ok(cfg) => cfg,
                     Err(e) => {
                         log::error!("Failed to lock config: {}", e);
-                        let mut response = req.into_status_response(503)?;
-                    response.write_all(b"Configuration lock failed")?;
-                    return Ok(());
+                        return ErrorResponse::bad_request("Configuration lock failed").send(req);
                     }
                 };
                 *config = new_config;
@@ -267,9 +263,7 @@ impl WebConfigServer {
             
             if auth_header != RESTART_TOKEN {
                 log::warn!("Restart rejected - invalid or missing authentication token");
-                let mut response = req.into_status_response(403)?;
-                response.write_all(b"Forbidden - Invalid restart token")?;
-                return Ok(());
+                return ErrorResponse::bad_request("Forbidden - Invalid restart token").send(req);
             }
             
             log::warn!("Authenticated restart requested via HTTP");
@@ -290,9 +284,7 @@ impl WebConfigServer {
         server.fn_handler("/metrics", esp_idf_svc::http::Method::Get, move |req| {
             // Check if OTA is in progress
             if OTA_IN_PROGRESS.load(Ordering::Acquire) {
-                let mut response = req.into_status_response(503)?;
-                response.write_all(b"Service temporarily unavailable - OTA in progress")?;
-                return Ok(());
+                return error_response(req, 503, "Service temporarily unavailable - OTA in progress");
             }
             
             // Get system metrics
@@ -354,8 +346,7 @@ impl WebConfigServer {
                 },
                 Err(e) => {
                     log::error!("Failed to format metrics: {}", e);
-                    let mut response = req.into_status_response(500)?;
-                    response.write_all(b"Internal Server Error")?;
+                    return error_response(req, 500, "Internal Server Error");
                 }
             }
             
@@ -389,16 +380,12 @@ impl WebConfigServer {
                 let auth_header = req.header("X-OTA-Password").unwrap_or("");
                 if auth_header != OTA_PASSWORD {
                     log::warn!("OTA update rejected - invalid password");
-                    let mut response = req.into_status_response(401)?;
-                    response.write_all(b"Unauthorized - Invalid OTA password")?;
-                    return Ok::<(), anyhow::Error>(());
+                    return error_response(req, 401, "Unauthorized - Invalid OTA password");
                 }
                 
                 // Check if OTA is available
                 let Some(ota_mgr) = ota_manager_clone2.as_ref() else {
-                    let mut response = req.into_status_response(503)?;
-                    response.write_all(b"OTA not available - device running from factory partition")?;
-                    return Ok::<(), anyhow::Error>(());
+                    return error_response(req, 503, "OTA not available - device running from factory partition");
                 };
                 
                 // Get content length first
@@ -425,9 +412,7 @@ impl WebConfigServer {
                         Err(e) => {
                             log::error!("Failed to lock OTA manager: {}", e);
                             OTA_IN_PROGRESS.store(false, Ordering::Release);  // Clear flag on error
-                            let mut response = req.into_status_response(503)?;
-                            response.write_all(b"Internal server error")?;
-                            return Ok::<(), anyhow::Error>(());
+                            return error_response(req, 503, "Internal server error");
                         }
                     };
                     
@@ -501,14 +486,11 @@ impl WebConfigServer {
                             unsafe { esp_idf_sys::esp_restart(); }
                         });
                         
-                        Ok::<(), anyhow::Error>(())
+                        Ok(())
                     }
                     Err(e) => {
                         log::error!("OTA update failed: {:?}", e);
-                        let mut response = req.into_status_response(500)?;
-                        let error_msg = format!("OTA update failed: {e}");
-                        response.write_all(error_msg.as_bytes())?;
-                        Ok::<(), anyhow::Error>(())
+                        error_response(req, 500, &format!("OTA update failed: {e}"))
                     }
                 }
             })?;
@@ -572,9 +554,7 @@ impl WebConfigServer {
                 Ok(cfg) => cfg,
                 Err(e) => {
                     log::error!("Failed to lock config for backup: {}", e);
-                    let mut response = req.into_status_response(503)?;
-                    response.write_all(b"Configuration lock failed")?;
-                    return Ok(());
+                    return error_response(req, 503, "Configuration lock failed");
                 }
             };
             
@@ -609,9 +589,7 @@ impl WebConfigServer {
                 Ok(cfg) => cfg,
                 Err(e) => {
                     log::error!("Invalid config JSON: {}", e);
-                    let mut response = req.into_status_response(400)?;
-                    response.write_all(format!("Invalid configuration: {}", e).as_bytes())?;
-                    return Ok(());
+                    return error_response(req, 400, &format!("Invalid configuration: {}", e));
                 }
             };
             
@@ -621,9 +599,7 @@ impl WebConfigServer {
                     Ok(cfg) => cfg,
                     Err(e) => {
                         log::error!("Failed to lock config for restore: {}", e);
-                        let mut response = req.into_status_response(503)?;
-                        response.write_all(b"Configuration lock failed")?;
-                        return Ok(());
+                        return error_response(req, 503, "Configuration lock failed");
                     }
                 };
                 
@@ -674,8 +650,7 @@ impl WebConfigServer {
                 )?;
                 response.write_all(&bytes)?;
             } else {
-                let mut response = req.into_status_response(503)?;
-                response.write_all(b"Metrics temporarily unavailable")?;
+                return error_response(req, 503, "Metrics temporarily unavailable");
             }
             
             Ok(()) as Result<(), Box<dyn std::error::Error>>
@@ -741,39 +716,20 @@ impl WebConfigServer {
             write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
         })?;
 
-        // Logs API endpoint - returns recent log entries from telnet buffer
+        // Logs API endpoint - returns recent log entries from in-memory streamer
         server.fn_handler("/api/logs", esp_idf_svc::http::Method::Get, move |req| {
-            // Get logs from the telnet server if available
-            let logs = if let Some(telnet_server) = crate::logging::get_telnet_server() {
-                let recent_logs = telnet_server.get_recent_logs(100);
-                log::info!("Web API: Retrieved {} logs from telnet server", recent_logs.len());
-                
-                // Clean up the log entries - remove \r\n
-                recent_logs.into_iter()
-                    .map(|log| log.trim_end().to_string())
-                    .collect()
-            } else {
-                log::warn!("Web API: No telnet server available for logs");
-                Vec::new()
-            };
-            
-            // Add some test logs if empty
-            let logs = if logs.is_empty() {
-                log::info!("Adding test logs since buffer is empty");
-                vec![
-                    format!("[{}] INFO  System started", esp_idf_svc::systime::EspSystemTime.now().as_secs()),
-                    format!("[{}] INFO  WiFi connected", esp_idf_svc::systime::EspSystemTime.now().as_secs()),
-                    format!("[{}] INFO  Web server ready", esp_idf_svc::systime::EspSystemTime.now().as_secs()),
-                ]
-            } else {
-                logs
-            };
-            
-            let logs_json = serde_json::json!({
-                "logs": logs
-            });
-            
-            let json_string = serde_json::to_string(&logs_json)?;
+            // Optional count parameter
+            let count = req.uri()
+                .split('?')
+                .nth(1)
+                .and_then(|query| query.split('&').find(|p| p.starts_with("count=")))
+                .and_then(|p| p.strip_prefix("count="))
+                .and_then(|c| c.parse::<usize>().ok())
+                .unwrap_or(100);
+
+            let streamer = crate::network::log_streamer::init(None);
+            let recent_logs = streamer.get_recent_logs(count);
+            let json_string = serde_json::to_string(&serde_json::json!({ "logs": recent_logs }))?;
             let mut response = req.into_ok_response()?;
             response.write_all(json_string.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
@@ -850,9 +806,7 @@ impl WebConfigServer {
             
             if auth_header != RESTART_TOKEN {
                 log::warn!("API restart rejected - invalid or missing authentication token");
-                let mut response = req.into_status_response(403)?;
-                response.write_all(br#"{"error":"Forbidden","message":"Invalid restart token"}"#)?;
-                return Ok(());
+                return error_response(req, 403, "Invalid restart token");
             }
             
             log::warn!("Authenticated device restart requested via web API");

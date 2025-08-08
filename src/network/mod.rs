@@ -6,6 +6,7 @@ pub mod telnet_server;
 pub mod sse_broadcaster;
 pub mod api_routes;
 pub mod error_handler;
+pub mod error_wrapper;
 pub mod validators;
 pub mod log_streamer;
 pub mod file_manager;

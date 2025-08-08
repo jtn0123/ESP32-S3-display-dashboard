@@ -113,6 +113,12 @@ fn main() -> Result<()> {
     // Initialize our logger with colors and timestamps
     logging::init_logger().expect("Failed to initialize logger");
 
+    // Initialize in-memory log streamer early so logs are captured from boot
+    crate::network::log_streamer::init(None);
+
+    // Start periodic crash/health diagnostics
+    crate::crash_diagnostics::init();
+
     // Test enhanced logging with different levels
     info!("ESP32-S3 Dashboard {} - OTA on Port 80", crate::version::full_version());
     log::debug!("Debug logging is enabled with enhanced formatting");

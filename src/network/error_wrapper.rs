@@ -1,5 +1,6 @@
 /// Error handling wrapper for HTTP handlers
 use esp_idf_svc::http::server::{EspHttpConnection, Request};
+use esp_idf_svc::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Wrap a handler with comprehensive error handling
