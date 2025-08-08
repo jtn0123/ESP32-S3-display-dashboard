@@ -571,6 +571,20 @@ impl WebConfigServer {
             let html = include_str!("../templates/dev.html");
             crate::network::compression::write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
         })?;
+
+        // Common icon paths to suppress noisy 404s or serve tiny placeholder
+        server.fn_handler("/apple-touch-icon.png", esp_idf_svc::http::Method::Get, move |req| {
+            let png: &[u8] = include_bytes!("../../static/icons/apple-touch-icon.png");
+            let mut resp = req.into_response(200, Some("OK"), &[("Content-Type", "image/png"), ("Cache-Control", "max-age=86400")])?;
+            resp.write_all(png)?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+        server.fn_handler("/apple-touch-icon-precomposed.png", esp_idf_svc::http::Method::Get, move |req| {
+            let png: &[u8] = include_bytes!("../../static/icons/apple-touch-icon.png");
+            let mut resp = req.into_response(200, Some("OK"), &[("Content-Type", "image/png"), ("Cache-Control", "max-age=86400")])?;
+            resp.write_all(png)?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
         
         // Sensor graphs route
         server.fn_handler("/graphs", esp_idf_svc::http::Method::Get, move |req| {

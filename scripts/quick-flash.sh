@@ -2,7 +2,7 @@
 # Quick build, flash and monitor script for development
 # Combines compile.sh, flash.sh and monitor in one command
 
-set -e
+set -euo pipefail
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -82,6 +82,6 @@ if [ "$MONITOR_TYPE" = "telnet" ]; then
     echo -e "${GREEN}Starting telnet monitor (Ctrl+C to exit)${NC}"
     ./scripts/monitor-telnet.py
 else
-    echo -e "${GREEN}Starting serial monitor (Ctrl+] to exit)${NC}"
-    espflash monitor
+    echo -e "${GREEN}Starting serial monitor (Ctrl+C to exit)${NC}"
+    ./scripts/monitor.sh
 fi

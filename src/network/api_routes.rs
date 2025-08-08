@@ -301,6 +301,22 @@ pub fn register_api_v1_routes(
         let instr = crate::network::server_config::RequestInstrumentation::capture(None);
         let heap_free = unsafe { esp_idf_sys::esp_get_free_heap_size() };
         let heap_min = unsafe { esp_idf_sys::esp_get_minimum_free_heap_size() };
+        // Check Wi‑Fi connection and get SSID/IP
+        let wifi_connected = unsafe {
+            let mut ap_info: esp_idf_sys::wifi_ap_record_t = core::mem::zeroed();
+            esp_idf_sys::esp_wifi_sta_get_ap_info(&mut ap_info) == esp_idf_sys::ESP_OK
+        };
+        let ip = if wifi_connected {
+            unsafe {
+                let netif = esp_idf_sys::esp_netif_get_handle_from_ifkey(b"WIFI_STA_DEF\0".as_ptr() as *const core::ffi::c_char);
+                if !netif.is_null() {
+                    let mut ip_info = esp_idf_sys::esp_netif_ip_info_t::default();
+                    if esp_idf_sys::esp_netif_get_ip_info(netif, &mut ip_info) == esp_idf_sys::ESP_OK {
+                        Some(format!("{}.{}.{}.{}", ip_info.ip.addr & 0xff, (ip_info.ip.addr >> 8) & 0xff, (ip_info.ip.addr >> 16) & 0xff, (ip_info.ip.addr >> 24) & 0xff))
+                    } else { None }
+                } else { None }
+            }
+        } else { None };
         // Get temperature from system (placeholder for now)
         let temp = 45.0; // TODO: Get from sensor manager
         
@@ -317,7 +333,8 @@ pub fn register_api_v1_routes(
                     "value": temp
                 },
                 "network": {
-                    "status": "unknown" // TODO: Get from network manager
+                    "connected": wifi_connected,
+                    "ip": ip,
                 }
             },
             "timestamp": std::time::SystemTime::now()
@@ -388,6 +405,39 @@ pub fn register_api_v1_routes(
         let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
         http_response.write_all(json.as_bytes())?;
         instr.log_completion("/api/v1/power/voltage", 200);
+        Ok(()) as Result<(), Box<dyn std::error::Error>>
+    })?;
+
+    // GET /api/v1/status/errors — analyze recent logs for httpd/network error patterns
+    server.fn_handler("/api/v1/status/errors", Method::Get, move |req| {
+        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
+        let logs = crate::network::log_streamer::init(None).get_recent_logs(500);
+        let mut send_err_11 = 0u32;
+        let mut send_err_104 = 0u32;
+        let mut recv_err_10 = 0u32; // any 10x
+        let mut resp_send_err = 0u32;
+        let mut unhandled_internal = 0u32;
+        for entry in logs.iter() {
+            let l = &entry.message;
+            if l.contains("httpd_txrx: httpd_sock_err: error in send : 11") { send_err_11 += 1; }
+            if l.contains("httpd_txrx: httpd_sock_err: error in send : 104") { send_err_104 += 1; }
+            if l.contains("httpd_txrx: httpd_sock_err: error in recv : 10") { recv_err_10 += 1; }
+            if l.contains("httpd_resp_send_err") { resp_send_err += 1; }
+            if l.contains("Unhandled internal error") { unhandled_internal += 1; }
+        }
+        let payload = serde_json::json!({
+            "httpd": {
+                "send_err_11": send_err_11,
+                "send_err_104": send_err_104,
+                "recv_err_10x": recv_err_10,
+                "resp_send_err": resp_send_err,
+                "unhandled_internal": unhandled_internal,
+            },
+            "window": 500,
+        });
+        let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+        http_response.write_all(serde_json::to_string(&payload)?.as_bytes())?;
+        instr.log_completion("/api/v1/status/errors", 200);
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 

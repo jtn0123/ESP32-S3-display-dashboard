@@ -17,8 +17,24 @@ pub struct UptimeTracker {
 
 impl UptimeTracker {
     pub fn new() -> Result<Self> {
-        // Try to initialize NVS
-        let nvs_result = esp_idf_svc::nvs::EspNvsPartition::<NvsDefault>::take();
+        // Ensure NVS is initialized and recover if needed
+        unsafe {
+            let init_res = esp_idf_sys::nvs_flash_init();
+            if init_res == esp_idf_sys::ESP_ERR_NVS_NO_FREE_PAGES
+                || init_res == esp_idf_sys::ESP_ERR_NVS_NEW_VERSION_FOUND
+            {
+                let _ = esp_idf_sys::nvs_flash_erase();
+                let _ = esp_idf_sys::nvs_flash_init();
+            }
+        }
+
+        // Try to take default NVS partition first
+        let nvs_result = esp_idf_svc::nvs::EspNvsPartition::<NvsDefault>::take()
+            .or_else(|e| {
+                log::warn!("EspNvsPartition::take failed: {:?}; trying default partition", e);
+                esp_idf_svc::nvs::EspDefaultNvsPartition::take()
+                    .map(|p| p.into())
+            });
         
         let (nvs, total_uptime, boot_count) = match nvs_result {
             Ok(nvs_partition) => {

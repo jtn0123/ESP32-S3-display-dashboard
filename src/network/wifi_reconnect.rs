@@ -78,11 +78,11 @@ impl WifiReconnectManager {
                         }
                     };
                     
-                    log::info!("WiFi reconnection attempt #{}", attempts);
+                    log::warn!("WiFi disconnected: attempt #{} (will not mask persistent issues)", attempts);
                     
                     // Calculate backoff delay (exponential, max 60 seconds)
                     let delay = std::cmp::min(60, 5 * (1 << std::cmp::min(attempts - 1, 4)));
-                    log::info!("Waiting {} seconds before reconnection attempt", delay);
+                    log::info!("Backoff {}s before reconnection attempt", delay);
                     std::thread::sleep(Duration::from_secs(delay as u64));
                     
                     // Attempt reconnection
@@ -100,7 +100,7 @@ impl WifiReconnectManager {
                     // Connected - reset attempts counter
                     let attempts = reconnect_attempts.lock().map(|g| *g).unwrap_or(0);
                     if attempts > 0 {
-                        log::info!("WiFi reconnected successfully after {} attempts", attempts);
+                        log::warn!("WiFi reconnected after {} attempts (intermittent network)", attempts);
                         if let Ok(mut ra) = reconnect_attempts.lock() { *ra = 0; }
                     }
                 }

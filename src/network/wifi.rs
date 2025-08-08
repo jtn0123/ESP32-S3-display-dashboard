@@ -156,12 +156,28 @@ impl WifiManager {
             if ap.ssid.as_str() == self.ssid.as_str() {
                 found = true;
                 signal_strength = ap.signal_strength;
-                log::info!("Found network: {} (signal: {} dBm)", ap.ssid, signal_strength);
+                log::info!(
+                    "Found network: {} (signal: {} dBm, channel: {}, auth: {:?})",
+                    ap.ssid,
+                    signal_strength,
+                    ap.channel,
+                    ap.auth_method
+                );
                 break;
             }
         }
 
         if !found {
+            // Log top 5 networks to help diagnose SSID mismatch or RF issues
+            let mut aps = ap_infos
+                .iter()
+                .map(|a| (a.ssid.to_string(), a.signal_strength, a.channel, format!("{:?}", a.auth_method)))
+                .collect::<Vec<_>>();
+            aps.sort_by_key(|(_, rssi, _, _)| -*rssi as i16);
+            log::warn!("Requested SSID '{}' not found. Nearby APs (top 5):", self.ssid);
+            for (i, (ssid, rssi, ch, auth)) in aps.into_iter().take(5).enumerate() {
+                log::warn!("  {}. SSID='{}' RSSI={} dBm CH={} AUTH={}", i + 1, ssid, rssi, ch, auth);
+            }
             bail!("Network {} not found", self.ssid);
         }
 

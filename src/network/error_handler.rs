@@ -85,9 +85,15 @@ impl ErrorResponse {
             "NOT_FOUND" => 404,
             _ => 500,
         };
-
-        let mut response = req.into_status_response(status_code)?;
-        response.write_all(json.as_bytes())?;
+        // Guard against double send: try to write once; if it fails with already sent, just log
+        match req.into_status_response(status_code) {
+            Ok(mut response) => {
+                let _ = response.write_all(json.as_bytes());
+            }
+            Err(e) => {
+                log::warn!("ErrorResponse send skipped: response already committed? err={:?}", e);
+            }
+        }
         Ok(())
     }
 }

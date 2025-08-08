@@ -138,6 +138,13 @@ $ESPTOOL --chip esp32s3 --port "$PORT" --baud 921600 \
     write_flash --flash_mode dio --flash_freq 40m --flash_size 16MB \
     0x10000 "$BIN_FILE"
 
+# Step 8: Ensure device resets to run the new firmware
+echo -e "\n${BLUE}Resetting device...${NC}"
+# Attempt a hard reset via esptool line toggling
+$ESPTOOL --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after hard_reset \
+    read_mac >/dev/null 2>&1 || true
+sleep 1
+
 # Clean up
 rm -f "$BIN_FILE" "$PARTITION_BIN"
 
