@@ -179,7 +179,15 @@ impl WebConfigServer {
                 wifi_ssid: web_config.wifi_ssid,
                 wifi_password: if web_config.wifi_password.is_empty() {
                     // Keep existing password if not provided
-                    config_clone3.lock().unwrap().wifi_password.clone()
+                    match config_clone3.lock() {
+                        Ok(cfg) => cfg.wifi_password.clone(),
+                        Err(e) => {
+                            let mut response = req.into_status_response(500)?;
+                            response.write_all(b"{\"error\":\"Configuration lock failed\"}")?;
+                            log::error!("Failed to lock config to read wifi_password: {}", e);
+                            return Ok(());
+                        }
+                    }
                 } else {
                     web_config.wifi_password
                 },
@@ -190,7 +198,15 @@ impl WebConfigServer {
             
             // Update and save configuration
             {
-                let mut config = config_clone3.lock().unwrap();
+                let mut config = match config_clone3.lock() {
+                    Ok(guard) => guard,
+                    Err(e) => {
+                        log::error!("Config lock failed during save: {}", e);
+                        let mut response = req.into_status_response(500)?;
+                        response.write_all(b"{\"error\":\"Configuration lock failed\"}")?;
+                        return Ok(());
+                    }
+                };
                 *config = new_config.clone();
                 match config.save() {
                     Ok(_) => {

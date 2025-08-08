@@ -32,7 +32,7 @@ impl SseManager {
     }
 
     fn add_connection(&self, endpoint: &str) -> Result<u32> {
-        let mut connections = self.connections.lock().unwrap();
+        let mut connections = self.connections.lock().map_err(|e| anyhow::anyhow!("connections lock poisoned: {}", e))?;
         
         // Check connection limit
         if connections.len() >= MAX_SSE_CONNECTIONS as usize {
@@ -47,7 +47,7 @@ impl SseManager {
             return Err(anyhow::anyhow!("Insufficient heap memory"));
         }
         
-        let mut next_id = self.next_id.lock().unwrap();
+        let mut next_id = self.next_id.lock().map_err(|e| anyhow::anyhow!("next_id lock poisoned: {}", e))?;
         let id = *next_id;
         *next_id += 1;
         
@@ -64,10 +64,17 @@ impl SseManager {
     }
 
     fn remove_connection(&self, id: u32) {
-        let mut connections = self.connections.lock().unwrap();
-        connections.retain(|c| c.id != id);
-        info!("SSE: Connection {} removed (remaining: {})", 
-              id, connections.len());
+        let remaining = match self.connections.lock() {
+            Ok(mut connections) => {
+                connections.retain(|c| c.id != id);
+                connections.len()
+            }
+            Err(e) => {
+                error!("SSE: connections lock poisoned during remove: {}", e);
+                0
+            }
+        };
+        info!("SSE: Connection {} removed (remaining: {})", id, remaining);
         crate::diagnostics::log_sse_event("disconnect", Some(id));
     }
 
@@ -138,7 +145,7 @@ impl SseManager {
                         "count": 1,
                         "timestamp": std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
+                            .unwrap_or_default()
                             .as_secs()
                     })
                 );

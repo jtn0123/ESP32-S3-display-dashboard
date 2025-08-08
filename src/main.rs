@@ -294,7 +294,7 @@ fn main() -> Result<()> {
     
     // Initialize shutdown manager
     let shutdown_manager = Arc::new(Mutex::new(ShutdownManager::new()));
-    let shutdown_signal = shutdown_manager.lock().unwrap().get_signal();
+    let shutdown_signal = shutdown_manager.lock().map(|m| m.get_signal()).unwrap_or_else(|_| ShutdownSignal::new());
     info!("Shutdown manager initialized");
 
     // ESP_LCD: Fast initialization path
@@ -1050,7 +1050,7 @@ fn run_app(
                 // Check for shutdown trigger
                 if event == system::ButtonEvent::BothButtonsLongPress {
                     log::warn!("Shutdown triggered by button combination!");
-                    shutdown_manager.lock().unwrap().shutdown()?;
+                    if let Ok(mut mgr) = shutdown_manager.lock() { mgr.shutdown()?; }
                     break;
                 }
                 

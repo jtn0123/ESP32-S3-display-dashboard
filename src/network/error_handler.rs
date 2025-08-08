@@ -39,7 +39,7 @@ impl ApiError {
             request_id: generate_request_id(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         }
     }
@@ -99,7 +99,7 @@ fn generate_request_id() -> String {
     let count = COUNTER.fetch_add(1, Ordering::Relaxed);
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis() as u32;
     
     format!("req_{:08x}{:04x}", timestamp, count & 0xFFFF)

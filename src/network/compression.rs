@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn test_gzip_compress() {
         let data = b"Hello, World! This is a test of gzip compression.";
-        let compressed = gzip_compress(data).unwrap();
+        let compressed = gzip_compress(data).expect("gzip compress should succeed in test");
         
         // Compressed should be smaller for this text
         assert!(compressed.len() < data.len());

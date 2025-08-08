@@ -36,7 +36,10 @@ impl LogStreamer {
     }
 
     pub fn get_recent_logs(&self, count: usize) -> Vec<LogEntry> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = match self.buffer.lock() {
+            Ok(b) => b,
+            Err(_) => return Vec::new(),
+        };
         buffer.iter()
             .rev()
             .take(count)

@@ -63,16 +63,19 @@ impl WifiReconnectManager {
                 if was_connected && !connected {
                     // Just disconnected
                     log::warn!("WiFi disconnected! Starting reconnection process...");
-                    *last_disconnect.lock().unwrap() = Some(Instant::now());
-                    *reconnect_attempts.lock().unwrap() = 0;
+                    if let Ok(mut ld) = last_disconnect.lock() { *ld = Some(Instant::now()); }
+                    if let Ok(mut ra) = reconnect_attempts.lock() { *ra = 0; }
                 }
                 
                 if !connected {
                     // Try to reconnect
                     let attempts = {
-                        let mut attempts = reconnect_attempts.lock().unwrap();
-                        *attempts += 1;
-                        *attempts
+                        if let Ok(mut guard) = reconnect_attempts.lock() {
+                            *guard += 1;
+                            *guard
+                        } else {
+                            1
+                        }
                     };
                     
                     log::info!("WiFi reconnection attempt #{}", attempts);
@@ -95,10 +98,10 @@ impl WifiReconnectManager {
                     }
                 } else {
                     // Connected - reset attempts counter
-                    let attempts = *reconnect_attempts.lock().unwrap();
+                    let attempts = reconnect_attempts.lock().map(|g| *g).unwrap_or(0);
                     if attempts > 0 {
                         log::info!("WiFi reconnected successfully after {} attempts", attempts);
-                        *reconnect_attempts.lock().unwrap() = 0;
+                        if let Ok(mut ra) = reconnect_attempts.lock() { *ra = 0; }
                     }
                 }
                 

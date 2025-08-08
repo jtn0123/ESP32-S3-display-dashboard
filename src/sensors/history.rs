@@ -46,10 +46,16 @@ impl SensorHistory {
     fn add_data_point(&self, queue: &Mutex<VecDeque<DataPoint>>, value: f32) {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
-        let mut data = queue.lock().unwrap();
+        let mut data = match queue.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::error!("SensorHistory lock failed in add_data_point: {}", e);
+                return;
+            }
+        };
         data.push_back(DataPoint { timestamp, value });
 
         // Remove old data points
@@ -69,11 +75,17 @@ impl SensorHistory {
     fn get_history(&self, queue: &Mutex<VecDeque<DataPoint>>, hours: u32) -> Vec<DataPoint> {
         let cutoff = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs()
             .saturating_sub(hours as u64 * 3600);
 
-        let data = queue.lock().unwrap();
+        let data = match queue.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::error!("SensorHistory lock failed in get_history: {}", e);
+                return Vec::new();
+            }
+        };
         data.iter()
             .filter(|dp| dp.timestamp >= cutoff)
             .cloned()

@@ -1040,7 +1040,7 @@ impl UiManager {
         // Cycle through alerts if multiple (show one at a time)
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         let alert_index = ((current_time / 3) % active_alerts.len() as u64) as usize;
         

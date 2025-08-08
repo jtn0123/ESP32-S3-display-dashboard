@@ -133,7 +133,7 @@ pub fn register_api_v1_routes(
             "data": "", // Empty for now
             "timestamp": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             "message": "Screenshot capture not yet implemented"
         });
@@ -304,7 +304,7 @@ pub fn register_api_v1_routes(
             },
             "timestamp": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs()
         });
 

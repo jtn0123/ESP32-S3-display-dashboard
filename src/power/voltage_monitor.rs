@@ -216,9 +216,27 @@ where
     }
     
     // Get report
-    let mut monitor_guard = monitor_handle.lock().unwrap();
-    let final_report = std::mem::replace(&mut *monitor_guard, VoltageMonitor::start_monitoring());
-    let report = final_report.stop_monitoring();
+    let report = match monitor_handle.lock() {
+        Ok(mut monitor_guard) => {
+            let final_monitor = std::mem::replace(&mut *monitor_guard, VoltageMonitor::start_monitoring());
+            final_monitor.stop_monitoring()
+        }
+        Err(e) => {
+            log::error!("Voltage monitor lock failed: {}", e);
+            // Construct a conservative fallback report from global trackers
+            VoltageReport {
+                _duration: Duration::from_secs(0),
+                initial_voltage: LAST_VOLTAGE.load(Ordering::Relaxed),
+                _final_voltage: LAST_VOLTAGE.load(Ordering::Relaxed),
+                min_voltage: MIN_VOLTAGE.load(Ordering::Relaxed),
+                _max_voltage: MAX_VOLTAGE.load(Ordering::Relaxed),
+                max_drop: 0,
+                drop_count: VOLTAGE_DROP_COUNT.load(Ordering::Relaxed),
+                _is_usb: false,
+                _samples: Vec::new(),
+            }
+        }
+    };
     
     // Log diagnosis
     log::info!("{}: {}", operation_name, report.get_diagnosis());

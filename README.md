@@ -474,3 +474,51 @@ Same as parent project
 ---
 
 **Note**: Arduino implementation has been archived in the `legacy/` directory for reference.
+
+## 🐞 Debugging & Diagnostics
+
+The firmware includes enhanced, development-friendly debugging:
+
+- Enhanced logger (serial + telnet)
+  - Timestamped, colorized logs on serial; plain logs over telnet
+  - Forwarded to an in-memory ring buffer for web/SSE consumption
+  - Default level is DEBUG during development
+
+- Runtime log level control
+  - Set via HTTP:
+    ```bash
+    # JSON body
+    curl -X POST http://<device-ip>/api/v1/debug/log-level -d '{"level":"debug"}' -H 'Content-Type: application/json'
+
+    # or via query param
+    curl -X POST 'http://<device-ip>/api/v1/debug/log-level?level=info'
+    ```
+  - Valid levels: off, error, warn, info, debug, trace
+
+- Recent logs via HTTP and SSE
+  - REST: `GET /api/v1/logs/recent?count=50` (default 50, max 500)
+  - SSE: `GET /sse/logs` (server-sent events stream of recent logs)
+  - Web page: `GET /logs`
+
+- Health and metrics
+  - Health: `GET /health` (lightweight JSON)
+  - Prometheus: `GET /metrics` (optimized formatter; safe on contention)
+
+- Panic and crash diagnostics
+  - Custom panic hook logs location and message
+  - Memory and crash diagnostics are dumped on panic
+  - Periodic diagnostics thread logs heap and active request insights
+
+- Telnet logging (wireless serial)
+  - Port 23; includes last 100 log lines on connect
+  - Scripts:
+    ```bash
+    ./scripts/monitor-telnet.sh            # mDNS
+    ./scripts/monitor-telnet.sh <ip>       # by IP
+    ./scripts/monitor-telnet.py -f "ERROR|WARN"  # filter
+    ```
+
+- Notes
+  - In-memory log buffer is bounded (default ~2000 entries; drop-oldest policy)
+  - Low-latency non-blocking appends; avoids stalls in hot paths
+  - Safe locking and error handling across web/SSE/WS paths to prevent panics

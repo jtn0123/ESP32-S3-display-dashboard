@@ -89,7 +89,11 @@ impl FastBoot {
         let errors_clone = errors.clone();
         handles.push(thread::spawn(move || {
             if let Err(e) = init_display_fast() {
-                errors_clone.lock().unwrap().push(format!("Display: {}", e));
+                if let Ok(mut err_vec) = errors_clone.lock() {
+                    err_vec.push(format!("Display: {}", e));
+                } else {
+                    error!("Failed to lock errors for display init error");
+                }
             }
         }));
         
@@ -97,17 +101,29 @@ impl FastBoot {
         let errors_clone = errors.clone();
         handles.push(thread::spawn(move || {
             if let Err(e) = init_sensors_fast() {
-                errors_clone.lock().unwrap().push(format!("Sensors: {}", e));
+                if let Ok(mut err_vec) = errors_clone.lock() {
+                    err_vec.push(format!("Sensors: {}", e));
+                } else {
+                    error!("Failed to lock errors for sensor init error");
+                }
             }
         }));
         
         // Wait for all to complete
         for handle in handles {
-            handle.join().unwrap();
+            if let Err(e) = handle.join() {
+                error!("Join error in parallel init: {:?}", e);
+            }
         }
         
         // Check for errors
-        let errors = errors.lock().unwrap();
+        let errors = match errors.lock() {
+            Ok(e) => e,
+            Err(e) => {
+                error!("Errors lock poisoned after init: {}", e);
+                anyhow::bail!("Initialization errors unavailable");
+            }
+        };
         if !errors.is_empty() {
             for err in errors.iter() {
                 error!("Parallel init error: {}", err);

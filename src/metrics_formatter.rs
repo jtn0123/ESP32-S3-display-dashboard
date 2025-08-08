@@ -170,7 +170,7 @@ mod tests {
         );
 
         assert!(result.is_ok());
-        let output = result.unwrap();
+        let output = result.expect("metrics formatting should succeed");
         assert!(output.contains("esp32_device_info"));
         assert!(output.contains("esp32_cpu_usage_percent 50"));
         assert!(output.contains("esp32_fps_actual 30.5"));

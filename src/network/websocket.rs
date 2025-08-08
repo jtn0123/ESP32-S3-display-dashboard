@@ -107,7 +107,9 @@ impl WebSocketServer {
                                 }
                                 FrameType::Ping => {
                                     // Respond with pong
-                                    let _ = sender.lock().unwrap().send(FrameType::Pong, &[]);
+                                    if let Ok(sender_guard) = sender.lock() {
+                                        let _ = sender_guard.send(FrameType::Pong, &[]);
+                                    }
                                 }
                                 FrameType::Close => {
                                     log::info!("WebSocket client {} disconnected", conn_id);
@@ -223,22 +225,16 @@ impl WebSocketServer {
     }
 }
 
-// Global WebSocket server instance
-static mut WS_SERVER: Option<Arc<WebSocketServer>> = None;
+// Global WebSocket server instance (safe)
+use std::sync::OnceLock;
+static WS_SERVER: OnceLock<Arc<WebSocketServer>> = OnceLock::new();
 
 pub fn init() -> Arc<WebSocketServer> {
-    unsafe {
-        if WS_SERVER.is_none() {
-            WS_SERVER = Some(Arc::new(WebSocketServer::new()));
-        }
-        WS_SERVER.as_ref().unwrap().clone()
-    }
+    WS_SERVER.get_or_init(|| Arc::new(WebSocketServer::new())).clone()
 }
 
 pub fn broadcast_metrics_update(metrics: &crate::metrics::MetricsData) {
-    unsafe {
-        if let Some(ref server) = WS_SERVER {
-            let _ = server.broadcast_metrics(metrics);
-        }
+    if let Some(server) = WS_SERVER.get() {
+        let _ = server.broadcast_metrics(metrics);
     }
 }
