@@ -58,6 +58,8 @@ pub struct SensorManager {
     last_adc_raw: u16,
     // ADC channel pin number for battery monitoring (GPIO4)
     battery_pin: u8,
+    // Stability: avoid global mutable counters
+    sample_count: u32,
 }
 
 impl SensorManager {
@@ -117,6 +119,7 @@ impl SensorManager {
             last_battery_voltage: initial_voltage,
             last_adc_raw: initial_raw,
             battery_pin: 4, // GPIO4
+            sample_count: 0,
         })
     }
     
@@ -198,17 +201,14 @@ impl SensorManager {
         let is_charging = is_charging(battery_voltage, battery_connected);
         
         // Log battery readings periodically (every 10th sample to reduce spam)
-        static mut SAMPLE_COUNT: u32 = 0;
-        unsafe {
-            SAMPLE_COUNT += 1;
-            if SAMPLE_COUNT % 10 == 0 {
-                log::warn!("[BATTERY_SAMPLE] Voltage: {}mV ({:.3}V), Percentage: {}%, ADC raw: {}, USB: {}, Charging: {}", 
-                    battery_voltage, battery_voltage as f32 / 1000.0, battery_percentage, adc_raw, is_on_usb, is_charging);
-                
-                // Extra debug for voltage divider calculation
-                let measured_at_pin = ((adc_raw as u32 * 3100) / 4095) as u16;
-                log::warn!("[BATTERY_SAMPLE] ADC pin voltage: {}mV (before 2x multiplier)", measured_at_pin);
-            }
+        self.sample_count = self.sample_count.wrapping_add(1);
+        if self.sample_count % 10 == 0 {
+            log::warn!("[BATTERY_SAMPLE] Voltage: {}mV ({:.3}V), Percentage: {}%, ADC raw: {}, USB: {}, Charging: {}", 
+                battery_voltage, battery_voltage as f32 / 1000.0, battery_percentage, adc_raw, is_on_usb, is_charging);
+            
+            // Extra debug for voltage divider calculation
+            let measured_at_pin = ((adc_raw as u32 * 3100) / 4095) as u16;
+            log::warn!("[BATTERY_SAMPLE] ADC pin voltage: {}mV (before 2x multiplier)", measured_at_pin);
         }
         
         Ok(SensorData {

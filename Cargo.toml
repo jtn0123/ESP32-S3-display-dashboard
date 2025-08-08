@@ -21,6 +21,7 @@ debug = true     # Keep debug info for better crash diagnostics
 [features]
 default = []
 esp_lcd_driver = []  # Enable ESP_LCD DMA driver instead of GPIO bit-bang
+minimal_boot = []
 
 [dependencies]
 # ESP-IDF Support (with std)

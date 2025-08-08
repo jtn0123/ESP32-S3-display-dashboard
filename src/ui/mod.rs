@@ -69,6 +69,13 @@ pub struct UiManager {
     battery_alert: bool,
     // Request a full re-render when dynamic state changes
     render_dirty: bool,
+    // Stability: avoid global mutable statics by caching per-instance
+    render_needed: bool,
+    last_progress_value: u8,
+    sensor_last_battery: u8,
+    sensor_last_temp: f32,
+    sensor_last_light: u16,
+    last_fps_rendered: f32,
 }
 
 impl UiManager {
@@ -115,6 +122,12 @@ impl UiManager {
             wifi_signal_alert: false,
             battery_alert: false,
             render_dirty: true,
+            render_needed: true,
+            last_progress_value: 255,
+            sensor_last_battery: 255,
+            sensor_last_temp: -999.0,
+            sensor_last_light: 65535,
+            last_fps_rendered: -1.0,
         })
     }
 
@@ -158,6 +171,7 @@ impl UiManager {
         // Force render when sensor data updates
         self.force_next_render();
         self.render_dirty = true;
+        self.render_needed = true;
     }
     
     pub fn update_network_status(&mut self, connected: bool, ip: Option<String>, ssid: String, signal: i8, gateway: Option<String>, mac: String) {
@@ -172,6 +186,7 @@ impl UiManager {
         self.wifi_signal_alert = connected && signal < -80;
         // Mark UI dirty so the Network screen re-renders immediately
         self.render_dirty = true;
+        self.render_needed = true;
     }
     
     pub fn update_ota_status(&mut self, status: OtaStatus) {
@@ -217,15 +232,11 @@ impl UiManager {
     }
 
     pub fn render(&mut self, display: &mut DisplayManager) -> Result<bool> {
-        // Track if anything needs updating
-        static mut RENDER_NEEDED: bool = true;
-        
+        // Track if anything needs updating (per-instance, no globals)
         self.total_renders += 1;
         // If state changed, request a render
-        unsafe {
-            if self.render_dirty {
-                RENDER_NEEDED = true;
-            }
+        if self.render_dirty {
+            self.render_needed = true;
         }
         
         // Check if screen changed
@@ -233,7 +244,7 @@ impl UiManager {
         if screen_changed {
             log::info!("Switching to screen {}", self.current_screen);
             self.last_rendered_screen = Some(self.current_screen);
-            unsafe { RENDER_NEEDED = true; }
+            self.render_needed = true;
             
             // Reset all screen initialization flags when switching
             self.system_screen_initialized = false;
@@ -244,15 +255,13 @@ impl UiManager {
         }
         
         // Skip render if nothing changed (except on screen change)
-        unsafe {
-            if !RENDER_NEEDED && !screen_changed {
-                self.skip_renders += 1;
-                // Still need to update and render FPS counter
-                self.render_fps_counter(display)?;
-                return Ok(false); // Frame was skipped
-            }
-            RENDER_NEEDED = false; // Reset flag
+        if !self.render_needed && !screen_changed {
+            self.skip_renders += 1;
+            // Still need to update and render FPS counter
+            self.render_fps_counter(display)?;
+            return Ok(false); // Frame was skipped
         }
+        self.render_needed = false; // Reset flag
         
         // Log render efficiency every 100 renders
         if self.total_renders % 100 == 0 {
@@ -485,14 +494,10 @@ impl UiManager {
         display.draw_text(120, y_start + line_height * 5, &psram_str, psram_color, None, 1)?;
         
         // Progress indicator (only update when progress changes)
-        static mut LAST_PROGRESS: u8 = 255; // Invalid initial value
         let progress = (self.animation_progress * 100.0) as u8;
-        
-        unsafe {
-            if progress != LAST_PROGRESS {
-                LAST_PROGRESS = progress;
-                display.draw_progress_bar(10, 138, 280, 8, progress, PRIMARY_GREEN, SURFACE_LIGHT, BORDER_COLOR)?;
-            }
+        if progress != self.last_progress_value {
+            self.last_progress_value = progress;
+            display.draw_progress_bar(10, 138, 280, 8, progress, PRIMARY_GREEN, SURFACE_LIGHT, BORDER_COLOR)?;
         }
         
         Ok(())
@@ -644,23 +649,16 @@ impl UiManager {
 
     fn render_sensor_screen(&mut self, display: &mut DisplayManager, screen_changed: bool) -> Result<()> {
         // Early exit if nothing needs updating
-        static mut LAST_BATTERY: u8 = 255;
-        static mut LAST_TEMP: f32 = -999.0;
-        static mut LAST_LIGHT: u16 = 65535;
-        
-        unsafe {
-            if !screen_changed && self.sensor_screen_initialized &&
-               LAST_BATTERY == self.sensor_data._battery_percentage &&
-               (LAST_TEMP - self.sensor_data._temperature).abs() < 0.5 &&
-               LAST_LIGHT == self.sensor_data._light_level {
-                return Ok(());
-            }
-            
-            // Update cached values
-            LAST_BATTERY = self.sensor_data._battery_percentage;
-            LAST_TEMP = self.sensor_data._temperature;
-            LAST_LIGHT = self.sensor_data._light_level;
+        if !screen_changed && self.sensor_screen_initialized &&
+           self.sensor_last_battery == self.sensor_data._battery_percentage &&
+           (self.sensor_last_temp - self.sensor_data._temperature).abs() < 0.5 &&
+           self.sensor_last_light == self.sensor_data._light_level {
+            return Ok(());
         }
+        // Update cached values
+        self.sensor_last_battery = self.sensor_data._battery_percentage;
+        self.sensor_last_temp = self.sensor_data._temperature;
+        self.sensor_last_light = self.sensor_data._light_level;
         
         // Only clear screen when switching to this screen
         if screen_changed {
@@ -964,18 +962,10 @@ impl UiManager {
     
     fn render_fps_counter(&mut self, display: &mut DisplayManager) -> Result<()> {
         // Only update FPS counter if it changed significantly
-        static mut LAST_FPS: f32 = -1.0; // Initialize to -1 to force first render
-        
-        unsafe {
-            // Always render if:
-            // - Force render is requested (e.g., after screen change)
-            // - FPS is 0.0 (ensures initial display and error states)
-            // - Change is significant
-            if !self.force_fps_render && LAST_FPS >= 0.0 && self.fps > 0.0 && (self.fps - LAST_FPS).abs() < 0.5 {
-                return Ok(()); // Skip update if change is less than 0.5 FPS
-            }
-            LAST_FPS = self.fps;
+        if !self.force_fps_render && self.last_fps_rendered >= 0.0 && self.fps > 0.0 && (self.fps - self.last_fps_rendered).abs() < 0.5 {
+            return Ok(()); // Skip update if change is less than 0.5 FPS
         }
+        self.last_fps_rendered = self.fps;
         
         // Clear the force render flag
         self.force_fps_render = false;

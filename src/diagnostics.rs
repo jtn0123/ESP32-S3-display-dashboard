@@ -167,17 +167,21 @@ pub fn log_panic_info(panic_msg: &str) {
 }
 
 /// Watchdog timer diagnostics
-pub fn log_watchdog_feed(_task_name: &str) {
+pub fn log_watchdog_feed(task_name: &str) {
     #[cfg(debug_assertions)]
     {
-        static mut LAST_FEED: i64 = 0;
-        unsafe {
-            let now = esp_idf_sys::esp_timer_get_time();
-            let delta = now - LAST_FEED;
-            if delta > 5_000_000 { // More than 5 seconds
-                warn!("WATCHDOG: Long gap in {} task: {}ms", task_name, delta / 1000);
+        use std::sync::{OnceLock, Mutex};
+        static LAST_FEED: OnceLock<Mutex<i64>> = OnceLock::new();
+        let now = unsafe { esp_idf_sys::esp_timer_get_time() };
+        let lock = LAST_FEED.get_or_init(|| Mutex::new(0));
+        if let Ok(mut prev) = lock.lock() {
+            if *prev != 0 {
+                let delta = now - *prev;
+                if delta > 5_000_000 { // More than 5 seconds
+                    warn!("WATCHDOG: Long gap in {} task: {}ms", task_name, delta / 1000);
+                }
             }
-            LAST_FEED = now;
+            *prev = now;
         }
     }
 }

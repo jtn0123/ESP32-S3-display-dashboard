@@ -5,6 +5,7 @@ use esp_idf_svc::http::server::{EspHttpServer, Method};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use esp_idf_hal::delay::FreeRtos;
 
 const MAX_CONNECTIONS: usize = 8;
 const PING_INTERVAL: Duration = Duration::from_secs(30);
@@ -146,8 +147,8 @@ impl WebSocketServer {
     }
 
     pub fn broadcast(&self, frame_type: FrameType, data: &[u8]) -> Result<()> {
-        let mut dead_connections = Vec::new();
-
+        // Snapshot senders without holding the lock during I/O
+        let mut snapshot: Vec<(u32, Arc<Mutex<Box<dyn embedded_svc::ws::Sender + Send>>>)> = Vec::new();
         {
             let connections = match self.connections.lock() {
                 Ok(c) => c,
@@ -157,11 +158,16 @@ impl WebSocketServer {
                 }
             };
             for (id, conn) in connections.iter() {
-                if let Ok(mut sender) = conn.sender.try_lock() {
-                    if let Err(e) = sender.send(frame_type, data) {
-                        log::warn!("Failed to send to WebSocket {}: {:?}", id, e);
-                        dead_connections.push(*id);
-                    }
+                snapshot.push((*id, conn.sender.clone()));
+            }
+        }
+
+        let mut dead_connections = Vec::new();
+        for (id, sender_arc) in snapshot.into_iter() {
+            if let Ok(mut sender) = sender_arc.try_lock() {
+                if let Err(e) = sender.send(frame_type, data) {
+                    log::warn!("Failed to send to WebSocket {}: {:?}", id, e);
+                    dead_connections.push(id);
                 }
             }
         }
@@ -184,25 +190,31 @@ impl WebSocketServer {
 
         std::thread::spawn(move || {
             loop {
-                std::thread::sleep(PING_INTERVAL);
+                // Yield to FreeRTOS scheduler
+                let ms = PING_INTERVAL.as_millis() as u32;
+                FreeRtos::delay_ms(ms);
+
+                // Snapshot connections first
+                let mut snapshot: Vec<(u32, Arc<Mutex<Box<dyn embedded_svc::ws::Sender + Send>>>, Instant)> = Vec::new();
+                match connections.lock() {
+                    Ok(conns) => {
+                        for (id, conn) in conns.iter() {
+                            snapshot.push((*id, conn.sender.clone(), conn.last_ping));
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("WebSocket: connections lock poisoned during ping: {}", e);
+                        continue;
+                    }
+                }
 
                 let mut dead_connections = Vec::new();
-
-                {
-                    let conns = match connections.lock() {
-                        Ok(c) => c,
-                        Err(e) => {
-                            log::error!("WebSocket: connections lock poisoned during ping: {}", e);
-                            continue;
-                        }
-                    };
-                    for (id, conn) in conns.iter() {
-                        if conn.last_ping.elapsed() > PING_INTERVAL * 2 {
-                            dead_connections.push(*id);
-                        } else if let Ok(mut sender) = conn.sender.try_lock() {
-                            if sender.send(FrameType::Ping, &[]).is_err() {
-                                dead_connections.push(*id);
-                            }
+                for (id, sender_arc, last_ping) in snapshot.into_iter() {
+                    if last_ping.elapsed() > PING_INTERVAL * 2 {
+                        dead_connections.push(id);
+                    } else if let Ok(mut sender) = sender_arc.try_lock() {
+                        if sender.send(FrameType::Ping, &[]).is_err() {
+                            dead_connections.push(id);
                         }
                     }
                 }

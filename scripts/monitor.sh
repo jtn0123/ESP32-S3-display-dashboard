@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Monitor script for ESP32-S3
 
+RAW=false
+if [ "${1:-}" = "--raw" ]; then
+  RAW=true
+  shift
+fi
+
 PORT="${1:-$(ls /dev/cu.usbmodem* /dev/tty.usbmodem* 2>/dev/null | head -1)}"
 
 if [ -z "$PORT" ]; then
@@ -15,7 +21,15 @@ echo "----------------------------------------"
 # Trap Ctrl+C to ensure clean exit
 trap 'echo -e "\nMonitor stopped"; exit 0' INT
 
-# Simple direct read from serial port
-# Set baud rate and read continuously
-stty -f "$PORT" 115200 cs8 -cstopb -parenb 2>/dev/null || true
-cat "$PORT"
+if [ "$RAW" = true ]; then
+  stty -f "$PORT" 115200 cs8 -cstopb -parenb 2>/dev/null || true
+  cat "$PORT"
+else
+  # Prefer espflash monitor if available (handles USB-CDC/JTAG reliably)
+  if command -v espflash >/dev/null 2>&1; then
+    espflash monitor --port "$PORT"
+  else
+    stty -f "$PORT" 115200 cs8 -cstopb -parenb 2>/dev/null || true
+    cat "$PORT"
+  fi
+fi

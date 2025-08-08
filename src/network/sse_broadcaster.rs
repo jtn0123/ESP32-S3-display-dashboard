@@ -3,6 +3,7 @@ use esp_idf_svc::http::server::{EspHttpServer, Method};
 use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use esp_idf_hal::delay::FreeRtos;
 
 // Simple SSE broadcaster that doesn't try to store responses
 // Instead, it relies on the metrics system to provide data when requested
@@ -76,7 +77,7 @@ impl SseBroadcaster {
                 // Adjust tick based on heap pressure: normal=1s, warn=2s, critical=4s
                 let pressure = 0u8; // temporarily fixed until monitor is re-enabled
                 let tick = 1;
-                std::thread::sleep(Duration::from_secs(tick));
+                FreeRtos::delay_ms(tick * 1000);
                 
                 // Send metrics update
                 if let Ok(metrics) = crate::metrics::metrics().try_lock() {

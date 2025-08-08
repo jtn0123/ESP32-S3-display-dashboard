@@ -627,39 +627,12 @@ impl DisplayManager {
     }
 
     pub fn draw_progress_bar(&mut self, x: u16, y: u16, w: u16, h: u16, progress: u8, fg_color: u16, bg_color: u16, border_color: u16) -> Result<()> {
-        // Cache last progress bar state to avoid redundant draws
-        static mut LAST_PROGRESS_STATE: (u16, u16, u16, u16, u8) = (0, 0, 0, 0, 255);
-        
-        unsafe {
-            if LAST_PROGRESS_STATE == (x, y, w, h, progress) {
-                return Ok(()); // Skip if nothing changed
-            }
-            
-            // Only redraw the parts that changed
-            if LAST_PROGRESS_STATE.0 != x || LAST_PROGRESS_STATE.1 != y || 
-               LAST_PROGRESS_STATE.2 != w || LAST_PROGRESS_STATE.3 != h {
-                // Position or size changed, redraw everything
-                self.draw_rect(x, y, w, h, border_color)?;
-                self.fill_rect(x + 1, y + 1, w - 2, h - 2, bg_color)?;
-            }
-            
-            // Calculate progress widths
-            let old_progress_width = ((w - 2) as u32 * LAST_PROGRESS_STATE.4 as u32 / 100) as u16;
-            let new_progress_width = ((w - 2) as u32 * progress as u32 / 100) as u16;
-            
-            if new_progress_width != old_progress_width {
-                if new_progress_width > old_progress_width {
-                    // Progress increased - just draw the new part
-                    self.fill_rect(x + 1 + old_progress_width, y + 1, 
-                                  new_progress_width - old_progress_width, h - 2, fg_color)?;
-                } else {
-                    // Progress decreased - clear the removed part
-                    self.fill_rect(x + 1 + new_progress_width, y + 1, 
-                                  old_progress_width - new_progress_width, h - 2, bg_color)?;
-                }
-            }
-            
-            LAST_PROGRESS_STATE = (x, y, w, h, progress);
+        // Remove global static; compute and draw idempotently
+        self.draw_rect(x, y, w, h, border_color)?;
+        self.fill_rect(x + 1, y + 1, w - 2, h - 2, bg_color)?;
+        let new_progress_width = ((w - 2) as u32 * progress as u32 / 100) as u16;
+        if new_progress_width > 0 {
+            self.fill_rect(x + 1, y + 1, new_progress_width, h - 2, fg_color)?;
         }
         
         Ok(())

@@ -3,6 +3,7 @@ use esp_idf_svc::eventloop::{EspEventLoop, System};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicBool, Ordering};
+use esp_idf_hal::delay::FreeRtos;
 
 /// WiFi reconnection manager that handles disconnection events
 pub struct WifiReconnectManager {
@@ -48,7 +49,7 @@ impl WifiReconnectManager {
             
             // Initial delay to avoid race condition during boot
             log::info!("Waiting 15 seconds before starting WiFi monitoring...");
-            std::thread::sleep(Duration::from_secs(15));
+            FreeRtos::delay_ms(15_000);
             
             while monitoring_active.load(Ordering::Relaxed) {
                 // Check if WiFi is connected
@@ -83,14 +84,14 @@ impl WifiReconnectManager {
                     // Calculate backoff delay (exponential, max 60 seconds)
                     let delay = std::cmp::min(60, 5 * (1 << std::cmp::min(attempts - 1, 4)));
                     log::info!("Backoff {}s before reconnection attempt", delay);
-                    std::thread::sleep(Duration::from_secs(delay as u64));
+                    FreeRtos::delay_ms(delay as u32 * 1000);
                     
                     // Attempt reconnection
                     match Self::force_reconnect() {
                         Ok(_) => {
                             log::info!("WiFi reconnection initiated");
                             // Wait a bit for connection to establish
-                            std::thread::sleep(Duration::from_secs(10));
+                            FreeRtos::delay_ms(10_000);
                         }
                         Err(e) => {
                             log::error!("WiFi reconnection failed: {:?}", e);
@@ -106,7 +107,7 @@ impl WifiReconnectManager {
                 }
                 
                 // Check every 10 seconds
-                std::thread::sleep(Duration::from_secs(10));
+                FreeRtos::delay_ms(10_000);
             }
             
             log::info!("WiFi monitoring task stopped");
@@ -162,7 +163,7 @@ impl WifiReconnectManager {
             let _ = esp_idf_sys::esp_wifi_disconnect();
             
             // Wait a bit
-            std::thread::sleep(Duration::from_millis(500));
+            FreeRtos::delay_ms(500);
             
             // Reconnect
             let result = esp_idf_sys::esp_wifi_connect();
@@ -189,7 +190,7 @@ pub fn handle_post_ota_wifi() -> Result<()> {
         
         // Give WiFi subsystem more time to fully initialize after OTA
         log::info!("Waiting for WiFi subsystem to stabilize...");
-        std::thread::sleep(Duration::from_secs(3));
+        FreeRtos::delay_ms(3_000);
         
         // Stop WiFi first to ensure clean state
         unsafe {
@@ -202,7 +203,7 @@ pub fn handle_post_ota_wifi() -> Result<()> {
         }
         
         // Small delay between stop and start
-        std::thread::sleep(Duration::from_millis(500));
+        FreeRtos::delay_ms(500);
         
         // Start WiFi
         unsafe {
@@ -216,7 +217,7 @@ pub fn handle_post_ota_wifi() -> Result<()> {
         }
         
         // Wait a bit more before attempting connection
-        std::thread::sleep(Duration::from_secs(1));
+        FreeRtos::delay_ms(1_000);
         
         // Force reconnection with retries
         for attempt in 1..=3 {
@@ -229,7 +230,7 @@ pub fn handle_post_ota_wifi() -> Result<()> {
                 Err(e) => {
                     log::warn!("Reconnection attempt {} failed: {:?}", attempt, e);
                     if attempt < 3 {
-                        std::thread::sleep(Duration::from_secs(2));
+                        FreeRtos::delay_ms(2_000);
                     }
                 }
             }

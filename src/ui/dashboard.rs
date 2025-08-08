@@ -9,6 +9,7 @@ pub struct Dashboard {
     screens: [Box<dyn Screen>; 5],
     current_screen: usize,
     theme: Theme,
+    theme_index: usize,
     show_menu: bool,
     menu_selection: usize,
 }
@@ -29,6 +30,7 @@ impl Dashboard {
             screens,
             current_screen: 0,
             theme: Theme::default(),
+            theme_index: 0,
             show_menu: false,
             menu_selection: 0,
         }
@@ -40,11 +42,8 @@ impl Dashboard {
             // Settings screen is at index 4
             // This is a simple increment, in a real implementation
             // we'd need to properly track and update the theme index
-            static mut THEME_INDEX: usize = 0;
-            unsafe {
-                THEME_INDEX = (THEME_INDEX + 1) % Theme::THEME_COUNT;
-                self.theme = Theme::get_theme_by_index(THEME_INDEX);
-            }
+            self.theme_index = (self.theme_index + 1) % Theme::THEME_COUNT;
+            self.theme = Theme::get_theme_by_index(self.theme_index);
         }
     }
     

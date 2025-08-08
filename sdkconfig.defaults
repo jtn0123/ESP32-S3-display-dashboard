@@ -78,6 +78,8 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # Disable core dump to flash (was causing CRC errors) to reduce boot noise
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=n
 CONFIG_ESP_COREDUMP_ENABLE_TO_NONE=y
+# TEMP: Disable PSRAM to isolate early-boot panic after "cpu_start: Multicore app"
+CONFIG_ESP32S3_SPIRAM_SUPPORT=n
 
 # Enable PSRAM (8MB on T-Display-S3)
 CONFIG_ESP32S3_SPIRAM_SUPPORT=y

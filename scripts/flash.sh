@@ -144,12 +144,34 @@ echo -e "\n${BLUE}Resetting device...${NC}"
 $ESPTOOL --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after hard_reset \
     read_mac >/dev/null 2>&1 || true
 sleep 1
+# Fallback: pulse DTR/RTS directly if needed
+python3 - << 'PY' "$PORT"
+import sys, time
+try:
+    import serial
+except Exception:
+    sys.exit(0)
+port = sys.argv[1]
+try:
+    ser = serial.Serial(port, 115200)
+    # EN low (RTS true), BOOT high (DTR false)
+    ser.setDTR(False)
+    ser.setRTS(True)
+    time.sleep(0.05)
+    # EN high (RTS false)
+    ser.setRTS(False)
+    time.sleep(0.05)
+    ser.close()
+except Exception:
+    pass
+PY
 
 # Clean up
 rm -f "$BIN_FILE" "$PARTITION_BIN"
 
-# Extract version from the binary
-VERSION=$(grep -a "v[0-9]\+\.[0-9]\+-rust" "$ELF_FILE" 2>/dev/null | head -1 | grep -o "v[0-9]\+\.[0-9]\+-rust" || echo "unknown")
+# Extract version from source (DISPLAY_VERSION in src/version.rs)
+VERSION=$(grep -oE 'DISPLAY_VERSION\s*=\s*"v[0-9]+\.[0-9]+"' src/version.rs | grep -oE 'v[0-9]+\.[0-9]+')
+if [ -z "${VERSION}" ]; then VERSION="unknown"; fi
 
 echo -e "\n${GREEN}✅ USB flash complete!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

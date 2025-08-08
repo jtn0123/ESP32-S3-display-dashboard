@@ -4,6 +4,7 @@ use esp_idf_sys::*;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use esp_idf_hal::delay::FreeRtos;
 use log::{error, warn, info};
 
 /// Enable diagnostic mode
@@ -235,7 +236,7 @@ pub fn init() {
     // Set up periodic diagnostics
     std::thread::spawn(|| {
         loop {
-            std::thread::sleep(Duration::from_secs(30));
+            FreeRtos::delay_ms(30_000);
             
             if DIAGNOSTIC_MODE.load(Ordering::Relaxed) {
                 info!("=== PERIODIC DIAGNOSTICS ===");

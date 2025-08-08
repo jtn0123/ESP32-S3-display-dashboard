@@ -3,6 +3,7 @@ use esp_idf_svc::http::server::{EspHttpServer, Method};
 use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use esp_idf_hal::delay::FreeRtos;
 use log::{info, warn, error};
 
 // SSE configuration constants
@@ -312,7 +313,7 @@ where
         }
         
         // Sleep to prevent CPU hogging
-        std::thread::sleep(Duration::from_secs(1));
+        FreeRtos::delay_ms(1_000);
     }
     
     Ok(())

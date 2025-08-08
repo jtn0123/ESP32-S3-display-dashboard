@@ -5,6 +5,7 @@ use esp_idf_svc::http::server::{Configuration as HttpServerConfig, EspHttpServer
 use std::sync::{Arc, Mutex};
 use crate::config::Config;
 use crate::system_info::SystemInfo;
+use esp_idf_hal::delay::FreeRtos;
 
 pub struct WebConfigServer {
     _server: EspHttpServer<'static>,
@@ -76,7 +77,7 @@ impl WebConfigServer {
             
             // Schedule restart after response is sent
             std::thread::spawn(|| {
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                FreeRtos::delay_ms(500);
                 log::info!("Restarting device via web request...");
                 unsafe { esp_idf_sys::esp_restart(); }
             });

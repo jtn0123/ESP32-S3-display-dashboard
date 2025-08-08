@@ -67,6 +67,21 @@ fn web_server_error() -> &'static std::sync::Mutex<Option<String>> {
 const PORT_TICK_PERIOD_MS: u32 = 1;
 
 fn main() -> Result<()> {
+    // Minimal boot fast-path for isolating early-boot issues
+    #[cfg(feature = "minimal_boot")]
+    {
+        // Ensure IDF runtime patches are linked
+        esp_idf_svc::sys::link_patches();
+
+        // Try to initialize our logger so output goes to the normal console
+        let _ = logging::init_logger();
+        log::info!("[MIN] minimal boot active; holding in idle loop");
+
+        // Keep the system alive with a simple delay loop
+        loop {
+            unsafe { esp_idf_sys::vTaskDelay(1000 / PORT_TICK_PERIOD_MS); }
+        }
+    }
     // Initialize ESP-IDF
     esp_idf_svc::sys::link_patches();
     
@@ -116,7 +131,10 @@ fn main() -> Result<()> {
     }));
     
     // Initialize our logger with colors and timestamps
-    logging::init_logger().expect("Failed to initialize logger");
+    if let Err(e) = logging::init_logger() {
+        log::error!("Logger initialization failed: {:?}", e);
+        // Continue without early panic; diagnostics will still print via IDF default logging
+    }
 
     // Initialize in-memory log streamer early so logs are captured from boot
     crate::network::log_streamer::init(None);
@@ -1132,13 +1150,12 @@ fn run_app(
         if let Ok(processed_data) = core1_channels.processed_rx.try_recv() {
             // Core 1 now receives proper sensor data from Core 0, no override needed
             // Rate-limited debug logging to reduce spam
-            static mut DEBUG_COUNTER: u32 = 0;
-            unsafe {
-                DEBUG_COUNTER = DEBUG_COUNTER.wrapping_add(1);
-                if DEBUG_COUNTER % 600 == 0 {  // Log once every ~10 seconds at 60 FPS
-                    log::debug!("Core 0: Received processed data from Core 1 - Temp: {:.1}°C, Battery: {}%", 
-                        processed_data.temperature, processed_data.battery_percentage);
-                }
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static DEBUG_COUNTER: AtomicU32 = AtomicU32::new(0);
+            let current = DEBUG_COUNTER.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+            if current % 600 == 0 {  // Log once every ~10 seconds at 60 FPS
+                log::debug!("Core 0: Received processed data from Core 1 - Temp: {:.1}°C, Battery: {}%", 
+                    processed_data.temperature, processed_data.battery_percentage);
             }
             
             // Update UI with processed sensor data

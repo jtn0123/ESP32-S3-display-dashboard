@@ -15,7 +15,11 @@ pub fn init_metrics() {
 
 // Get the metrics instance - panics if not initialized
 pub fn metrics() -> &'static Arc<MetricsWrapper> {
-    METRICS.get().expect("Metrics not initialized! Call init_metrics() first")
+    METRICS.get().unwrap_or_else(|| {
+        // Initialize on-demand to avoid panics if mis-ordered
+        metrics_rwlock::init_metrics();
+        METRICS.get_or_init(|| Arc::new(MetricsWrapper::new()))
+    })
 }
 
 /// Wrapper that provides Mutex-like interface but uses optimized backend

@@ -3,6 +3,7 @@ use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::io::Write;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use esp_idf_hal::delay::FreeRtos;
 use crate::config::Config;
 use crate::ota::OtaManager;
 use crate::metrics_formatter::MetricsFormatter;
@@ -279,7 +280,7 @@ impl WebConfigServer {
             
             // Schedule restart after response
             std::thread::spawn(|| {
-                std::thread::sleep(std::time::Duration::from_secs(1));
+                FreeRtos::delay_ms(1_000);
                 unsafe { esp_idf_sys::esp_restart(); }
             });
             
@@ -496,7 +497,7 @@ impl WebConfigServer {
                         
                         // Schedule restart
                         std::thread::spawn(|| {
-                            std::thread::sleep(std::time::Duration::from_secs(2));
+                        FreeRtos::delay_ms(2_000);
                             log::info!("OTA complete - restarting...");
                             unsafe { esp_idf_sys::esp_restart(); }
                         });
@@ -867,7 +868,7 @@ impl WebConfigServer {
             
             // Schedule restart after response is sent
             std::thread::spawn(|| {
-                std::thread::sleep(std::time::Duration::from_secs(1));
+                FreeRtos::delay_ms(1_000);
                 log::info!("Manual restart requested...");
                 unsafe { esp_idf_sys::esp_restart(); }
             });

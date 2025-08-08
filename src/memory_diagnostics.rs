@@ -57,6 +57,7 @@ pub fn heap_pressure_level() -> u8 {
 
 #[allow(dead_code)]
 pub fn start_heap_pressure_monitor() {
+    use esp_idf_hal::delay::FreeRtos;
     std::thread::spawn(|| loop {
         unsafe {
             let internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL as u32);
@@ -70,7 +71,7 @@ pub fn start_heap_pressure_monitor() {
             };
             HEAP_PRESSURE_LEVEL.store(level, Ordering::Relaxed);
         }
-        std::thread::sleep(core::time::Duration::from_millis(500));
+        FreeRtos::delay_ms(500);
     });
 }
 
