@@ -37,8 +37,8 @@ impl StableServerConfig {
 pub struct RequestInstrumentation {
     pub request_id: Option<String>,
     pub start_heap_free: u32,
-    pub _start_heap_largest: u32,
-    pub _start_psram_free: u32,
+    pub start_heap_largest: u32,
+    pub start_psram_free: u32,
     pub start_stack_watermark: u32,
     pub start_time: u64,
 }
@@ -49,10 +49,10 @@ impl RequestInstrumentation {
             Self {
                 request_id,
                 start_heap_free: esp_idf_sys::esp_get_free_heap_size(),
-                _start_heap_largest: esp_idf_sys::heap_caps_get_largest_free_block(
+                start_heap_largest: esp_idf_sys::heap_caps_get_largest_free_block(
                     esp_idf_sys::MALLOC_CAP_INTERNAL
                 ) as u32,
-                _start_psram_free: esp_idf_sys::heap_caps_get_free_size(
+                start_psram_free: esp_idf_sys::heap_caps_get_free_size(
                     esp_idf_sys::MALLOC_CAP_SPIRAM
                 ) as u32,
                 start_stack_watermark: esp_idf_sys::uxTaskGetStackHighWaterMark(

@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Center - ESP32-S3</title>
+    <style>
+        /* Theme System */
+        :root[data-theme="light"] {
+            --bg-main: #ffffff;
+            --bg-card: #f9fafb;
+            --bg-hover: #f3f4f6;
+            --bg-input: #e5e7eb;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #111827;
+            --text-dim: #6b7280;
+            --text-muted: #9ca3af;
+            --border: #e5e7eb;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        :root[data-theme="dark"] {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #374151;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Default to dark theme */
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --border: #374151;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-main);
+            color: var(--text);
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.5;
+        }
+
+        /* Navigation */
+        .navbar {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-brand {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+            background: var(--bg-hover);
+        }
+
+        .nav-links a.active {
+            color: var(--accent);
+            background: var(--bg-hover);
+        }
+
+        .theme-toggle {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .theme-toggle:hover {
+            background: var(--bg-hover);
+        }
+
+        /* Main Content */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .page-header {
+            margin-bottom: 2rem;
+        }
+
+        .page-header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .page-header p {
+            color: var(--text-dim);
+        }
+
+        /* Control Sections */
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .control-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+
+        .control-card h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Display Controls */
+        .slider-control {
+            margin-bottom: 1.5rem;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-input);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: var(--accent);
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .slider::-webkit-slider-thumb:hover {
+            background: var(--accent-hover);
+            transform: scale(1.1);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: var(--accent);
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        /* Toggle Switches */
+        .toggle-control {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--bg-hover);
+            border-radius: 0.375rem;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--bg-input);
+            transition: 0.4s;
+            border-radius: 34px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: 0.4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: var(--accent);
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        /* Buttons */
+        .button-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex: 1;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-secondary {
+            background: var(--bg-hover);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-input);
+        }
+
+        /* Power Mode Selection */
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem;
+            background: var(--bg-hover);
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .radio-option:hover {
+            background: var(--bg-input);
+        }
+
+        .radio-option input[type="radio"] {
+            margin-right: 0.75rem;
+        }
+
+        .radio-option.selected {
+            background: var(--accent);
+            color: white;
+        }
+
+        /* Status Indicators */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: var(--bg-hover);
+            border-radius: 0.375rem;
+        }
+
+        .status-value {
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        /* Battery Chart */
+        .battery-chart {
+            height: 200px;
+            background: var(--bg-hover);
+            border-radius: 0.375rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+            margin-bottom: 1rem;
+        }
+
+        /* Alert */
+        .alert {
+            padding: 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .control-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .nav-links {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span>🎮</span>
+            <span>ESP32-S3 Control Center</span>
+        </div>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/control" class="active">Control</a>
+            <a href="/dev">Dev Tools</a>
+            <a href="/settings">Settings</a>
+            <button class="theme-toggle" id="themeToggle">Dark</button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-header">
+            <h1>Control Center</h1>
+            <p>Manage your ESP32-S3 device settings and controls</p>
+        </div>
+
+        <!-- Alert Messages -->
+        <div id="alert" class="alert"></div>
+
+        <div class="control-grid">
+            <!-- Display Controls -->
+            <div class="control-card">
+                <h2>📱 Display Controls</h2>
+                
+                <div class="slider-control">
+                    <div class="slider-label">
+                        <span>Brightness</span>
+                        <span id="brightnessValue">50%</span>
+                    </div>
+                    <input type="range" class="slider" id="brightnessSlider" min="0" max="100" value="50">
+                </div>
+
+                <div class="toggle-control">
+                    <span>Display Power</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="displayToggle" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="toggle-control">
+                    <span>Auto-Dimming</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="autoDimToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">Power Mode</h3>
+                <div class="radio-group">
+                    <label class="radio-option">
+                        <input type="radio" name="powerMode" value="eco">
+                        <div>
+                            <div>Eco Mode</div>
+                            <small style="color: var(--text-dim)">Low power, 80MHz CPU</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="powerMode" value="normal" checked>
+                        <div>
+                            <div>Normal Mode</div>
+                            <small style="color: var(--text-dim)">Balanced, 160MHz CPU</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="powerMode" value="turbo">
+                        <div>
+                            <div>Turbo Mode</div>
+                            <small style="color: var(--text-dim)">High performance, 240MHz CPU</small>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- System Controls -->
+            <div class="control-card">
+                <h2>⚙️ System Controls</h2>
+                
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span>CPU Frequency</span>
+                        <span class="status-value" id="cpuFreq">160 MHz</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Temperature</span>
+                        <span class="status-value" id="temperature">--°C</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Uptime</span>
+                        <span class="status-value" id="uptime">--:--</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Free Heap</span>
+                        <span class="status-value" id="freeHeap">-- KB</span>
+                    </div>
+                </div>
+
+                <h3 style="margin-bottom: 1rem;">Device Actions</h3>
+                
+                <button class="btn btn-secondary" onclick="refreshStats()" style="width: 100%; margin-bottom: 0.5rem;">
+                    🔄 Refresh Stats
+                </button>
+
+                <div class="button-group">
+                    <button class="btn btn-danger" onclick="confirmRestart()">
+                        🔄 Restart Device
+                    </button>
+                    <button class="btn btn-secondary" onclick="factoryReset()">
+                        🏭 Factory Reset
+                    </button>
+                </div>
+
+                <h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">GPIO Monitoring</h3>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span>Button 1 (GPIO0)</span>
+                        <span class="status-value" id="gpio0">Released</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Button 2 (GPIO14)</span>
+                        <span class="status-value" id="gpio14">Released</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Power Management -->
+            <div class="control-card">
+                <h2>🔋 Power Management</h2>
+                
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span>Battery Level</span>
+                        <span class="status-value" id="batteryLevel">--%</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Charging</span>
+                        <span class="status-value" id="chargingStatus">Unknown</span>
+                    </div>
+                </div>
+
+                <div class="battery-chart" id="batteryChart">
+                    Battery history chart will appear here
+                </div>
+
+                <h3 style="margin-bottom: 1rem;">Sleep Settings</h3>
+                
+                <div class="slider-control">
+                    <div class="slider-label">
+                        <span>Dim Timeout</span>
+                        <span id="dimTimeoutValue">30s</span>
+                    </div>
+                    <input type="range" class="slider" id="dimTimeoutSlider" min="10" max="300" value="30" step="10">
+                </div>
+
+                <div class="slider-control">
+                    <div class="slider-label">
+                        <span>Sleep Timeout</span>
+                        <span id="sleepTimeoutValue">5m</span>
+                    </div>
+                    <input type="range" class="slider" id="sleepTimeoutSlider" min="60" max="1800" value="300" step="60">
+                </div>
+
+                <button class="btn btn-primary" onclick="savePowerSettings()" style="width: 100%;">
+                    💾 Save Power Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Theme management
+        const themeToggle = document.getElementById('themeToggle');
+        const root = document.documentElement;
+        
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        root.setAttribute('data-theme', savedTheme);
+        themeToggle.textContent = savedTheme === 'dark' ? 'Dark' : 'Light';
+        
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = root.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            root.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            themeToggle.textContent = newTheme === 'dark' ? 'Dark' : 'Light';
+        });
+
+        // SSE connection for real-time updates
+        let eventSource;
+        
+        function connectSSE() {
+            eventSource = new EventSource('/api/events');
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    updateStats(data);
+                } catch (e) {
+                    console.error('Failed to parse SSE data:', e);
+                }
+            };
+            
+            eventSource.onerror = () => {
+                console.error('SSE connection error');
+                setTimeout(connectSSE, 5000);
+            };
+        }
+
+        // Update stats from SSE data
+        function updateStats(data) {
+            if (data.temperature !== undefined) {
+                document.getElementById('temperature').textContent = data.temperature.toFixed(1) + '°C';
+            }
+            if (data.uptime_ms !== undefined) {
+                const seconds = Math.floor(data.uptime_ms / 1000);
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                document.getElementById('uptime').textContent = 
+                    `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+            if (data.heap_free_kb !== undefined) {
+                document.getElementById('freeHeap').textContent = data.heap_free_kb + ' KB';
+            }
+            if (data.cpu_freq_mhz !== undefined) {
+                document.getElementById('cpuFreq').textContent = data.cpu_freq_mhz + ' MHz';
+            }
+            if (data.battery_percentage !== undefined) {
+                document.getElementById('batteryLevel').textContent = data.battery_percentage + '%';
+            }
+            if (data.battery_charging !== undefined) {
+                document.getElementById('chargingStatus').textContent = data.battery_charging ? 'Charging' : 'Discharging';
+            }
+        }
+
+        // Brightness control
+        const brightnessSlider = document.getElementById('brightnessSlider');
+        const brightnessValue = document.getElementById('brightnessValue');
+        
+        brightnessSlider.addEventListener('input', (e) => {
+            brightnessValue.textContent = e.target.value + '%';
+        });
+        
+        brightnessSlider.addEventListener('change', async (e) => {
+            const brightness = Math.round(e.target.value * 2.55); // Convert to 0-255
+            try {
+                const response = await fetch('/api/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ brightness })
+                });
+                if (response.ok) {
+                    showAlert('Brightness updated', 'success');
+                }
+            } catch (e) {
+                showAlert('Failed to update brightness', 'error');
+            }
+        });
+
+        // Power mode selection
+        document.querySelectorAll('input[name="powerMode"]').forEach(radio => {
+            radio.addEventListener('change', async (e) => {
+                // Update visual selection
+                document.querySelectorAll('.radio-option').forEach(opt => {
+                    opt.classList.remove('selected');
+                });
+                e.target.parentElement.classList.add('selected');
+                
+                // Send to device
+                try {
+                    const response = await fetch('/api/control', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: e.target.value })
+                    });
+                    if (response.ok) {
+                        showAlert(`Power mode set to ${e.target.value}`, 'success');
+                    }
+                } catch (e) {
+                    showAlert('Failed to update power mode', 'error');
+                }
+            });
+        });
+
+        // Display toggle
+        document.getElementById('displayToggle').addEventListener('change', async (e) => {
+            try {
+                const response = await fetch('/api/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ display: e.target.checked })
+                });
+                if (response.ok) {
+                    showAlert(`Display ${e.target.checked ? 'on' : 'off'}`, 'success');
+                }
+            } catch (e) {
+                showAlert('Failed to toggle display', 'error');
+            }
+        });
+
+        // Timeout sliders
+        const dimTimeoutSlider = document.getElementById('dimTimeoutSlider');
+        const dimTimeoutValue = document.getElementById('dimTimeoutValue');
+        
+        dimTimeoutSlider.addEventListener('input', (e) => {
+            dimTimeoutValue.textContent = e.target.value + 's';
+        });
+
+        const sleepTimeoutSlider = document.getElementById('sleepTimeoutSlider');
+        const sleepTimeoutValue = document.getElementById('sleepTimeoutValue');
+        
+        sleepTimeoutSlider.addEventListener('input', (e) => {
+            const minutes = Math.floor(e.target.value / 60);
+            sleepTimeoutValue.textContent = minutes + 'm';
+        });
+
+        // Alert helper
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = `alert alert-${type}`;
+            alert.style.display = 'block';
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 3000);
+        }
+
+        // Device restart
+        function confirmRestart() {
+            if (confirm('Are you sure you want to restart the device?')) {
+                restartDevice();
+            }
+        }
+
+        async function restartDevice() {
+            try {
+                const response = await fetch('/api/restart', {
+                    method: 'POST',
+                    headers: { 'X-Restart-Token': 'esp32-restart' }
+                });
+                if (response.ok) {
+                    showAlert('Device restarting...', 'success');
+                } else {
+                    showAlert('Restart failed', 'error');
+                }
+            } catch (e) {
+                showAlert('Failed to send restart command', 'error');
+            }
+        }
+
+        // Factory reset (placeholder)
+        function factoryReset() {
+            alert('Factory reset not implemented yet');
+        }
+
+        // Save power settings
+        async function savePowerSettings() {
+            const settings = {
+                dim_timeout: parseInt(dimTimeoutSlider.value),
+                sleep_timeout: parseInt(sleepTimeoutSlider.value),
+                auto_dim: document.getElementById('autoDimToggle').checked
+            };
+            
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+                if (response.ok) {
+                    showAlert('Power settings saved', 'success');
+                }
+            } catch (e) {
+                showAlert('Failed to save power settings', 'error');
+            }
+        }
+
+        // Refresh stats manually
+        async function refreshStats() {
+            try {
+                const response = await fetch('/api/system');
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStats(data);
+                    showAlert('Stats refreshed', 'success');
+                }
+            } catch (e) {
+                showAlert('Failed to refresh stats', 'error');
+            }
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            connectSSE();
+            refreshStats();
+        });
+
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>

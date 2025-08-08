@@ -49,27 +49,119 @@ pub fn handle_home_streaming(req: Request<&mut EspHttpConnection>) -> Result<(),
     <title>ESP32-S3 Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: -apple-system, system-ui, sans-serif; background: #f9fafb; margin: 0; padding: 20px; color: #111827; }
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f9fafb;
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --border-color: #e5e7eb;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+        }
+        
+        [data-theme="dark"] {
+            --bg-primary: #1f2937;
+            --bg-secondary: #0f172a;
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --border-color: #374151;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            --accent: #60a5fa;
+            --accent-hover: #3b82f6;
+        }
+        
+        body { 
+            font-family: -apple-system, system-ui, sans-serif; 
+            background: var(--bg-secondary); 
+            margin: 0; 
+            padding: 20px; 
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
         .container { max-width: 1200px; margin: 0 auto; }
-        .header { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07); }
-        .header h1 { margin: 0 0 8px 0; font-size: 2rem; color: #111827; }
-        .header p { margin: 0; color: #6b7280; }
-        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07); }
-        .card h2 { margin: 0 0 16px 0; font-size: 1.5rem; color: #111827; }
-        .metric { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
+        .header { 
+            background: var(--bg-primary); 
+            border-radius: 12px; 
+            padding: 24px; 
+            margin-bottom: 20px; 
+            box-shadow: var(--shadow);
+            position: relative;
+        }
+        .header h1 { margin: 0 0 8px 0; font-size: 2rem; color: var(--text-primary); }
+        .header p { margin: 0; color: var(--text-secondary); }
+        .card { 
+            background: var(--bg-primary); 
+            border-radius: 12px; 
+            padding: 24px; 
+            margin-bottom: 20px; 
+            box-shadow: var(--shadow);
+        }
+        .card h2 { margin: 0 0 16px 0; font-size: 1.5rem; color: var(--text-primary); }
+        .metric { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
         .metric:last-child { border-bottom: none; }
-        .metric-label { font-weight: 500; color: #111827; }
-        .metric-value { color: #3b82f6; font-family: monospace; }
+        .metric-label { font-weight: 500; color: var(--text-primary); }
+        .metric-value { color: var(--accent); font-family: monospace; }
         .status-healthy { color: #10b981; }
         .status-warning { color: #f59e0b; }
         .status-critical { color: #ef4444; }
-        .button { display: inline-block; background: #3b82f6; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; margin-top: 16px; }
-        .button:hover { background: #2563eb; }
+        .button { 
+            display: inline-block; 
+            background: var(--accent); 
+            color: white; 
+            padding: 10px 20px; 
+            border-radius: 8px; 
+            text-decoration: none; 
+            margin-top: 16px; 
+            transition: background-color 0.2s;
+        }
+        .button:hover { background: var(--accent-hover); }
+        .theme-toggle {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .theme-toggle:hover { background: var(--accent-hover); }
     </style>
+    <script>
+        // Check for saved theme preference or default to light
+        const theme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeButton(newTheme);
+        }
+        
+        function updateThemeButton(theme) {
+            const button = document.getElementById('themeToggle');
+            if (button) {
+                button.textContent = theme === 'light' ? 'Dark' : 'Light';
+            }
+        }
+        
+        // Update button text on load
+        window.addEventListener('DOMContentLoaded', function() {
+            const theme = document.documentElement.getAttribute('data-theme');
+            updateThemeButton(theme);
+        });
+    </script>
 </head>
 <body>
     <div class="container">
         <div class="header">
+            <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">Dark</button>
             <h1>ESP32-S3 Dashboard</h1>
             <p>Version "#)?;
     
@@ -164,10 +256,18 @@ pub fn handle_home_streaming(req: Request<&mut EspHttpConnection>) -> Result<(),
         </div>
         
         <div class="card">
+            <h2>Navigation</h2>
+            <a href="/dashboard" class="button">Dashboard</a>
+            <a href="/control" class="button">Control Center</a>
+            <a href="/dev" class="button">Dev Tools</a>
+            <a href="/settings" class="button">Settings</a>
+        </div>
+        
+        <div class="card">
             <h2>Quick Links</h2>
-            <a href="/api/metrics" class="button">View Metrics</a>
-            <a href="/api/system" class="button">System Info</a>
-            <a href="/api/config" class="button">Configuration</a>
+            <a href="/api/metrics" class="button">View Metrics API</a>
+            <a href="/api/system" class="button">System Info API</a>
+            <a href="/logs" class="button">View Logs</a>
         </div>
     </div>
 </body>

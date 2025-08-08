@@ -1,0 +1,19 @@
+<div class="card">
+    <h2>System Status</h2>
+    <div class="metric">
+        <span class="metric-label">Uptime</span>
+        <span class="metric-value">{{uptime}}</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Free Memory</span>
+        <span class="metric-value">{{free_memory}}</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Internal DRAM</span>
+        <span class="metric-value" {{dram_style}}>{{dram_info}}</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">PSRAM</span>
+        <span class="metric-value">{{psram_info}}</span>
+    </div>
+</div>

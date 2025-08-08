@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 Dashboard</title>
+    <style>
+        /* Theme System */
+        :root[data-theme="light"] {
+            --bg-main: #ffffff;
+            --bg-card: #f9fafb;
+            --bg-hover: #f3f4f6;
+            --bg-input: #e5e7eb;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #111827;
+            --text-dim: #6b7280;
+            --text-muted: #9ca3af;
+            --border: #e5e7eb;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+        }
+
+        :root[data-theme="dark"] {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #374151;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Default to dark theme */
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #1a1a1a;
+            --bg-hover: #2a2a2a;
+            --bg-input: #262626;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #374151;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: var(--shadow);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .theme-toggle {
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .theme-toggle:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* Quick Stats Bar */
+        .quick-stats {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            gap: 2rem;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        .quick-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .quick-stat-label {
+            color: var(--text-muted);
+        }
+
+        .quick-stat-value {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        /* Container */
+        .container {
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Section Headers */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+            border-color: var(--accent);
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+
+        .metric-label {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .metric-trend {
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+        }
+
+        .trend-up { color: var(--success); }
+        .trend-down { color: var(--danger); }
+        .trend-neutral { color: var(--text-muted); }
+
+        .metric-sparkline {
+            width: 100%;
+            height: 40px;
+            margin-top: 0.5rem;
+        }
+
+        /* CPU Core Charts */
+        .cpu-charts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .cpu-chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .cpu-chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .cpu-usage-bar {
+            width: 100%;
+            height: 24px;
+            background: var(--bg-hover);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .cpu-usage-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--success), var(--warning));
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 0.5rem;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        /* Memory Visualization */
+        .memory-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .memory-bars {
+            display: grid;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .memory-bar-container {
+            display: grid;
+            grid-template-columns: 120px 1fr auto;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .memory-bar {
+            height: 32px;
+            background: var(--bg-hover);
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .memory-bar-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .heap-bar { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+        .psram-bar { background: linear-gradient(90deg, #10b981, #059669); }
+        .internal-bar { background: linear-gradient(90deg, #f59e0b, #d97706); }
+
+        .memory-fragmentation {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            opacity: 0.3;
+            background-image: repeating-linear-gradient(
+                90deg,
+                transparent,
+                transparent 10px,
+                rgba(0,0,0,0.1) 10px,
+                rgba(0,0,0,0.1) 12px
+            );
+        }
+
+        /* Performance Chart */
+        .chart-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        #performanceChart {
+            width: 100%;
+            height: 200px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: 0.5rem 1rem;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+        }
+
+        .tab:hover {
+            color: var(--text);
+        }
+
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 0.75rem 1rem;
+            }
+            
+            .header h1 {
+                font-size: 1.25rem;
+            }
+            
+            .quick-stats {
+                padding: 0.5rem 1rem;
+                gap: 1rem;
+            }
+            
+            .container {
+                padding: 1rem;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+            
+            .metric-card {
+                padding: 1rem;
+            }
+            
+            .metric-value {
+                font-size: 1.5rem;
+            }
+        }
+
+        /* Loading State */
+        .loading {
+            opacity: 0.5;
+            animation: pulse 1s infinite;
+        }
+
+        /* Connection Status */
+        .connection-status {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            background: var(--bg-hover);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .connection-status.connected {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .connection-status.disconnected {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>
+            <span class="status-dot"></span>
+            ESP32-S3 Dashboard
+        </h1>
+        <div class="header-actions">
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span id="connectionText">Connecting...</span>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Quick Stats Bar -->
+    <div class="quick-stats">
+        <div class="quick-stat">
+            <span class="quick-stat-label">Uptime:</span>
+            <span class="quick-stat-value" id="quickUptime">--</span>
+        </div>
+        <div class="quick-stat">
+            <span class="quick-stat-label">WiFi:</span>
+            <span class="quick-stat-value" id="quickWifi">-- dBm</span>
+        </div>
+        <div class="quick-stat">
+            <span class="quick-stat-label">Power Mode:</span>
+            <span class="quick-stat-value" id="quickPower">--</span>
+        </div>
+        <div class="quick-stat">
+            <span class="quick-stat-label">Version:</span>
+            <span class="quick-stat-value" id="quickVersion">--</span>
+        </div>
+        <div class="quick-stat">
+            <span class="quick-stat-label">IP:</span>
+            <span class="quick-stat-value" id="quickIP">--</span>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- System Metrics -->
+        <section>
+            <div class="section-header">
+                <h2 class="section-title">System Metrics</h2>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">FPS</div>
+                    <div class="metric-value" id="fps">--</div>
+                    <div class="metric-trend" id="fpsTrend"></div>
+                    <canvas class="metric-sparkline" id="fpsSparkline"></canvas>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Temperature</div>
+                    <div class="metric-value" id="temperature">--°C</div>
+                    <div class="metric-trend" id="tempTrend"></div>
+                    <canvas class="metric-sparkline" id="tempSparkline"></canvas>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Battery</div>
+                    <div class="metric-value" id="battery">--%</div>
+                    <div class="metric-trend" id="batteryTrend"></div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Free Heap</div>
+                    <div class="metric-value" id="freeHeap">--</div>
+                    <div class="metric-trend" id="heapTrend"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CPU Usage -->
+        <section>
+            <div class="section-header">
+                <h2 class="section-title">CPU Usage</h2>
+            </div>
+            <div class="cpu-charts">
+                <div class="cpu-chart-card">
+                    <div class="cpu-chart-header">
+                        <h3>Core 0</h3>
+                        <span id="cpu0Value">0%</span>
+                    </div>
+                    <div class="cpu-usage-bar">
+                        <div class="cpu-usage-fill" id="cpu0Bar" style="width: 0%"></div>
+                    </div>
+                    <canvas class="metric-sparkline" id="cpu0Sparkline" style="margin-top: 1rem"></canvas>
+                </div>
+                
+                <div class="cpu-chart-card">
+                    <div class="cpu-chart-header">
+                        <h3>Core 1</h3>
+                        <span id="cpu1Value">0%</span>
+                    </div>
+                    <div class="cpu-usage-bar">
+                        <div class="cpu-usage-fill" id="cpu1Bar" style="width: 0%"></div>
+                    </div>
+                    <canvas class="metric-sparkline" id="cpu1Sparkline" style="margin-top: 1rem"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Memory Visualization -->
+        <section class="memory-section">
+            <div class="section-header">
+                <h2 class="section-title">Memory Usage</h2>
+            </div>
+            <div class="memory-bars">
+                <div class="memory-bar-container">
+                    <span>Heap</span>
+                    <div class="memory-bar">
+                        <div class="memory-bar-fill heap-bar" id="heapBar" style="width: 0%">
+                            <div class="memory-fragmentation" id="heapFrag"></div>
+                        </div>
+                    </div>
+                    <span id="heapText">--</span>
+                </div>
+                
+                <div class="memory-bar-container">
+                    <span>PSRAM</span>
+                    <div class="memory-bar">
+                        <div class="memory-bar-fill psram-bar" id="psramBar" style="width: 0%"></div>
+                    </div>
+                    <span id="psramText">--</span>
+                </div>
+                
+                <div class="memory-bar-container">
+                    <span>Internal</span>
+                    <div class="memory-bar">
+                        <div class="memory-bar-fill internal-bar" id="internalBar" style="width: 0%"></div>
+                    </div>
+                    <span id="internalText">--</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Performance Chart -->
+        <section class="chart-container">
+            <div class="chart-header">
+                <h2 class="section-title">Performance History</h2>
+                <div class="chart-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--accent)"></div>
+                        <span>FPS</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--success)"></div>
+                        <span>CPU %</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--warning)"></div>
+                        <span>Temp °C</span>
+                    </div>
+                </div>
+            </div>
+            <canvas id="performanceChart"></canvas>
+        </section>
+
+        <!-- Tabs for Additional Info -->
+        <section class="chart-container">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('overview')">Overview</button>
+                <button class="tab" onclick="switchTab('tasks')">Task Monitor</button>
+                <button class="tab" onclick="switchTab('network')">Network</button>
+            </div>
+            
+            <div id="overview" class="tab-content active">
+                <div class="metrics-grid" style="margin-top: 1rem">
+                    <div class="metric-card">
+                        <div class="metric-label">Stack Watermark</div>
+                        <div class="metric-value" id="stackWatermark">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Heap Fragmentation</div>
+                        <div class="metric-value" id="heapFragmentation">--%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Largest Free Block</div>
+                        <div class="metric-value" id="largestBlock">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">SSE Connections</div>
+                        <div class="metric-value" id="sseConnections">--</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="tasks" class="tab-content">
+                <p style="color: var(--text-muted); text-align: center; padding: 2rem;">
+                    Task monitoring coming soon...
+                </p>
+            </div>
+            
+            <div id="network" class="tab-content">
+                <div class="metrics-grid" style="margin-top: 1rem">
+                    <div class="metric-card">
+                        <div class="metric-label">SSID</div>
+                        <div class="metric-value" id="ssid" style="font-size: 1rem">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Channel</div>
+                        <div class="metric-value" id="channel">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Gateway</div>
+                        <div class="metric-value" id="gateway" style="font-size: 1rem">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">MAC</div>
+                        <div class="metric-value" id="mac" style="font-size: 0.875rem">--</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Constants
+        const CHART_POINTS = 60;
+        const UPDATE_INTERVAL = 2000;
+        const SSE_RECONNECT_DELAY = 3000;
+
+        // State
+        let eventSource = null;
+        let reconnectTimer = null;
+        let metrics = {
+            fps: [],
+            cpu0: [],
+            cpu1: [],
+            temp: [],
+            heap: [],
+            battery: []
+        };
+        let previousValues = {};
+        let performanceChart = null;
+
+        // Theme handling
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // Tab switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+
+        // Format bytes
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        // Format uptime
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${minutes}m`;
+            return `${minutes}m`;
+        }
+
+        // Update trend indicators
+        function updateTrend(elementId, currentValue, previousValue) {
+            const element = document.getElementById(elementId);
+            if (!element || previousValue === undefined) return;
+            
+            const diff = currentValue - previousValue;
+            if (Math.abs(diff) < 0.01) {
+                element.textContent = '→';
+                element.className = 'metric-trend trend-neutral';
+            } else if (diff > 0) {
+                element.textContent = '↑';
+                element.className = 'metric-trend trend-up';
+            } else {
+                element.textContent = '↓';
+                element.className = 'metric-trend trend-down';
+            }
+        }
+
+        // Draw sparkline
+        function drawSparkline(canvas, data, color) {
+            if (!canvas || data.length < 2) return;
+            
+            const ctx = canvas.getContext('2d');
+            const width = canvas.clientWidth;
+            const height = canvas.clientHeight;
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            const min = Math.min(...data);
+            const max = Math.max(...data);
+            const range = max - min || 1;
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            data.forEach((value, index) => {
+                const x = (index / (data.length - 1)) * width;
+                const y = height - ((value - min) / range) * height;
+                
+                if (index === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            
+            ctx.stroke();
+        }
+
+        // Initialize performance chart
+        function initPerformanceChart() {
+            const canvas = document.getElementById('performanceChart');
+            const ctx = canvas.getContext('2d');
+            const rect = canvas.getBoundingClientRect();
+            
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            
+            performanceChart = { canvas, ctx, width: canvas.width, height: canvas.height };
+        }
+
+        // Update performance chart
+        function updatePerformanceChart() {
+            if (!performanceChart) initPerformanceChart();
+            
+            const { ctx, width, height } = performanceChart;
+            const padding = 20;
+            const graphWidth = width - padding * 2;
+            const graphHeight = height - padding * 2;
+            
+            // Clear canvas
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg-card');
+            ctx.fillRect(0, 0, width, height);
+            
+            // Grid
+            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border');
+            ctx.lineWidth = 1;
+            
+            // Draw grid
+            for (let i = 0; i <= 4; i++) {
+                const y = padding + (graphHeight / 4) * i;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(width - padding, y);
+                ctx.stroke();
+            }
+            
+            // Draw lines
+            const drawLine = (data, color, scale) => {
+                if (data.length < 2) return;
+                
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                
+                data.forEach((value, index) => {
+                    const x = padding + (index / (CHART_POINTS - 1)) * graphWidth;
+                    const y = padding + graphHeight - (value / scale) * graphHeight;
+                    
+                    if (index === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+                
+                ctx.stroke();
+            };
+            
+            drawLine(metrics.fps, getComputedStyle(document.documentElement).getPropertyValue('--accent'), 60);
+            drawLine(metrics.cpu0.map((v, i) => Math.max(v, metrics.cpu1[i] || 0)), 
+                     getComputedStyle(document.documentElement).getPropertyValue('--success'), 100);
+            drawLine(metrics.temp, getComputedStyle(document.documentElement).getPropertyValue('--warning'), 80);
+        }
+
+        // Update UI with data
+        function updateUI(data) {
+            // Quick stats
+            if (data.uptime_ms) {
+                document.getElementById('quickUptime').textContent = formatUptime(data.uptime_ms / 1000);
+            }
+            if (data.wifi_rssi !== undefined) {
+                document.getElementById('quickWifi').textContent = `${data.wifi_rssi} dBm`;
+            }
+            document.getElementById('quickPower').textContent = data.power_mode || 'Normal';
+            document.getElementById('quickVersion').textContent = data.version || '--';
+            document.getElementById('quickIP').textContent = data.ip || '--';
+            
+            // Metrics
+            if (data.fps_actual !== undefined) {
+                document.getElementById('fps').textContent = data.fps_actual.toFixed(1);
+                updateTrend('fpsTrend', data.fps_actual, previousValues.fps);
+                previousValues.fps = data.fps_actual;
+                metrics.fps.push(data.fps_actual);
+            }
+            
+            if (data.temperature !== undefined) {
+                document.getElementById('temperature').textContent = `${data.temperature.toFixed(1)}°C`;
+                updateTrend('tempTrend', data.temperature, previousValues.temp);
+                previousValues.temp = data.temperature;
+                metrics.temp.push(data.temperature);
+            }
+            
+            if (data.battery_percentage !== undefined) {
+                document.getElementById('battery').textContent = `${data.battery_percentage}%`;
+                updateTrend('batteryTrend', data.battery_percentage, previousValues.battery);
+                previousValues.battery = data.battery_percentage;
+                metrics.battery.push(data.battery_percentage);
+            }
+            
+            if (data.heap_free !== undefined) {
+                document.getElementById('freeHeap').textContent = formatBytes(data.heap_free);
+                updateTrend('heapTrend', data.heap_free, previousValues.heap);
+                previousValues.heap = data.heap_free;
+                metrics.heap.push(data.heap_free);
+            }
+            
+            // CPU Usage
+            if (data.cpu0_usage !== undefined) {
+                const cpu0 = data.cpu0_usage;
+                document.getElementById('cpu0Value').textContent = `${cpu0}%`;
+                document.getElementById('cpu0Bar').style.width = `${cpu0}%`;
+                document.getElementById('cpu0Bar').textContent = cpu0 > 10 ? `${cpu0}%` : '';
+                metrics.cpu0.push(cpu0);
+            }
+            
+            if (data.cpu1_usage !== undefined) {
+                const cpu1 = data.cpu1_usage;
+                document.getElementById('cpu1Value').textContent = `${cpu1}%`;
+                document.getElementById('cpu1Bar').style.width = `${cpu1}%`;
+                document.getElementById('cpu1Bar').textContent = cpu1 > 10 ? `${cpu1}%` : '';
+                metrics.cpu1.push(cpu1);
+            }
+            
+            // Memory bars
+            if (data.heap_free !== undefined && data.heap_total !== undefined) {
+                const heapUsed = ((data.heap_total - data.heap_free) / data.heap_total) * 100;
+                document.getElementById('heapBar').style.width = `${heapUsed}%`;
+                document.getElementById('heapText').textContent = 
+                    `${formatBytes(data.heap_free)} / ${formatBytes(data.heap_total)}`;
+            }
+            
+            if (data.psram_free !== undefined && data.psram_total !== undefined) {
+                const psramUsed = ((data.psram_total - data.psram_free) / data.psram_total) * 100;
+                document.getElementById('psramBar').style.width = `${psramUsed}%`;
+                document.getElementById('psramText').textContent = 
+                    `${formatBytes(data.psram_free)} / ${formatBytes(data.psram_total)}`;
+            }
+            
+            if (data.internal_free !== undefined && data.internal_total !== undefined) {
+                const internalUsed = ((data.internal_total - data.internal_free) / data.internal_total) * 100;
+                document.getElementById('internalBar').style.width = `${internalUsed}%`;
+                document.getElementById('internalText').textContent = 
+                    `${formatBytes(data.internal_free)} / ${formatBytes(data.internal_total)}`;
+            }
+            
+            // Additional metrics
+            if (data.stack_watermark !== undefined) {
+                document.getElementById('stackWatermark').textContent = formatBytes(data.stack_watermark);
+            }
+            if (data.heap_fragmentation !== undefined) {
+                document.getElementById('heapFragmentation').textContent = `${data.heap_fragmentation}%`;
+                // Update fragmentation visualization
+                const fragElement = document.getElementById('heapFrag');
+                if (data.heap_fragmentation > 50) {
+                    fragElement.style.opacity = '0.5';
+                } else {
+                    fragElement.style.opacity = '0.2';
+                }
+            }
+            if (data.largest_free_block !== undefined) {
+                document.getElementById('largestBlock').textContent = formatBytes(data.largest_free_block);
+            }
+            if (data.sse_connections !== undefined) {
+                document.getElementById('sseConnections').textContent = data.sse_connections;
+            }
+            
+            // Network info
+            if (data.wifi_ssid) document.getElementById('ssid').textContent = data.wifi_ssid;
+            if (data.wifi_channel) document.getElementById('channel').textContent = data.wifi_channel;
+            if (data.gateway) document.getElementById('gateway').textContent = data.gateway;
+            if (data.mac) document.getElementById('mac').textContent = data.mac;
+            
+            // Keep arrays from growing too large
+            Object.keys(metrics).forEach(key => {
+                while (metrics[key].length > CHART_POINTS) {
+                    metrics[key].shift();
+                }
+            });
+            
+            // Update sparklines
+            drawSparkline(document.getElementById('fpsSparkline'), metrics.fps, 
+                         getComputedStyle(document.documentElement).getPropertyValue('--accent'));
+            drawSparkline(document.getElementById('tempSparkline'), metrics.temp, 
+                         getComputedStyle(document.documentElement).getPropertyValue('--warning'));
+            drawSparkline(document.getElementById('cpu0Sparkline'), metrics.cpu0, 
+                         getComputedStyle(document.documentElement).getPropertyValue('--success'));
+            drawSparkline(document.getElementById('cpu1Sparkline'), metrics.cpu1, 
+                         getComputedStyle(document.documentElement).getPropertyValue('--success'));
+            
+            // Update main chart
+            updatePerformanceChart();
+        }
+
+        // Fetch initial data
+        async function fetchInitialData() {
+            try {
+                // Get system info
+                const sysResponse = await fetch('/api/system');
+                if (sysResponse.ok) {
+                    const sysData = await sysResponse.json();
+                    updateUI({
+                        heap_free: sysData.free_heap,
+                        heap_total: 8 * 1024 * 1024, // 8MB estimate
+                        psram_free: sysData.heap_psram_free,
+                        psram_total: 8 * 1024 * 1024, // 8MB
+                        internal_free: sysData.heap_internal_free,
+                        internal_total: 512 * 1024, // 512KB estimate
+                        heap_fragmentation: sysData.heap_fragmentation_pct,
+                        largest_free_block: sysData.largest_free_block,
+                        stack_watermark: sysData.http_stack_watermark,
+                        uptime_ms: sysData.uptime_ms,
+                        wifi_rssi: sysData.wifi_rssi,
+                        wifi_ssid: sysData.wifi?.ssid,
+                        wifi_channel: sysData.wifi_channel,
+                        gateway: sysData.wifi?.gateway,
+                        ip: sysData.wifi?.ip,
+                        mac: sysData.wifi?.mac
+                    });
+                }
+                
+                // Get diagnostics for SSE info
+                const diagResponse = await fetch('/api/diagnostics');
+                if (diagResponse.ok) {
+                    const diagData = await diagResponse.json();
+                    if (diagData.diagnostics?.sse) {
+                        updateUI({
+                            sse_connections: diagData.diagnostics.sse.total_connections - 
+                                           diagData.diagnostics.sse.total_disconnects
+                        });
+                    }
+                }
+                
+                // Get metrics
+                const metricsResponse = await fetch('/api/metrics');
+                if (metricsResponse.ok) {
+                    const metricsData = await metricsResponse.json();
+                    updateUI(metricsData);
+                }
+            } catch (error) {
+                console.error('Failed to fetch initial data:', error);
+            }
+        }
+
+        // SSE Connection
+        function connectSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource('/api/events');
+            
+            eventSource.onopen = () => {
+                console.log('SSE connection established');
+                updateConnectionStatus(true);
+                if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('SSE connection error:', error);
+                updateConnectionStatus(false);
+                eventSource.close();
+                
+                // Automatic reconnection
+                if (!reconnectTimer) {
+                    reconnectTimer = setTimeout(() => {
+                        console.log('Attempting SSE reconnection...');
+                        connectSSE();
+                    }, SSE_RECONNECT_DELAY);
+                }
+            };
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'metrics' && data.data) {
+                        // Map the metrics data to our expected format
+                        updateUI({
+                            fps_actual: data.data.fps_actual,
+                            temperature: data.data.temperature,
+                            battery_percentage: data.data.battery_percentage,
+                            cpu0_usage: data.data.cpu_usage, // Assuming single value for now
+                            cpu1_usage: data.data.cpu_usage,
+                            wifi_rssi: data.data.wifi_rssi
+                        });
+                    }
+                } catch (error) {
+                    console.error('Failed to parse SSE data:', error);
+                }
+            };
+        }
+
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            const statusElement = document.getElementById('connectionStatus');
+            const textElement = document.getElementById('connectionText');
+            
+            if (connected) {
+                statusElement.classList.add('connected');
+                statusElement.classList.remove('disconnected');
+                textElement.textContent = 'Connected';
+            } else {
+                statusElement.classList.remove('connected');
+                statusElement.classList.add('disconnected');
+                textElement.textContent = 'Disconnected';
+            }
+        }
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            initPerformanceChart();
+            fetchInitialData();
+            connectSSE();
+        });
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            if (performanceChart) {
+                initPerformanceChart();
+                updatePerformanceChart();
+            }
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+            }
+        });
+    </script>
+</body>
+</html>

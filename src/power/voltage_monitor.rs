@@ -119,15 +119,15 @@ impl VoltageMonitor {
         }
         
         VoltageReport {
-            _duration: duration,
+            duration,
             initial_voltage: self.initial_voltage,
-            _final_voltage: final_voltage,
+            final_voltage,
             min_voltage,
-            _max_voltage: max_voltage,
+            max_voltage,
             max_drop,
             drop_count,
-            _is_usb: is_usb,
-            _samples: self.samples,
+            is_usb,
+            samples: self.samples,
         }
     }
     
@@ -152,15 +152,15 @@ impl VoltageMonitor {
 }
 
 pub struct VoltageReport {
-    pub _duration: Duration,
+    pub duration: Duration,
     pub initial_voltage: u16,
-    pub _final_voltage: u16,
+    pub final_voltage: u16,
     pub min_voltage: u16,
-    pub _max_voltage: u16,
+    pub max_voltage: u16,
     pub max_drop: u16,
     pub drop_count: u16,
-    pub _is_usb: bool,
-    pub _samples: Vec<(u16, Instant)>,
+    pub is_usb: bool,
+    pub samples: Vec<(u16, Instant)>,
 }
 
 impl VoltageReport {
@@ -194,9 +194,11 @@ where
     
     // Sample voltage every 100ms in background
     let monitor_handle = Arc::new(Mutex::new(monitor));
+    let monitor_clone = Arc::clone(&monitor_handle);
     
     // Start background sampling thread
-    let _sampling_active = Arc::new(AtomicBool::new(true));
+    let sampling_active = Arc::new(AtomicBool::new(true));
+    let sampling_active_clone = Arc::clone(&sampling_active);
     
     // Since we're on ESP32, we can't use std::thread::spawn
     // Instead, we'll take a few manual samples before and after
@@ -216,27 +218,9 @@ where
     }
     
     // Get report
-    let report = match monitor_handle.lock() {
-        Ok(mut monitor_guard) => {
-            let final_monitor = std::mem::replace(&mut *monitor_guard, VoltageMonitor::start_monitoring());
-            final_monitor.stop_monitoring()
-        }
-        Err(e) => {
-            log::error!("Voltage monitor lock failed: {}", e);
-            // Construct a conservative fallback report from global trackers
-            VoltageReport {
-                _duration: Duration::from_secs(0),
-                initial_voltage: LAST_VOLTAGE.load(Ordering::Relaxed),
-                _final_voltage: LAST_VOLTAGE.load(Ordering::Relaxed),
-                min_voltage: MIN_VOLTAGE.load(Ordering::Relaxed),
-                _max_voltage: MAX_VOLTAGE.load(Ordering::Relaxed),
-                max_drop: 0,
-                drop_count: VOLTAGE_DROP_COUNT.load(Ordering::Relaxed),
-                _is_usb: false,
-                _samples: Vec::new(),
-            }
-        }
-    };
+    let mut monitor_guard = monitor_handle.lock().unwrap();
+    let final_report = std::mem::replace(&mut *monitor_guard, VoltageMonitor::start_monitoring());
+    let report = final_report.stop_monitoring();
     
     // Log diagnosis
     log::info!("{}: {}", operation_name, report.get_diagnosis());
