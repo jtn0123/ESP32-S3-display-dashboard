@@ -31,6 +31,7 @@ mod system;
 mod memory_diagnostics;
 mod diagnostics;
 mod crash_diagnostics;
+mod crash_persist;
 mod ui;
 mod version;
 mod dual_core;
@@ -93,6 +94,10 @@ fn main() -> Result<()> {
         // Try to log memory state and crash diagnostics
         crate::memory_diagnostics::log_memory_state("PANIC");
         crate::crash_diagnostics::dump_diagnostics();
+
+        // Persist crash details (best-effort, panic-safe)
+        let reason = format!("{} | {}", location, message);
+        crate::crash_persist::save_last_crash(&reason);
         
         // Log backtrace if available
         // Note: Backtrace not available in no_std environment

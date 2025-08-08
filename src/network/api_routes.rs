@@ -318,6 +318,36 @@ pub fn register_api_v1_routes(
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
+    // GET /api/v1/diagnostics/last-crash
+    server.fn_handler("/api/v1/diagnostics/last-crash", Method::Get, move |req| {
+        match crate::crash_persist::read_last_crash() {
+            Ok(Some(record)) => {
+                let json = serde_json::to_string(&record)?;
+                let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+                http_response.write_all(json.as_bytes())?;
+                Ok(()) as Result<(), Box<dyn std::error::Error>>
+            }
+            Ok(None) => {
+                let mut http_response = req.into_response(204, Some("No Content"), &[])?;
+                http_response.write_all(&[])?;
+                Ok(()) as Result<(), Box<dyn std::error::Error>>
+            }
+            Err(e) => ErrorResponse::new(crate::network::error_handler::ErrorCode::BadRequest, format!("Failed to read crash record: {}", e)).send(req)
+        }
+    })?;
+
+    // DELETE /api/v1/diagnostics/last-crash
+    server.fn_handler("/api/v1/diagnostics/last-crash", Method::Delete, move |req| {
+        match crate::crash_persist::clear_last_crash() {
+            Ok(()) => {
+                let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+                http_response.write_all(b"{\"status\":\"cleared\"}")?;
+                Ok(()) as Result<(), Box<dyn std::error::Error>>
+            }
+            Err(e) => ErrorResponse::new(crate::network::error_handler::ErrorCode::BadRequest, format!("Failed to clear crash record: {}", e)).send(req),
+        }
+    })?;
+
     log::info!("API v1 routes registered");
     Ok(())
 }

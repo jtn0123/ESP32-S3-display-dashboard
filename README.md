@@ -508,6 +508,14 @@ The firmware includes enhanced, development-friendly debugging:
   - Custom panic hook logs location and message
   - Memory and crash diagnostics are dumped on panic
   - Periodic diagnostics thread logs heap and active request insights
+  - Last Crash (persisted): panic reason, timestamp, uptime, heap stats, and recent logs saved to NVS
+    - `GET /api/v1/diagnostics/last-crash` → returns JSON if available, else 204
+    - `DELETE /api/v1/diagnostics/last-crash` → clears persisted record
+    - Example:
+      ```bash
+      curl http://<device-ip>/api/v1/diagnostics/last-crash | jq
+      curl -X DELETE http://<device-ip>/api/v1/diagnostics/last-crash
+      ```
 
 - Telnet logging (wireless serial)
   - Port 23; includes last 100 log lines on connect
