@@ -6,9 +6,18 @@ edition = "2021"
 [dependencies]
 # Standard dependencies for testing logic that doesn't require ESP32
 
+[profile.dev]
+panic = "unwind"
+
+[profile.test]
+panic = "unwind"
+
 [dev-dependencies]
 # Test framework dependencies
 
 [lib]
 name = "esp32_dashboard_tests"
 path = "src/lib.rs"
+
+[build]
+target = "x86_64-unknown-linux-gnu"

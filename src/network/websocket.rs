@@ -19,6 +19,7 @@ struct WsConnection {
     id: u32,
     last_ping: Instant,
     sender: Arc<Mutex<Box<dyn embedded_svc::ws::Sender + Send>>>,
+    consecutive_failures: u8,
 }
 
 impl WebSocketServer {
@@ -77,6 +78,7 @@ impl WebSocketServer {
                         id: conn_id,
                         last_ping: Instant::now(),
                         sender: sender.clone(),
+                        consecutive_failures: 0,
                     });
                 } else {
                     log::error!("WebSocket: failed to lock connections for insert");
@@ -105,11 +107,24 @@ impl WebSocketServer {
                                         log::debug!("WS {} received: {}", conn_id, text);
                                         // Parse and handle commands here
                                     }
+                                    // Mark connection as active
+                                    if let Ok(mut conns) = connections_clone.lock() {
+                                        if let Some(conn) = conns.get_mut(&conn_id) {
+                                            conn.last_ping = Instant::now();
+                                            conn.consecutive_failures = 0;
+                                        }
+                                    }
                                 }
                                 FrameType::Ping => {
                                     // Respond with pong
                                     if let Ok(sender_guard) = sender.lock() {
                                         let _ = sender_guard.send(FrameType::Pong, &[]);
+                                    }
+                                    // Update activity
+                                    if let Ok(mut conns) = connections_clone.lock() {
+                                        if let Some(conn) = conns.get_mut(&conn_id) {
+                                            conn.last_ping = Instant::now();
+                                        }
                                     }
                                 }
                                 FrameType::Close => {
@@ -163,11 +178,26 @@ impl WebSocketServer {
         }
 
         let mut dead_connections = Vec::new();
+        let mut failed_once = Vec::new();
         for (id, sender_arc) in snapshot.into_iter() {
             if let Ok(mut sender) = sender_arc.try_lock() {
                 if let Err(e) = sender.send(frame_type, data) {
                     log::warn!("Failed to send to WebSocket {}: {:?}", id, e);
-                    dead_connections.push(id);
+                    failed_once.push(id);
+                }
+            }
+        }
+
+        // Update failure counters and decide removals
+        if !failed_once.is_empty() {
+            if let Ok(mut connections) = self.connections.lock() {
+                for id in failed_once {
+                    if let Some(conn) = connections.get_mut(&id) {
+                        conn.consecutive_failures = conn.consecutive_failures.saturating_add(1);
+                        if conn.consecutive_failures >= 3 {
+                            dead_connections.push(id);
+                        }
+                    }
                 }
             }
         }
@@ -209,12 +239,27 @@ impl WebSocketServer {
                 }
 
                 let mut dead_connections = Vec::new();
+                let mut failed_once = Vec::new();
                 for (id, sender_arc, last_ping) in snapshot.into_iter() {
                     if last_ping.elapsed() > PING_INTERVAL * 2 {
                         dead_connections.push(id);
                     } else if let Ok(mut sender) = sender_arc.try_lock() {
                         if sender.send(FrameType::Ping, &[]).is_err() {
-                            dead_connections.push(id);
+                            failed_once.push(id);
+                        }
+                    }
+                }
+
+                // Update failure counters
+                if !failed_once.is_empty() {
+                    if let Ok(mut conns) = connections.lock() {
+                        for id in failed_once {
+                            if let Some(conn) = conns.get_mut(&id) {
+                                conn.consecutive_failures = conn.consecutive_failures.saturating_add(1);
+                                if conn.consecutive_failures >= 3 {
+                                    dead_connections.push(id);
+                                }
+                            }
                         }
                     }
                 }
