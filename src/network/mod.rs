@@ -16,6 +16,8 @@ pub mod http_config;
 pub mod streaming_home;
 pub mod streaming_ota;
 pub mod streaming_dashboard;
+pub mod template_engine;
+pub mod templated_home;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;

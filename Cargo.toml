@@ -1,6 +1,6 @@
 [package]
 name = "esp32-s3-dashboard"
-version = "0.6.0"
+version = "0.6.25"
 authors = ["Justin"]
 edition = "2021"
 resolver = "2"

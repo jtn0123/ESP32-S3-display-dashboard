@@ -59,10 +59,9 @@ impl WebConfigServer {
         let server_config = crate::network::http_config::create_http_config();
         let mut server = EspHttpServer::new(&server_config)?;
         
-        // Home page with streaming response (prevents memory fragmentation)
+        // Home page (templated, fast and memory-safe)
         server.fn_handler("/", esp_idf_svc::http::Method::Get, |req| {
-            // Use streaming handler
-            crate::network::streaming_home::handle_home_streaming(req)
+            crate::network::templated_home::handle_home_templated(req)
         })?;
         
         // Legacy home page handler (removed - was causing memory fragmentation)
@@ -531,14 +530,20 @@ impl WebConfigServer {
             log::info!("OTA endpoints registered on main web server");
         }
 
-        // Dashboard route - using streaming to avoid memory exhaustion
+        // Dashboard route - enhanced dashboard with SSE-ready UI
         server.fn_handler("/dashboard", esp_idf_svc::http::Method::Get, move |req| {
-            crate::network::streaming_dashboard::handle_dashboard_streaming(req)
+            crate::network::streaming_dashboard::handle_dashboard_enhanced(req)
         })?;
         
         // Dashboard CSS endpoint (for async loading)
         server.fn_handler("/dashboard.css", esp_idf_svc::http::Method::Get, move |req| {
             crate::network::streaming_dashboard::handle_dashboard_css(req)
+        })?;
+
+        // Control Center page (static template streamed by the engine)
+        server.fn_handler("/control", esp_idf_svc::http::Method::Get, move |req| {
+            let html = include_str!("../templates/control.html");
+            crate::network::compression::write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
         })?;
         
         // Sensor graphs route
