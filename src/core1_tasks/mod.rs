@@ -123,7 +123,8 @@ unsafe extern "C" fn core1_task_entry(pv_parameters: *mut std::ffi::c_void) {
     
     // Force a visible log message
     log::info!("CORE1: Task started on CPU {:?}", esp_idf_hal::cpu::core());
-    log::error!("CORE1: Starting background monitoring tasks (using log::error for visibility)");
+    // Normal info-level for steady-state
+    log::info!("CORE1: Starting background monitoring tasks");
     log::info!("Core 1: Network interval: 10s, Process interval: 100ms");
     
     // Task intervals

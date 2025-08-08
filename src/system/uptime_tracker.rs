@@ -28,12 +28,11 @@ impl UptimeTracker {
             }
         }
 
-        // Try to take default NVS partition first
+        // Try to take default NVS partition first; on INVALID_STATE fall back silently
         let nvs_result = esp_idf_svc::nvs::EspNvsPartition::<NvsDefault>::take()
-            .or_else(|e| {
-                log::warn!("EspNvsPartition::take failed: {:?}; trying default partition", e);
-                esp_idf_svc::nvs::EspDefaultNvsPartition::take()
-                    .map(|p| p.into())
+            .or_else(|_e| {
+                // Avoid noisy warnings; just try the default NVS partition
+                esp_idf_svc::nvs::EspDefaultNvsPartition::take().map(|p| p.into())
             });
         
         let (nvs, total_uptime, boot_count) = match nvs_result {
@@ -60,7 +59,8 @@ impl UptimeTracker {
                 }
             }
             Err(e) => {
-                log::warn!("Failed to initialize NVS partition: {:?}", e);
+                // Common when another subsystem holds the default NVS; run without persistence
+                log::debug!("UptimeTracker: NVS unavailable: {:?}", e);
                 (None, 0, 0)
             }
         };

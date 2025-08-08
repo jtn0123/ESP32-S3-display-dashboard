@@ -952,8 +952,9 @@ fn run_app(
     // Display hardware limitation: ~10 FPS max with parallel GPIO
     const DISPLAY_MAX_FPS: f32 = 10.0;
     let _target_frame_time = Duration::from_millis(100); // ~10 FPS
-    let mut last_sensor_update = Instant::now();
-    let sensor_update_interval = Duration::from_secs(10); // Reduced from 5s to 10s
+    // Sensor update interval currently unused; network status is refreshed separately
+    // let mut last_sensor_update = Instant::now();
+    // let sensor_update_interval = Duration::from_secs(10);
     let mut last_network_update = Instant::now();
     let network_update_interval = Duration::from_millis(500); // refresh network status twice per second
     
@@ -1196,7 +1197,7 @@ fn run_app(
             //               (startup_grace_period - startup_time.elapsed()).as_secs_f32());
             // }
             
-            last_sensor_update = Instant::now();
+            // last_sensor_update = Instant::now();
         }
         
         // Update network status periodically

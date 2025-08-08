@@ -47,12 +47,15 @@ pub fn is_memory_critical() -> bool {
 }
 
 // Global heap pressure state
+#[allow(dead_code)]
 static HEAP_PRESSURE_LEVEL: AtomicU8 = AtomicU8::new(0); // 0=Normal,1=Warn,2=Critical
 
+#[allow(dead_code)]
 pub fn heap_pressure_level() -> u8 {
     HEAP_PRESSURE_LEVEL.load(Ordering::Relaxed)
 }
 
+#[allow(dead_code)]
 pub fn start_heap_pressure_monitor() {
     std::thread::spawn(|| loop {
         unsafe {
