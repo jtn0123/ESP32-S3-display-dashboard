@@ -1,0 +1,13 @@
+Diagnostics summary @ 2025-08-08T22:16:28
+Device: 10.27.27.201
+Duration: 600s
+/ping: 29/80 200s
+/health: 6/18 200s
+Logs: diag-logs/20250808-220628-10.27.27.201
+
+=== Detailed summary ===
+ICMP: ok=68 fail=12 ok%=85.0 - ms
+HTTP /ping: ok=29 fail=51 ok%=36.2 connect_ms[avg=196.8 p50=16.7 p95=1281.4] total_ms[avg=297.5 p50=45.2 p95=1648.4]
+HTTP /health: ok=6 fail=12 ok%=33.3 connect_ms[avg=71.0 p50=29.6 p95=51.8] total_ms[avg=323.9 p50=66.9 p95=314.2]
+SSE: active_ticks=42/80 (52.5%) bytes[avg=772.5 p50=1206.0 p95=1823.0]
+WiFi RSSI: avg=-73.0 p50=-73.0 p95=-73.0 dBm last_disc=0 last_reconn=0

@@ -16,8 +16,8 @@ impl StableServerConfig {
             max_open_sockets: Self::max_sockets() as usize,
             max_resp_headers: 12,
             lru_purge_enable: true,
-            // Note: esp-idf-svc Configuration is limited; we can only tune session_timeout here.
-            session_timeout: Some(core::time::Duration::from_secs(10)),
+            // Shorten idle session timeout to free sockets faster
+            session_timeout: core::time::Duration::from_secs(5),
             ..Default::default()
         }
     }

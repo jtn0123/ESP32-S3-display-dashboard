@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use esp_idf_hal::delay::FreeRtos;
 
-const MAX_CONNECTIONS: usize = 8;
+// Enforce a single active WebSocket client to preserve sockets and simplify streaming
+const MAX_CONNECTIONS: usize = 1;
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct WebSocketServer {
@@ -49,12 +50,12 @@ impl WebSocketServer {
                 }
             };
 
-            // Check connection limit
+            // Check connection limit (single-client policy)
             {
                 match connections.lock() {
                     Ok(conns) => {
                         if conns.len() >= MAX_CONNECTIONS {
-                            log::warn!("WebSocket connection limit reached");
+                            log::warn!("WebSocket connection limit reached - rejecting new client");
                             return Err(AcceptorError::OutOfMemory);
                         }
                     }
