@@ -240,5 +240,87 @@ H_ALL=$(($(wc -l < "$H_HTTP_LOG")-1))
   echo "Logs: $OUT_DIR"
 } | tee "$SUMMARY"
 
+# Detailed stats from consolidated network.tsv
+python3 - "$OUT_NET" >> "$SUMMARY" << 'PY'
+import sys, statistics as stats
+from math import floor
+
+path = sys.argv[1]
+def f(x):
+  try:
+    return float(x)
+  except Exception:
+    return None
+
+icmp_ok=icmp_fail=0; icmp_rtts=[]
+hp_ok=hp_fail=0; hp_conn=[]; hp_total=[]
+hl_ok=hl_fail=0; hl_conn=[]; hl_total=[]
+sse_bytes=[]; sse_active=0
+wifi_rssi=[]; last_disc='-'; last_reconn='-'
+
+with open(path) as fh:
+  header=True
+  for line in fh:
+    if header:
+      header=False; continue
+    cols=line.rstrip('\n').split('\t')
+    if len(cols) < 19: continue
+    # columns per script
+    icmp_status, icmp_rtt = cols[2], f(cols[3])
+    hp_status, hp_code, hp_c, hp_t = cols[4], cols[5], f(cols[6]), f(cols[7])
+    hl_status, hl_code, hl_c, hl_t = cols[8], cols[9], f(cols[10]), f(cols[11])
+    sse = f(cols[13])
+    rssi = f(cols[14])
+    last_disc = cols[15]
+    last_reconn = cols[16]
+
+    if icmp_status=='ok':
+      icmp_ok+=1
+      if icmp_rtt is not None: icmp_rtts.append(icmp_rtt)
+    elif icmp_status=='fail': icmp_fail+=1
+
+    if hp_status=='ok':
+      hp_ok+=1
+      if hp_c is not None: hp_conn.append(hp_c)
+      if hp_t is not None: hp_total.append(hp_t)
+    elif hp_status=='fail': hp_fail+=1
+
+    if hl_status=='ok':
+      hl_ok+=1
+      if hl_c is not None: hl_conn.append(hl_c)
+      if hl_t is not None: hl_total.append(hl_t)
+    elif hl_status=='fail': hl_fail+=1
+
+    if sse is not None:
+      sse_bytes.append(sse)
+      if sse>0: sse_active+=1
+
+    if rssi is not None:
+      wifi_rssi.append(rssi)
+
+def pct_ok(ok, fail):
+  n=ok+fail
+  return (ok*100.0/n) if n else 0.0
+
+def describe(lst):
+  if not lst: return '-'
+  s=sorted(lst)
+  n=len(s)
+  p50=s[floor((n-1)*0.5)]
+  p95=s[floor((n-1)*0.95)]
+  avg=sum(s)/n
+  return f"avg={avg:.1f} p50={p50:.1f} p95={p95:.1f}"
+
+print("\n=== Detailed summary ===")
+print(f"ICMP: ok={icmp_ok} fail={icmp_fail} ok%={pct_ok(icmp_ok,icmp_fail):.1f} {describe(icmp_rtts)} ms")
+print(f"HTTP /ping: ok={hp_ok} fail={hp_fail} ok%={pct_ok(hp_ok,hp_fail):.1f} connect_ms[{describe(hp_conn)}] total_ms[{describe(hp_total)}]")
+print(f"HTTP /health: ok={hl_ok} fail={hl_fail} ok%={pct_ok(hl_ok,hl_fail):.1f} connect_ms[{describe(hl_conn)}] total_ms[{describe(hl_total)}]")
+if sse_bytes:
+  n=len(sse_bytes); active=sse_active
+  print(f"SSE: active_ticks={active}/{n} ({active*100.0/n:.1f}%) bytes[{describe(sse_bytes)}]")
+if wifi_rssi:
+  print(f"WiFi RSSI: {describe(wifi_rssi)} dBm last_disc={last_disc} last_reconn={last_reconn}")
+PY
+
 exit 0
 

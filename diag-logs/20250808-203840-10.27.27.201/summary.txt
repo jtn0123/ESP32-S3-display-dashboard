@@ -1,0 +1,6 @@
+Diagnostics summary @ 2025-08-08T20:41:41
+Device: 10.27.27.201
+Duration: 180s
+/ping: 21/31 200s
+/health: 5/6 200s
+Logs: diag-logs/20250808-203840-10.27.27.201

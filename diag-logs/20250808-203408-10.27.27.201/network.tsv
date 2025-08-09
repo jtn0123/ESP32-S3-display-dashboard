@@ -41,3 +41,4 @@ ts	elapsed_s	icmp_status	icmp_rtt_ms	hp_status	hp_code	hp_connect_ms	hp_total_ms
 20:38:16	248	fail	-	fail	000	752.3	765.0	-	-	-	-	20	1654	-	-	-	-	-
 20:38:23	255	ok	-	fail	000	22.1	28.3	fail	000	13.8	76.7	0	807	-	-	-	-	-
 20:38:28	260	ok	-	fail	000	12.3	23.9	-	-	-	-	5	974	-	-	-	-	-
+20:38:34	266	ok	-	fail	000	12.1	31.8	-	-	-	-	10	807	-	-	-	-	-
