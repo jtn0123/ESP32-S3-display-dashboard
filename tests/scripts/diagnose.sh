@@ -18,8 +18,9 @@ OUT_DIR="diag-logs/${STAMP}-${DEVICE_IP}"
 mkdir -p "$OUT_DIR"
 
 PING_LOG="$OUT_DIR/ping.log"
-P_HTTP_LOG="$OUT_DIR/http_ping.tsv"   # ts\tcode\tconnect_ms\ttotal_ms
-H_HTTP_LOG="$OUT_DIR/http_health.tsv" # ts\tcode\tconnect_ms\ttotal_ms
+P_HTTP_LOG="$OUT_DIR/http_ping.tsv"   # ts\thttp_code\tconnect_ms\ttotal_ms (deprecated; use network.tsv)
+H_HTTP_LOG="$OUT_DIR/http_health.tsv" # ts\thttp_code\tconnect_ms\ttotal_ms (deprecated; use network.tsv)
+OUT_NET="$OUT_DIR/network.tsv"        # ts\ttype\tstatus\thttp_code\tconnect_ms\ttotal_ms
 SSE_LOG="$OUT_DIR/sse.log"
 SERIAL_LOG="$OUT_DIR/serial.log"
 SUMMARY="$OUT_DIR/summary.txt"
@@ -72,25 +73,49 @@ PY
 START=$(date +%s)
 NEXT_HEALTH=0
 
-printf "ts\tcode\tconnect_ms\ttotal_ms\n" > "$P_HTTP_LOG"
-printf "ts\tcode\tconnect_ms\ttotal_ms\n" > "$H_HTTP_LOG"
+printf "ts\thttp_code\tconnect_ms\ttotal_ms\n" > "$P_HTTP_LOG"
+printf "ts\thttp_code\tconnect_ms\ttotal_ms\n" > "$H_HTTP_LOG"
+printf "ts\ttype\tstatus\thttp_code\tconnect_ms\ttotal_ms\n" > "$OUT_NET"
 
 while :; do
   NOW=$(date +%s)
   ELAPSED=$(( NOW - START ))
   if [ $ELAPSED -ge $DURATION ]; then break; fi
 
-  # ICMP
-  if ping -c 1 -W 1 "$DEVICE_IP" >/dev/null 2>&1; then echo "[$(date '+%H:%M:%S')] ping ok" >> "$PING_LOG"; else echo "[$(date '+%H:%M:%S')] ping fail" >> "$PING_LOG"; fi
+  # ICMP (also record in consolidated network.tsv)
+  if ping -c 1 -W 1 "$DEVICE_IP" >/dev/null 2>&1; then 
+    echo "[$(date '+%H:%M:%S')] ping ok" >> "$PING_LOG";
+    printf "%s\ticmp\tok\t-\t-\t-\n" "$(date '+%H:%M:%S')" >> "$OUT_NET";
+  else 
+    echo "[$(date '+%H:%M:%S')] ping fail" >> "$PING_LOG";
+    printf "%s\ticmp\tfail\t-\t-\t-\n" "$(date '+%H:%M:%S')" >> "$OUT_NET";
+  fi
 
   # /ping
-  code=$($CURL -o /dev/null -w '%{http_code}\t%{time_connect}\t%{time_total}' --connect-timeout 2 --max-time 4 "http://$DEVICE_IP/ping" || true)
-  printf "%s\t%s\n" "$(date '+%H:%M:%S')" "$code" >> "$P_HTTP_LOG"
+  raw=$($CURL -o /dev/null -w '%{http_code}\t%{time_connect}\t%{time_total}' --connect-timeout 2 --max-time 4 "http://$DEVICE_IP/ping" || true)
+  code=$(printf "%s" "$raw" | awk -F '\t' '{print $1}')
+  c_s=$(printf "%s" "$raw" | awk -F '\t' '{print $2}')
+  t_s=$(printf "%s" "$raw" | awk -F '\t' '{print $3}')
+  # Convert seconds->ms with 1-decimal precision
+  c_ms=$(awk -v v="$c_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
+  t_ms=$(awk -v v="$t_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
+  [ -z "$code" ] && code=000
+  printf "%s\t%s\t%s\n" "$(date '+%H:%M:%S')" "$code" "$c_ms\t$t_ms" >> "$P_HTTP_LOG"
+  status=$([ "$code" = "200" ] && echo ok || echo fail)
+  printf "%s\thttp_ping\t%s\t%s\t%s\t%s\n" "$(date '+%H:%M:%S')" "$status" "$code" "$c_ms" "$t_ms" >> "$OUT_NET"
 
   # /health every 30s
   if [ $ELAPSED -ge $NEXT_HEALTH ]; then
-    code=$($CURL -o /dev/null -w '%{http_code}\t%{time_connect}\t%{time_total}' --connect-timeout 2 --max-time 5 "http://$DEVICE_IP/health" || true)
-    printf "%s\t%s\n" "$(date '+%H:%M:%S')" "$code" >> "$H_HTTP_LOG"
+    raw=$($CURL -o /dev/null -w '%{http_code}\t%{time_connect}\t%{time_total}' --connect-timeout 2 --max-time 5 "http://$DEVICE_IP/health" || true)
+    code=$(printf "%s" "$raw" | awk -F '\t' '{print $1}')
+    c_s=$(printf "%s" "$raw" | awk -F '\t' '{print $2}')
+    t_s=$(printf "%s" "$raw" | awk -F '\t' '{print $3}')
+    c_ms=$(awk -v v="$c_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
+    t_ms=$(awk -v v="$t_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
+    [ -z "$code" ] && code=000
+    printf "%s\t%s\t%s\n" "$(date '+%H:%M:%S')" "$code" "$c_ms\t$t_ms" >> "$H_HTTP_LOG"
+    status=$([ "$code" = "200" ] && echo ok || echo fail)
+    printf "%s\thttp_health\t%s\t%s\t%s\t%s\n" "$(date '+%H:%M:%S')" "$status" "$code" "$c_ms" "$t_ms" >> "$OUT_NET"
     NEXT_HEALTH=$(( ELAPSED + 30 ))
   fi
 
