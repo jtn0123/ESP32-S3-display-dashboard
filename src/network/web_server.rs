@@ -225,8 +225,7 @@ impl WebConfigServer {
         // Health check endpoint - simple and lightweight
         let metrics_health = metrics.clone();
         server.fn_handler("/health", esp_idf_svc::http::Method::Get, move |req| {
-            // Log memory for debugging
-            crate::memory_diagnostics::log_memory_state("Health check - start");
+            // Keep /health minimal and fast: avoid extra logging/work
             
             let uptime = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u64;
             let heap = unsafe { esp_idf_sys::esp_get_free_heap_size() };
@@ -243,13 +242,7 @@ impl WebConfigServer {
                 issues.push("low_memory");
             }
             
-            // Check temperature if available
-            if let Ok(metrics_guard) = metrics_health.try_lock() {
-                if metrics_guard.temperature > 35.0 {
-                    status = "warning";
-                    issues.push("high_temperature");
-                }
-            }
+            // Keep health computation minimal; skip metrics lock to avoid contention
             
             // Simple JSON response
             let health_json = serde_json::json!({
