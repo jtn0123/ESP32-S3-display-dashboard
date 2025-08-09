@@ -265,7 +265,7 @@ impl WebConfigServer {
             let mut response = req.into_response(
                 200,
                 Some("OK"),
-                &[("Content-Type", "application/json"), ("Connection", "keep-alive")]
+                &[("Content-Type", "application/json"), ("Connection", "close")]
             )?;
             response.write_all(health_json.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
@@ -276,7 +276,7 @@ impl WebConfigServer {
             let mut response = req.into_response(
                 200,
                 Some("OK"),
-                &[("Content-Type", "text/plain"), ("Connection", "keep-alive")]
+                &[("Content-Type", "text/plain"), ("Connection", "close")]
             )?;
             response.write_all(b"OK")?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
