@@ -89,6 +89,16 @@ impl WifiReconnectManager {
                     FreeRtos::delay_ms(delay as u32 * 1000);
                     
                     // Attempt reconnection
+                    // After 3 failed attempts, perform stop/start cycle
+                    if attempts % 3 == 0 {
+                        unsafe {
+                            let _ = esp_idf_sys::esp_wifi_stop();
+                            FreeRtos::delay_ms(500);
+                            let _ = esp_idf_sys::esp_wifi_start();
+                            FreeRtos::delay_ms(500);
+                        }
+                    }
+
                     match Self::force_reconnect() {
                         Ok(_) => {
                             log::info!("WiFi reconnection initiated");

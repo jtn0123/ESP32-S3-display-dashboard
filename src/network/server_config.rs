@@ -21,7 +21,7 @@ impl StableServerConfig {
     }
     
     /// Get stack size configuration value
-    pub const fn stack_size() -> usize { 16384 }
+    pub const fn stack_size() -> usize { 24576 }
     
     /// Get max sockets configuration value  
     pub const fn max_sockets() -> u16 { 12 }
