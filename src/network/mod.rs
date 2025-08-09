@@ -20,6 +20,7 @@ pub mod streaming_ota;
 pub mod streaming_dashboard;
 pub mod template_engine;
 pub mod templated_home;
+pub mod observability;
 
 use anyhow::Result;
 use esp_idf_hal::modem::Modem;

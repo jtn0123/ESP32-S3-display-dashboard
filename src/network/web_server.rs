@@ -229,6 +229,8 @@ impl WebConfigServer {
         // Health check endpoint - simple and lightweight
         let metrics_health = metrics.clone();
         server.fn_handler("/health", esp_idf_svc::http::Method::Get, move |req| {
+            // Observability begin
+            let _obs_start = crate::network::observability::begin_request();
             // Keep /health minimal and fast: avoid extra logging/work
             
             let uptime = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u64;
@@ -264,7 +266,8 @@ impl WebConfigServer {
                 "reset_reason": reset_reason_str,
                 "reset_code": reset_code,
                 "wifi_rssi": wifi_rssi,
-                "wifi": wifi_stats
+                "wifi": wifi_stats,
+                "boot_id": crate::network::observability::boot_id(),
             }).to_string();
             
             let mut response = req.into_response(
@@ -273,17 +276,36 @@ impl WebConfigServer {
                 &[("Content-Type", "application/json"), ("Connection", "close")]
             )?;
             response.write_all(health_json.as_bytes())?;
+            // Observability end
+            crate::network::observability::end_request(_obs_start, crate::network::observability::Endpoint::Health, 200);
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // Ultra-light ping endpoint (keep-alive friendly)
         server.fn_handler("/ping", esp_idf_svc::http::Method::Get, move |req| {
+            let _obs_start = crate::network::observability::begin_request();
             let mut response = req.into_response(
                 200,
                 Some("OK"),
                 &[("Content-Type", "text/plain"), ("Connection", "close")]
             )?;
             response.write_all(b"OK")?;
+            crate::network::observability::end_request(_obs_start, crate::network::observability::Endpoint::Ping, 200);
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        // Debug observability snapshots (on-demand JSON)
+        server.fn_handler("/debug/stats", esp_idf_svc::http::Method::Get, move |req| {
+            let json = serde_json::to_string(&crate::network::observability::http_snapshot())?;
+            let mut response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json"), ("Connection", "close")])?;
+            response.write_all(json.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        server.fn_handler("/debug/events", esp_idf_svc::http::Method::Get, move |req| {
+            let json = serde_json::to_string(&crate::network::observability::events_snapshot())?;
+            let mut response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json"), ("Connection", "close")])?;
+            response.write_all(json.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
