@@ -10,6 +10,10 @@ INTERVAL_SECS=${3:-60}
 CURL="curl -sS"
 MAX_TIME=${MAX_TIME:-10}
 RETRIES=${RETRIES:-2}
+CONNECT_TIMEOUT=${CONNECT_TIMEOUT:-3}
+PING_BEFORE=${PING_BEFORE:-1}
+BACKOFF_AFTER_FAILS=${BACKOFF_AFTER_FAILS:-3}
+BACKOFF_SECS=${BACKOFF_SECS:-30}
 
 if [ -z "$DEVICE_IP" ]; then
   echo "Usage: $0 <device-ip> [duration_seconds] [interval_seconds]"
@@ -51,6 +55,7 @@ MIN_HEAP=999999999
 MAX_HEAP=0
 WARN_COUNT=0
 ITER=0
+CONSEC_FAILS=0
 
 while true; do
   NOW=$(date '+%Y-%m-%dT%H:%M:%S')
@@ -59,36 +64,62 @@ while true; do
     break
   fi
 
+  # Optional ICMP ping gate to avoid hammering when link is down
+  if [ "$PING_BEFORE" = "1" ]; then
+    if ! ping -c 1 -W 1 "$DEVICE_IP" >/dev/null 2>&1; then
+      echo "$NOW network: ping failed" | tee -a "$ANOMALY_LOG" >> "$HEALTH_LOG"
+      WARN_COUNT=$((WARN_COUNT+1))
+      CONSEC_FAILS=$((CONSEC_FAILS+1))
+      # Backoff if too many consecutive failures
+      if [ $CONSEC_FAILS -ge $BACKOFF_AFTER_FAILS ]; then
+        sleep $BACKOFF_SECS
+      fi
+      ITER=$((ITER+1))
+      sleep $INTERVAL_SECS
+      continue
+    fi
+  fi
+
   RESP=""
   for attempt in $(seq 0 $RETRIES); do
-    RESP=$($CURL --max-time "$MAX_TIME" "http://$DEVICE_IP/health" || true)
+    # Prefer ultra-light /ping; fallback to /health every 5th sample for heap trend
+    if [ $((ITER % 5)) -eq 0 ]; then
+      RESP=$($CURL --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" "http://$DEVICE_IP/health" || true)
+    else
+      RESP=$($CURL --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" "http://$DEVICE_IP/ping" || true)
+    fi
     [ -n "$RESP" ] && break
     sleep 1
   done
   if [ -z "$RESP" ]; then
     echo "$NOW health: ERROR no response" | tee -a "$ANOMALY_LOG" >> "$HEALTH_LOG"
     WARN_COUNT=$((WARN_COUNT+1))
+    CONSEC_FAILS=$((CONSEC_FAILS+1))
   else
-    FREE_HEAP=$(echo "$RESP" | grep -o '"free_heap":[0-9]*' | head -1 | cut -d: -f2)
-    STATUS=$(echo "$RESP" | grep -o '"status":"[^"]*"' | head -1 | cut -d: -f2 | tr -d '"')
-    RESET_REASON=$(echo "$RESP" | grep -o '"reset_reason":"[^"]*"' | head -1 | cut -d: -f2 | tr -d '"')
-    RESET_CODE=$(echo "$RESP" | grep -o '"reset_code":[0-9-]*' | head -1 | cut -d: -f2)
-
-  echo "$NOW health: status=$STATUS heap=$FREE_HEAP reset_reason=${RESET_REASON:-n/a} code=${RESET_CODE:-n/a}" >> "$HEALTH_LOG"
+    CONSEC_FAILS=0
+    if [ "$RESP" = "OK" ]; then
+      echo "$NOW ping: OK" >> "$HEALTH_LOG"
+    else
+      FREE_HEAP=$(echo "$RESP" | grep -o '"free_heap":[0-9]*' | head -1 | cut -d: -f2)
+      STATUS=$(echo "$RESP" | grep -o '"status":"[^"]*"' | head -1 | cut -d: -f2 | tr -d '"')
+      RESET_REASON=$(echo "$RESP" | grep -o '"reset_reason":"[^"]*"' | head -1 | cut -d: -f2 | tr -d '"')
+      RESET_CODE=$(echo "$RESP" | grep -o '"reset_code":[0-9-]*' | head -1 | cut -d: -f2)
+      echo "$NOW health: status=$STATUS heap=${FREE_HEAP:-n/a} reset_reason=${RESET_REASON:-n/a} code=${RESET_CODE:-n/a}" >> "$HEALTH_LOG"
+    fi
 
     # Track heap stats
-    if [ -n "$FREE_HEAP" ]; then
+    if [ -n "${FREE_HEAP:-}" ]; then
       [ -z "$INITIAL_HEAP" ] && INITIAL_HEAP=$FREE_HEAP
       [ $FREE_HEAP -lt $MIN_HEAP ] && MIN_HEAP=$FREE_HEAP
       [ $FREE_HEAP -gt $MAX_HEAP ] && MAX_HEAP=$FREE_HEAP
 
       # Anomaly: non-healthy status
-      if [ "$STATUS" != "healthy" ]; then
+      if [ -n "${STATUS:-}" ] && [ "$STATUS" != "healthy" ]; then
         echo "$NOW anomaly: non-healthy status ($STATUS)" | tee -a "$ANOMALY_LOG"
         WARN_COUNT=$((WARN_COUNT+1))
       fi
     else
-      echo "$NOW anomaly: failed to parse free_heap from /health" | tee -a "$ANOMALY_LOG"
+      # No heap parsed (likely ping path), not an anomaly
       WARN_COUNT=$((WARN_COUNT+1))
     fi
   fi

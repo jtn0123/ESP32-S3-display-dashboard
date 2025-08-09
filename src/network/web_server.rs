@@ -245,6 +245,11 @@ impl WebConfigServer {
             // Keep health computation minimal; skip metrics lock to avoid contention
             
             // Simple JSON response
+            // Best-effort WiFi RSSI from metrics (non-blocking)
+            let mut wifi_rssi: Option<i32> = None;
+            if let Ok(m) = metrics_health.try_lock() {
+                wifi_rssi = Some(m.wifi_rssi as i32);
+            }
             let health_json = serde_json::json!({
                 "status": status,
                 "uptime_seconds": uptime,
@@ -252,7 +257,8 @@ impl WebConfigServer {
                 "version": crate::version::DISPLAY_VERSION,
                 "issues": issues,
                 "reset_reason": reset_reason_str,
-                "reset_code": reset_code
+                "reset_code": reset_code,
+                "wifi_rssi": wifi_rssi
             }).to_string();
             
             let mut response = req.into_response(
@@ -261,6 +267,17 @@ impl WebConfigServer {
                 &[("Content-Type", "application/json")]
             )?;
             response.write_all(health_json.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
+        })?;
+
+        // Ultra-light ping endpoint (keep-alive friendly)
+        server.fn_handler("/ping", esp_idf_svc::http::Method::Get, move |req| {
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "text/plain"), ("Connection", "keep-alive")]
+            )?;
+            response.write_all(b"OK")?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
