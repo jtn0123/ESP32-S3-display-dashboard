@@ -25,8 +25,8 @@ impl SseBroadcaster {
 
         // SSE endpoint for real-time updates
         server.fn_handler("/api/events", Method::Get, move |req| {
-            // Check connection limit
-            const MAX_SSE_CONNECTIONS: u32 = 5;
+            // Check connection limit (keep low to preserve sockets for HTTP)
+            const MAX_SSE_CONNECTIONS: u32 = 2;
             {
                 match connections.lock() {
                     Ok(mut count) => {

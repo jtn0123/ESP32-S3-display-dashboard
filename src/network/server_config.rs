@@ -16,6 +16,8 @@ impl StableServerConfig {
             max_open_sockets: Self::max_sockets() as usize,
             max_resp_headers: 12,
             lru_purge_enable: true,
+            recv_wait_timeout_ms: Some(2_000),
+            send_wait_timeout_ms: Some(2_000),
             ..Default::default()
         }
     }

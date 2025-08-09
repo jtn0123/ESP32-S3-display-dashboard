@@ -110,7 +110,7 @@ impl WifiReconnectManager {
                         }
                     }
                 } else {
-                    // Connected - reset attempts counter
+                    // Connected - reset attempts counter and refresh RSSI/channel
                     let attempts = reconnect_attempts.lock().map(|g| *g).unwrap_or(0);
                     if attempts > 0 {
                         log::warn!("WiFi reconnected after {} attempts (intermittent network)", attempts);
@@ -123,6 +123,11 @@ impl WifiReconnectManager {
                                 crate::network::wifi_stats::set_rssi_dbm(ap_info.rssi as i32);
                                 crate::network::wifi_stats::set_channel(ap_info.primary as u32);
                             }
+                        }
+                        // Disable power-save again to ensure stability after reconnection
+                        unsafe {
+                            use esp_idf_sys::*;
+                            let _ = esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE);
                         }
                     }
                 }
