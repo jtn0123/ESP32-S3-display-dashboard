@@ -65,11 +65,15 @@ except KeyboardInterrupt:
 PY
 ) >/dev/null 2>&1 & SERIAL_PID=$! || true
 
-# SSE in background
-(
-  echo "# SSE stream from /api/events started"
-  $CURL -N "http://$DEVICE_IP/api/events"
-) > "$SSE_LOG" 2>&1 & SSE_PID=$!
+# SSE in background (can be disabled via NO_SSE=1)
+if [ "${NO_SSE:-0}" != "1" ]; then
+  (
+    echo "# SSE stream from /api/events started"
+    $CURL -N "http://$DEVICE_IP/api/events"
+  ) > "$SSE_LOG" 2>&1 & SSE_PID=$!
+else
+  SSE_PID=""
+fi
 
 START=$(date +%s)
 NEXT_HEALTH=0
@@ -122,7 +126,8 @@ while :; do
   fi
   rm -f "$POUT"
 
-  # /ping
+  # /ping (stagger +1s)
+  sleep 1
   raw=$($CURL -o /dev/null -w '%{http_code}\t%{time_connect}\t%{time_total}' --connect-timeout 2 --max-time 4 "http://$DEVICE_IP/ping" || true)
   code=$(printf "%s" "$raw" | awk -F '\t' '{print $1}')
   c_s=$(printf "%s" "$raw" | awk -F '\t' '{print $2}')
@@ -135,8 +140,9 @@ while :; do
   HP_STATUS=$([ "$code" = "200" ] && echo ok || echo fail)
   HP_CODE=$code; HP_CONNECT_MS=$c_ms; HP_TOTAL_MS=$t_ms
 
-  # /health every 30s
+  # /health every 30s (stagger +2s on first eligible tick)
   if [ $ELAPSED -ge $NEXT_HEALTH ]; then
+    sleep 1
     # Fetch /health body and timings
     HJSON="$OUT_DIR/last_health.json"
     raw=$($CURL -o "$HJSON" -w '%{http_code}\t%{time_connect}\t%{time_total}' --connect-timeout 2 --max-time 5 "http://$DEVICE_IP/health" || true)
@@ -223,7 +229,7 @@ PY
 done
 
 # Cleanup
-kill $SSE_PID >/dev/null 2>&1 || true
+if [ -n "$SSE_PID" ]; then kill $SSE_PID >/dev/null 2>&1 || true; fi
 kill $SERIAL_PID >/dev/null 2>&1 || true
 
 # Summary
