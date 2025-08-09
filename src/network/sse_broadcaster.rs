@@ -81,11 +81,15 @@ impl SseBroadcaster {
                 
                 // Send metrics update
                 if let Ok(metrics) = crate::metrics::metrics().try_lock() {
+                    let temp = (metrics.temperature * 10.0).round() / 10.0;
+                    let fps = (metrics.fps_actual * 10.0).round() / 10.0;
                     let event = serde_json::json!({
                         "type": "metrics",
                         "data": {
-                            "temperature": (metrics.temperature * 10.0).round() / 10.0,
-                            "fps_actual": (metrics.fps_actual * 10.0).round() / 10.0,
+                            "temperature": temp,
+                            "temperature_str": format!("{:.1}", temp),
+                            "fps_actual": fps,
+                            "fps_actual_str": format!("{:.1}", fps),
                             "cpu_usage": metrics.cpu_usage,
                             "wifi_rssi": metrics.wifi_rssi,
                             "battery_percentage": metrics.battery_percentage,

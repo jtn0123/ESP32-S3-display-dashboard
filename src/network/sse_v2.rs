@@ -189,6 +189,8 @@ impl SseManager {
                             "uptime_ms": uptime_ms,
                             "temperature": (metrics.temperature * 10.0).round() / 10.0,
                             "fps_actual": (metrics.fps_actual * 10.0).round() / 10.0,
+                            "temperature_str": format!("{:.1}", (metrics.temperature * 10.0).round() / 10.0),
+                            "fps_actual_str": format!("{:.1}", (metrics.fps_actual * 10.0).round() / 10.0),
                             "cpu_usage": metrics.cpu_usage,
                             "cpu0_usage": metrics.cpu0_usage,
                             "cpu1_usage": metrics.cpu1_usage,
