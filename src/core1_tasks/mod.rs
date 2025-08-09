@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use esp_idf_sys::{xTaskCreatePinnedToCore, TaskHandle_t};
 use std::ffi::CString;
 use anyhow::Result;
+use core::ffi::c_void;
 
 pub mod network_monitor;
 pub mod data_processor;
@@ -91,11 +92,13 @@ impl Core1Manager {
             let task_name = CString::new("core1_task")
                 .expect("CString creation failed - no null bytes in string");
             
+            // Prepare FFI-safe task argument wrapper to avoid raw tuple juggling
+            let args = TaskArgs::new((network_monitor, data_processor));
             let ret = xTaskCreatePinnedToCore(
                 Some(core1_task_entry),
                 task_name.as_ptr(),
                 8192,  // Stack size
-                Box::into_raw(Box::new((network_monitor, data_processor))) as *mut _,
+                args.into_raw(),
                 10,    // Priority
                 &mut handle,
                 1,     // Core 1
@@ -115,11 +118,11 @@ impl Core1Manager {
 
 // Task entry point for Core 1
 unsafe extern "C" fn core1_task_entry(pv_parameters: *mut std::ffi::c_void) {
-    // Recover the task components
+    // Recover the task components via safe wrapper
     let (network_monitor, data_processor): (
         Arc<Mutex<NetworkMonitor>>,
         Arc<Mutex<DataProcessor>>,
-    ) = *Box::from_raw(pv_parameters as *mut _);
+    ) = unsafe { TaskArgs::<(Arc<Mutex<NetworkMonitor>>, Arc<Mutex<DataProcessor>>)>::from_raw(pv_parameters) };
     
     // Force a visible log message
     log::info!("CORE1: Task started on CPU {:?}", esp_idf_hal::cpu::core());
@@ -176,6 +179,22 @@ unsafe extern "C" fn core1_task_entry(pv_parameters: *mut std::ffi::c_void) {
             // Still yield even if no sleep needed
             esp_idf_hal::delay::FreeRtos::delay_ms(1);
         }
+    }
+}
+
+/// Minimal wrapper to manage ownership transfer of task arguments across FFI boundaries
+struct TaskArgs<T>(Option<T>);
+
+impl<T> TaskArgs<T> {
+    fn new(value: T) -> Self { Self(Some(value)) }
+    fn into_raw(self) -> *mut c_void {
+        // Leak box to pass ownership to the created task
+        Box::into_raw(Box::new(self)) as *mut c_void
+    }
+    unsafe fn from_raw(ptr: *mut c_void) -> T {
+        // Reclaim ownership exactly once
+        let boxed: Box<TaskArgs<T>> = Box::from_raw(ptr as *mut TaskArgs<T>);
+        boxed.0.expect("TaskArgs consumed more than once")
     }
 }
 

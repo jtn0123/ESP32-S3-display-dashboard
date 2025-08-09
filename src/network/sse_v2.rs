@@ -264,11 +264,12 @@ where
     
     let mut response = req.into_response(200, Some("OK"), &headers)?;
     
-    // Send initial connection event
+    // Send initial connection event with a soft timeout guard
     let init_event = format!(
         "event: connected\ndata: {{\"connection_id\":{}}}\n\n",
         conn_id
     );
+    // attempt initial write, if it fails, exit early
     safe_write(&mut response, init_event.as_bytes())?;
     response.flush()?;
     
