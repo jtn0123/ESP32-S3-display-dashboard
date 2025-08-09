@@ -21,6 +21,7 @@ PING_LOG="$OUT_DIR/ping.log"
 P_HTTP_LOG="$OUT_DIR/http_ping.tsv"   # ts\thttp_code\tconnect_ms\ttotal_ms (deprecated; use network.tsv)
 H_HTTP_LOG="$OUT_DIR/http_health.tsv" # ts\thttp_code\tconnect_ms\ttotal_ms (deprecated; use network.tsv)
 OUT_NET="$OUT_DIR/network.tsv"        # ts\telapsed_s\ticmp_status\ticmp_rtt_ms\thp_status\thp_code\thp_connect_ms\thp_total_ms\thl_status\thl_code\thl_connect_ms\thl_total_ms\thealth_age_s\tsse_bytes\twifi_rssi_dbm\twifi_disc\twifi_reconn\theap_kb\tuptime_s
+OUT_NET_PRETTY="$OUT_DIR/network_aligned.txt"
 SSE_LOG="$OUT_DIR/sse.log"
 SERIAL_LOG="$OUT_DIR/serial.log"
 SUMMARY="$OUT_DIR/summary.txt"
@@ -76,6 +77,26 @@ NEXT_HEALTH=0
 printf "ts\thttp_code\tconnect_ms\ttotal_ms\n" > "$P_HTTP_LOG"
 printf "ts\thttp_code\tconnect_ms\ttotal_ms\n" > "$H_HTTP_LOG"
 printf "ts\telapsed_s\ticmp_status\ticmp_rtt_ms\thp_status\thp_code\thp_connect_ms\thp_total_ms\thl_status\thl_code\thl_connect_ms\thl_total_ms\thealth_age_s\tsse_bytes\twifi_rssi_dbm\twifi_disc\twifi_reconn\theap_kb\tuptime_s\n" > "$OUT_NET"
+
+# Human-friendly aligned header
+{
+  printf "%-8s %-8s | %-11s %-11s | %-9s %-7s %-13s %-13s | %-9s %-7s %-13s %-13s %-12s | %-10s | %-13s %-10s %-12s | %-8s %-8s\n" \
+    "ts" "elapsed" \
+    "icmp_status" "icmp_rtt" \
+    "hp_status" "hp_code" "hp_connect_ms" "hp_total_ms" \
+    "hl_status" "hl_code" "hl_connect_ms" "hl_total_ms" "health_age_s" \
+    "sse_bytes" \
+    "wifi_rssi_dbm" "wifi_disc" "wifi_reconn" \
+    "heap_kb" "uptime_s"
+  printf "%-8s %-8s | %-11s %-11s | %-9s %-7s %-13s %-13s | %-9s %-7s %-13s %-13s %-12s | %-10s | %-13s %-10s %-12s | %-8s %-8s\n" \
+    "--------" "--------" \
+    "-----------" "-----------" \
+    "---------" "-------" "-------------" "-------------" \
+    "---------" "-------" "-------------" "-------------" "------------" \
+    "----------" \
+    "-------------" "----------" "------------" \
+    "--------" "--------"
+} > "$OUT_NET_PRETTY"
 
 LAST_HEALTH_JSON=""
 LAST_WIFI_RSSI="-"; LAST_WIFI_DISC="-"; LAST_WIFI_RECONN="-"; LAST_HEAP_KB="-"; LAST_UPTIME_S="-"; LAST_HEALTH_AGE=999999
@@ -186,6 +207,17 @@ PY
     "$HL_STATUS" "$HL_CODE" "$HL_CONNECT_MS" "$HL_TOTAL_MS" "$LAST_HEALTH_AGE" \
     "$SSE_BYTES" "$LAST_WIFI_RSSI" "$LAST_WIFI_DISC" "$LAST_WIFI_RECONN" "$LAST_HEAP_KB" "$LAST_UPTIME_S" \
     >> "$OUT_NET"
+
+  # Emit human-friendly aligned row
+  printf "%-8s %-8d | %-11s %-11s | %-9s %-7s %-13s %-13s | %-9s %-7s %-13s %-13s %-12d | %-10s | %-13s %-10s %-12s | %-8s %-8s\n" \
+    "$TS" "$ELAPSED" \
+    "$ICMP_STATUS" "$ICMP_RTT" \
+    "$HP_STATUS" "$HP_CODE" "$HP_CONNECT_MS" "$HP_TOTAL_MS" \
+    "$HL_STATUS" "$HL_CODE" "$HL_CONNECT_MS" "$HL_TOTAL_MS" "$LAST_HEALTH_AGE" \
+    "$SSE_BYTES" \
+    "$LAST_WIFI_RSSI" "$LAST_WIFI_DISC" "$LAST_WIFI_RECONN" \
+    "$LAST_HEAP_KB" "$LAST_UPTIME_S" \
+    >> "$OUT_NET_PRETTY"
 
   sleep "$INTERVAL"
 done
