@@ -76,6 +76,7 @@ else
 fi
 
 START=$(date +%s)
+WARMUP_SECS=${WARMUP_SECS:-90}
 NEXT_HEALTH=0
 
 printf "ts\thttp_code\tconnect_ms\ttotal_ms\n" > "$P_HTTP_LOG"
@@ -326,6 +327,64 @@ if sse_bytes:
   print(f"SSE: active_ticks={active}/{n} ({active*100.0/n:.1f}%) bytes[{describe(sse_bytes)}]")
 if wifi_rssi:
   print(f"WiFi RSSI: {describe(wifi_rssi)} dBm last_disc={last_disc} last_reconn={last_reconn}")
+PY
+
+# Late-window stats (exclude warm-up seconds)
+python3 - "$OUT_NET" "$WARMUP_SECS" >> "$SUMMARY" << 'PY'
+import sys, statistics as stats
+from math import floor
+
+path = sys.argv[1]
+warmup = int(sys.argv[2])
+
+def f(x):
+  try:
+    return float(x)
+  except Exception:
+    return None
+
+hp_ok=hp_fail=hl_ok=hl_fail=icmp_ok=icmp_fail=0
+hp_conn=[]; hp_total=[]; hl_conn=[]; hl_total=[]
+
+with open(path) as fh:
+  header=True
+  for line in fh:
+    if header:
+      header=False; continue
+    cols=line.rstrip('\n').split('\t')
+    if len(cols) < 19: continue
+    elapsed = int(cols[1])
+    if elapsed < warmup: continue
+    icmp_status = cols[2]
+    hp_status, hp_c, hp_t = cols[4], f(cols[6]), f(cols[7])
+    hl_status, hl_c, hl_t = cols[8], f(cols[10]), f(cols[11])
+
+    if icmp_status=='ok': icmp_ok+=1
+    elif icmp_status=='fail': icmp_fail+=1
+
+    if hp_status=='ok':
+      hp_ok+=1
+      if hp_c is not None: hp_conn.append(hp_c)
+      if hp_t is not None: hp_total.append(hp_t)
+    elif hp_status=='fail': hp_fail+=1
+
+    if hl_status=='ok':
+      hl_ok+=1
+      if hl_c is not None: hl_conn.append(hl_c)
+      if hl_t is not None: hl_total.append(hl_t)
+    elif hl_status=='fail': hl_fail+=1
+
+def pct(ok, fail):
+  n=ok+fail
+  return (ok*100.0/n) if n else 0.0
+
+def avg(lst):
+  return (sum(lst)/len(lst)) if lst else 0.0
+
+print("\n=== Late-window (post-warmup) ===")
+print(f"ICMP late ok%: {pct(icmp_ok,icmp_fail):.1f}")
+print(f"HTTP /ping late ok%: {pct(hp_ok,hp_fail):.1f} avg_connect_ms: {avg(hp_conn):.1f} avg_total_ms: {avg(hp_total):.1f}")
+print(f"HTTP /health late ok%: {pct(hl_ok,hl_fail):.1f} avg_connect_ms: {avg(hl_conn):.1f} avg_total_ms: {avg(hl_total):.1f}")
 PY
 
 exit 0

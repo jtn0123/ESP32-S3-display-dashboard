@@ -163,6 +163,11 @@ impl WifiManager {
                     ap.channel,
                     ap.auth_method
                 );
+                // Prefer locking to the discovered channel to minimize off-channel time during connect
+                unsafe {
+                    use esp_idf_sys::*;
+                    let _ = esp_wifi_set_channel(ap.channel as u8, wifi_second_chan_t_WIFI_SECOND_CHAN_NONE);
+                }
                 break;
             }
         }
@@ -238,6 +243,13 @@ impl WifiManager {
             // Maximize transmit power for stability
             // 78 corresponds to approx 19.5 dBm (0.25 dBm step), capped by regulatory limits
             let _ = esp_wifi_set_max_tx_power(78);
+            // Prefer 20MHz bandwidth for stability in crowded environments
+            let _ = esp_wifi_set_bandwidth(wifi_interface_t_WIFI_IF_STA, wifi_bandwidth_t_WIFI_BW_HT20);
+            // Ensure 11g/n protocols are enabled (keep b for compatibility)
+            let _ = esp_wifi_set_protocol(wifi_interface_t_WIFI_IF_STA,
+                (wifi_protocol_bits_t_WIFI_PROTOCOL_11B
+                | wifi_protocol_bits_t_WIFI_PROTOCOL_11G
+                | wifi_protocol_bits_t_WIFI_PROTOCOL_11N) as u8);
         }
         
         // Give WiFi more time to stabilize with power save disabled

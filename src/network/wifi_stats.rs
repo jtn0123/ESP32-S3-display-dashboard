@@ -9,6 +9,8 @@ static WIFI_RECONNECTS: AtomicU32 = AtomicU32::new(0);
 static WIFI_RSSI_DBM: AtomicI32 = AtomicI32::new(0);
 static WIFI_CHANNEL: AtomicU32 = AtomicU32::new(0);
 static WIFI_LAST_DISC_MS: AtomicU64Compat = AtomicU64Compat::new(0);
+static WIFI_LAST_REASON: AtomicU32 = AtomicU32::new(0);
+static WIFI_LAST_REASON_MS: AtomicU64Compat = AtomicU64Compat::new(0);
 
 pub fn set_connected(connected: bool) {
     WIFI_CONNECTED.store(connected, Ordering::Relaxed);
@@ -34,6 +36,14 @@ pub fn set_channel(ch: u32) {
     WIFI_CHANNEL.store(ch, Ordering::Relaxed);
 }
 
+pub fn set_last_reason(reason: u32) {
+    WIFI_LAST_REASON.store(reason, Ordering::Relaxed);
+    unsafe {
+        let ms = (esp_idf_sys::esp_timer_get_time() / 1000) as u64;
+        WIFI_LAST_REASON_MS.store((ms & 0xFFFF_FFFF) as u32, Ordering::Relaxed);
+    }
+}
+
 #[derive(serde::Serialize)]
 pub struct WifiStatsSnapshot {
     pub connected: bool,
@@ -42,6 +52,8 @@ pub struct WifiStatsSnapshot {
     pub rssi_dbm: i32,
     pub channel: u32,
     pub last_disconnect_ms: u64,
+    pub last_reason: u32,
+    pub last_reason_ms: u64,
 }
 
 pub fn snapshot() -> WifiStatsSnapshot {
@@ -52,6 +64,8 @@ pub fn snapshot() -> WifiStatsSnapshot {
         rssi_dbm: WIFI_RSSI_DBM.load(Ordering::Relaxed),
         channel: WIFI_CHANNEL.load(Ordering::Relaxed),
         last_disconnect_ms: WIFI_LAST_DISC_MS.load(Ordering::Relaxed) as u64,
+        last_reason: WIFI_LAST_REASON.load(Ordering::Relaxed),
+        last_reason_ms: WIFI_LAST_REASON_MS.load(Ordering::Relaxed) as u64,
     }
 }
 

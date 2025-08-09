@@ -255,6 +255,7 @@ impl WebSocketServer {
                 let mut dead_connections = Vec::new();
                 let mut failed_once = Vec::new();
                 for (id, sender_arc, last_ping) in snapshot.into_iter() {
+                    // Drop if no activity for 2 intervals
                     if last_ping.elapsed() > PING_INTERVAL * 2 {
                         dead_connections.push(id);
                     } else if let Ok(mut sender) = sender_arc.try_lock() {
