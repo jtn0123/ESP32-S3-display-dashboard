@@ -143,10 +143,61 @@ impl WifiReconnectManager {
         Ok(())
     }
     
-    /// Register WiFi event handlers for automatic reconnection
+    /// Register WiFi event handlers so stats reflect real events (reason codes, timestamps)
     pub fn register_event_handlers(&self, _sysloop: &EspEventLoop<System>) -> Result<()> {
-        // Start the monitoring task instead
-        self.start_monitoring()
+        // Keep existing monitoring (polling/backoff) and also wire low-level events
+        self.start_monitoring()?;
+
+        unsafe extern "C" fn wifi_any_event_handler(
+            event_base: *const core::ffi::c_void,
+            event_id: i32,
+            event_data: *mut core::ffi::c_void,
+        ) {
+            use esp_idf_sys::*;
+            if event_base == WIFI_EVENT as *const _ {
+                match event_id as u32 {
+                    wifi_event_t_WIFI_EVENT_STA_DISCONNECTED => {
+                        // Capture reason code
+                        if !event_data.is_null() {
+                            let disc = &*(event_data as *const wifi_event_sta_disconnected_t);
+                            crate::network::wifi_stats::set_last_reason(disc.reason as u32);
+                        }
+                        crate::network::wifi_stats::set_connected(false);
+                        crate::network::wifi_stats::record_disconnect();
+                    }
+                    wifi_event_t_WIFI_EVENT_STA_CONNECTED => {
+                        crate::network::wifi_stats::set_connected(true);
+                        crate::network::wifi_stats::record_reconnect();
+                        // Refresh RSSI/channel
+                        let mut ap: wifi_ap_record_t = core::mem::zeroed();
+                        if esp_wifi_sta_get_ap_info(&mut ap) == ESP_OK {
+                            crate::network::wifi_stats::set_rssi_dbm(ap.rssi as i32);
+                            crate::network::wifi_stats::set_channel(ap.primary as u32);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        unsafe {
+            use esp_idf_sys::*;
+            // Subscribe to all WIFI_EVENTs to collect reasons and transitions
+            let err = esp_event_handler_register(
+                WIFI_EVENT,
+                ESP_EVENT_ANY_ID,
+                Some(core::mem::transmute::<
+                    unsafe extern "C" fn(*const core::ffi::c_void, i32, *mut core::ffi::c_void),
+                    esp_event_handler_t,
+                >(wifi_any_event_handler)),
+                core::ptr::null_mut(),
+            );
+            if err != ESP_OK {
+                log::warn!("Failed to register WiFi event handler: {}", err);
+            }
+        }
+
+        Ok(())
     }
     
     /// Stop monitoring

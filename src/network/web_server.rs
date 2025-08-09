@@ -56,6 +56,9 @@ impl WebConfigServer {
             esp_idf_hal::delay::FreeRtos::delay_ms(500);
         }
         
+        // Ensure WiFi link sampler is active for RSSI/channel in /health
+        crate::network::wifi_stats::start_sampler();
+
         // Use optimized configuration to prevent socket exhaustion
         let server_config = crate::network::http_config::create_http_config();
         let mut server = EspHttpServer::new(&server_config)?;

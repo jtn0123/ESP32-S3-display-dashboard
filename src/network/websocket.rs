@@ -70,8 +70,10 @@ impl WebSocketServer {
             crate::diagnostics::log_ws_event("connect", Some(conn_id));
 
             // Accept the connection
-            let (sender, receiver) = ws.split();
-            let sender = Arc::new(Mutex::new(sender));
+            let (mut sender_raw, receiver) = ws.split();
+            // Try to enable TCP_NODELAY on the underlying socket to reduce latency
+            let _ = sender_raw.set_nodelay(true);
+            let sender = Arc::new(Mutex::new(sender_raw));
 
             // Store connection
             {

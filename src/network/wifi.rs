@@ -245,11 +245,6 @@ impl WifiManager {
             let _ = esp_wifi_set_max_tx_power(78);
             // Prefer 20MHz bandwidth for stability in crowded environments
             let _ = esp_wifi_set_bandwidth(wifi_interface_t_WIFI_IF_STA, wifi_bandwidth_t_WIFI_BW_HT20);
-            // Ensure 11g/n protocols are enabled (keep b for compatibility)
-            let _ = esp_wifi_set_protocol(wifi_interface_t_WIFI_IF_STA,
-                (wifi_protocol_bits_t_WIFI_PROTOCOL_11B
-                | wifi_protocol_bits_t_WIFI_PROTOCOL_11G
-                | wifi_protocol_bits_t_WIFI_PROTOCOL_11N) as u8);
         }
         
         // Give WiFi more time to stabilize with power save disabled
