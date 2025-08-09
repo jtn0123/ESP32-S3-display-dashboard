@@ -218,14 +218,14 @@ where
     }
     
     // Get report
-    let final_report = if let Ok(mut guard) = monitor_handle.lock() {
+    let final_monitor = if let Ok(mut guard) = monitor_handle.lock() {
         std::mem::replace(&mut *guard, VoltageMonitor::start_monitoring())
     } else {
-        // If we fail to lock, produce a minimal report to avoid panic
+        // If we fail to lock, produce a minimal monitor to avoid panic
         log::error!("Voltage monitor lock poisoned; generating minimal report");
-        VoltageMonitor::start_monitoring().stop_monitoring()
+        VoltageMonitor::start_monitoring()
     };
-    let report = final_report.stop_monitoring();
+    let report = final_monitor.stop_monitoring();
     
     // Log diagnosis
     log::info!("{}: {}", operation_name, report.get_diagnosis());
