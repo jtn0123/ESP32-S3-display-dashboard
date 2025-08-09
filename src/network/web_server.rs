@@ -59,6 +59,7 @@ impl WebConfigServer {
         // Use optimized configuration to prevent socket exhaustion
         let server_config = crate::network::http_config::create_http_config();
         let mut server = EspHttpServer::new(&server_config)?;
+        // Reduce accept backlog issues by setting keep-alive where possible is handled per handler
         
         // Home page (templated, fast and memory-safe)
         server.fn_handler("/", esp_idf_svc::http::Method::Get, |req| {
@@ -264,7 +265,7 @@ impl WebConfigServer {
             let mut response = req.into_response(
                 200,
                 Some("OK"),
-                &[("Content-Type", "application/json")]
+                &[("Content-Type", "application/json"), ("Connection", "keep-alive")]
             )?;
             response.write_all(health_json.as_bytes())?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>

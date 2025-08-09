@@ -14,6 +14,8 @@ CONNECT_TIMEOUT=${CONNECT_TIMEOUT:-3}
 PING_BEFORE=${PING_BEFORE:-1}
 BACKOFF_AFTER_FAILS=${BACKOFF_AFTER_FAILS:-3}
 BACKOFF_SECS=${BACKOFF_SECS:-30}
+WARMUP_TIMEOUT=${WARMUP_TIMEOUT:-60}
+WARMUP_SLEEP=${WARMUP_SLEEP:-5}
 
 if [ -z "$DEVICE_IP" ]; then
   echo "Usage: $0 <device-ip> [duration_seconds] [interval_seconds]"
@@ -31,6 +33,24 @@ SUMMARY_LOG="$OUT_DIR/summary.log"
 
 echo "Starting soak test for $DEVICE_IP for ${DURATION_SECS}s (interval ${INTERVAL_SECS}s)"
 echo "Logs: $OUT_DIR"
+
+# Warm-up: wait until device responds to /ping (or /health) before starting SSE/polling
+WSTART=$(date +%s)
+while :; do
+  if ping -c 1 -W 1 "$DEVICE_IP" >/dev/null 2>&1; then
+    if $CURL --connect-timeout "$CONNECT_TIMEOUT" --max-time 3 "http://$DEVICE_IP/ping" >/dev/null 2>&1; then
+      break
+    fi
+    if $CURL --connect-timeout "$CONNECT_TIMEOUT" --max-time 3 "http://$DEVICE_IP/health" >/dev/null 2>&1; then
+      break
+    fi
+  fi
+  if [ $(( $(date +%s) - WSTART )) -ge $WARMUP_TIMEOUT ]; then
+    echo "Warm-up: device did not respond within ${WARMUP_TIMEOUT}s, proceeding anyway" | tee -a "$ANOMALY_LOG"
+    break
+  fi
+  sleep "$WARMUP_SLEEP"
+done
 
 # Start SSE stream in background
 (
@@ -120,7 +140,7 @@ while true; do
       fi
     else
       # No heap parsed (likely ping path), not an anomaly
-      WARN_COUNT=$((WARN_COUNT+1))
+      :
     fi
   fi
 

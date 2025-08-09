@@ -24,7 +24,7 @@ impl StableServerConfig {
     pub const fn stack_size() -> usize { 16384 }
     
     /// Get max sockets configuration value  
-    pub const fn max_sockets() -> u16 { 4 }
+    pub const fn max_sockets() -> u16 { 12 }
 }
 
 /// HTTP request instrumentation for diagnostics
