@@ -14,12 +14,12 @@ Last updated: 2025-08-08
 
 Stream and connection strategy
 - [ ] Switch primary live updates to WebSocket (WS) with app-level heartbeat (ping/pong every 20–30s)
-- [ ] Cap live stream clients to 1; respond with 429/503 for extras
+- [x] Cap live stream clients to 1; reject extras (implemented in `src/network/websocket.rs`)
 - [x] Keep SSE concurrent connections minimal during diagnostics (now 1)
 - [ ] WS: enable TCP_NODELAY, optional TCP keepalive
 
 HTTP server hygiene
-- [ ] Set `session_timeout` ≈ 5s for fast cleanup of idle sessions (currently 10s)
+- [x] Set `session_timeout` to 5s for fast cleanup of idle sessions
 - [ ] Cap `max_sessions` to 8–10 and keep LRU purge enabled
 - [x] Short endpoints `/ping`, `/health`: `Connection: close` only
 - [ ] If sockets near cap, reject early with 503 instead of accepting then RST
@@ -89,8 +89,9 @@ How to compare runs
 
 ### Next changes to implement
 Priority 1 (stream stability)
-- [ ] Implement WS stream with app heartbeat; cap clients to 1
-- [ ] Keep `/ping` and `/health` on `Connection: close` and short session timeout (5s)
+- [ ] Implement WS stream with app heartbeat
+- [x] Cap clients to 1 (done)
+- [x] Keep `/ping` and `/health` on `Connection: close` and short session timeout (5s)
 
 Priority 2 (server/socket hygiene)
 - [ ] Cap `max_sessions` to 8–10 and early 503 when near cap
@@ -108,11 +109,11 @@ Priority 3 (observability and self-heal)
 ### Change log (check when completed)
 - [x] SSE limit reduced to 1 during diagnostics
 - [x] Staggered probes in diagnostics; added NO_SSE flag
-- [x] HTTP server session timeout set (currently 10s); target 5s
+- [x] HTTP server session timeout set to 5s
 - [x] WiFi PS=NONE; reconnection stop/start after 3 attempts
 - [x] Increased WiFi buffers; increased sockets; LRU enabled
 - [ ] Add WS primary stream with heartbeat
-- [ ] Reduce session timeout to 5s and cap max sessions
+- [ ] Cap max sessions and early 503
 - [ ] Add WiFi last_reason to `/health`
 - [ ] Add transport error counters to `/health`
 - [ ] Increase lwIP PCBs/segments/pbuf pool

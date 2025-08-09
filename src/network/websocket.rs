@@ -129,6 +129,15 @@ impl WebSocketServer {
                                         }
                                     }
                                 }
+                                FrameType::Pong => {
+                                    // Treat Pong as activity
+                                    if let Ok(mut conns) = connections_clone.lock() {
+                                        if let Some(conn) = conns.get_mut(&conn_id) {
+                                            conn.last_ping = Instant::now();
+                                            conn.consecutive_failures = 0;
+                                        }
+                                    }
+                                }
                                 FrameType::Close => {
                                     log::info!("WebSocket client {} disconnected", conn_id);
                                     break;
