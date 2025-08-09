@@ -64,6 +64,8 @@ impl WifiReconnectManager {
                 if was_connected && !connected {
                     // Just disconnected
                     log::warn!("WiFi disconnected! Starting reconnection process...");
+                    crate::network::wifi_stats::set_connected(false);
+                    crate::network::wifi_stats::record_disconnect();
                     if let Ok(mut ld) = last_disconnect.lock() { *ld = Some(Instant::now()); }
                     if let Ok(mut ra) = reconnect_attempts.lock() { *ra = 0; }
                 }
@@ -103,6 +105,15 @@ impl WifiReconnectManager {
                     if attempts > 0 {
                         log::warn!("WiFi reconnected after {} attempts (intermittent network)", attempts);
                         if let Ok(mut ra) = reconnect_attempts.lock() { *ra = 0; }
+                        crate::network::wifi_stats::record_reconnect();
+                        crate::network::wifi_stats::set_connected(true);
+                        unsafe {
+                            let mut ap_info: esp_idf_sys::wifi_ap_record_t = core::mem::zeroed();
+                            if esp_idf_sys::esp_wifi_sta_get_ap_info(&mut ap_info) == esp_idf_sys::ESP_OK {
+                                crate::network::wifi_stats::set_rssi_dbm(ap_info.rssi as i32);
+                                crate::network::wifi_stats::set_channel(ap_info.primary as u32);
+                            }
+                        }
                     }
                 }
                 

@@ -1,5 +1,6 @@
 pub mod wifi;
 pub mod wifi_reconnect;
+pub mod wifi_stats;
 pub mod web_server;
 pub mod simple_retry;
 pub mod telnet_server;

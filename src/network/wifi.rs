@@ -217,6 +217,8 @@ impl WifiManager {
         
         // Store signal strength
         self.last_signal_strength = signal_strength;
+        crate::network::wifi_stats::set_connected(true);
+        crate::network::wifi_stats::set_rssi_dbm(signal_strength as i32);
         
         // Disable WiFi power save mode to prevent disconnections
         // MIN_MODEM mode can cause disconnections during web server activity
@@ -233,6 +235,9 @@ impl WifiManager {
             } else {
                 log::warn!("Failed to set WiFi power save mode: {:?}", result);
             }
+            // Maximize transmit power for stability
+            // 78 corresponds to approx 19.5 dBm (0.25 dBm step), capped by regulatory limits
+            let _ = esp_wifi_set_max_tx_power(78);
         }
         
         // Give WiFi more time to stabilize with power save disabled

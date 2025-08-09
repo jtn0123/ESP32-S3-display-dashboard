@@ -251,6 +251,7 @@ impl WebConfigServer {
             if let Ok(m) = metrics_health.try_lock() {
                 wifi_rssi = Some(m.wifi_rssi as i32);
             }
+            let wifi_stats = crate::network::wifi_stats::snapshot();
             let health_json = serde_json::json!({
                 "status": status,
                 "uptime_seconds": uptime,
@@ -259,7 +260,8 @@ impl WebConfigServer {
                 "issues": issues,
                 "reset_reason": reset_reason_str,
                 "reset_code": reset_code,
-                "wifi_rssi": wifi_rssi
+                "wifi_rssi": wifi_rssi,
+                "wifi": wifi_stats
             }).to_string();
             
             let mut response = req.into_response(
