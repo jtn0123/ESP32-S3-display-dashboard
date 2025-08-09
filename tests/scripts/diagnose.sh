@@ -20,7 +20,7 @@ mkdir -p "$OUT_DIR"
 PING_LOG="$OUT_DIR/ping.log"
 P_HTTP_LOG="$OUT_DIR/http_ping.tsv"   # ts\thttp_code\tconnect_ms\ttotal_ms (deprecated; use network.tsv)
 H_HTTP_LOG="$OUT_DIR/http_health.tsv" # ts\thttp_code\tconnect_ms\ttotal_ms (deprecated; use network.tsv)
-OUT_NET="$OUT_DIR/network.tsv"        # ts\ttype\tstatus\thttp_code\tconnect_ms\ttotal_ms\ticmp_rtt_ms\tsse_bytes\twifi_rssi_dbm\twifi_disc\twifi_reconn\theap_kb\tuptime_s
+OUT_NET="$OUT_DIR/network.tsv"        # ts\telapsed_s\ticmp_status\ticmp_rtt_ms\thp_status\thp_code\thp_connect_ms\thp_total_ms\thl_status\thl_code\thl_connect_ms\thl_total_ms\thealth_age_s\tsse_bytes\twifi_rssi_dbm\twifi_disc\twifi_reconn\theap_kb\tuptime_s
 SSE_LOG="$OUT_DIR/sse.log"
 SERIAL_LOG="$OUT_DIR/serial.log"
 SUMMARY="$OUT_DIR/summary.txt"
@@ -75,23 +75,29 @@ NEXT_HEALTH=0
 
 printf "ts\thttp_code\tconnect_ms\ttotal_ms\n" > "$P_HTTP_LOG"
 printf "ts\thttp_code\tconnect_ms\ttotal_ms\n" > "$H_HTTP_LOG"
-printf "ts\ttype\tstatus\thttp_code\tconnect_ms\ttotal_ms\ticmp_rtt_ms\tsse_bytes\twifi_rssi_dbm\twifi_disc\twifi_reconn\theap_kb\tuptime_s\n" > "$OUT_NET"
+printf "ts\telapsed_s\ticmp_status\ticmp_rtt_ms\thp_status\thp_code\thp_connect_ms\thp_total_ms\thl_status\thl_code\thl_connect_ms\thl_total_ms\thealth_age_s\tsse_bytes\twifi_rssi_dbm\twifi_disc\twifi_reconn\theap_kb\tuptime_s\n" > "$OUT_NET"
+
+LAST_HEALTH_JSON=""
+LAST_WIFI_RSSI="-"; LAST_WIFI_DISC="-"; LAST_WIFI_RECONN="-"; LAST_HEAP_KB="-"; LAST_UPTIME_S="-"; LAST_HEALTH_AGE=999999
 
 while :; do
   NOW=$(date +%s)
   ELAPSED=$(( NOW - START ))
   if [ $ELAPSED -ge $DURATION ]; then break; fi
 
-  # ICMP (also record in consolidated network.tsv)
+  TS=$(date '+%H:%M:%S')
+
+  # ICMP
   POUT=$(mktemp)
   if ping -c 1 -W 1 "$DEVICE_IP" > "$POUT" 2>&1; then 
-    echo "[$(date '+%H:%M:%S')] ping ok" >> "$PING_LOG";
-    RTT=$(awk -F'time=' '/ time=/{split($2,a," "); print a[1]}' "$POUT")
-    [ -z "$RTT" ] && RTT="-"
-    printf "%s\ticmp\tok\t-\t-\t-\t%s\t-\t-\t-\t-\t-\n" "$(date '+%H:%M:%S')" "$RTT" >> "$OUT_NET";
+    echo "[$TS] ping ok" >> "$PING_LOG";
+    ICMP_STATUS=ok
+    ICMP_RTT=$(awk -F'time=' '/ time=/{split($2,a," "); print a[1]}' "$POUT")
+    [ -z "$ICMP_RTT" ] && ICMP_RTT="-"
   else 
-    echo "[$(date '+%H:%M:%S')] ping fail" >> "$PING_LOG";
-    printf "%s\ticmp\tfail\t-\t-\t-\t-\t-\t-\t-\t-\t-\n" "$(date '+%H:%M:%S')" >> "$OUT_NET";
+    echo "[$TS] ping fail" >> "$PING_LOG";
+    ICMP_STATUS=fail
+    ICMP_RTT="-"
   fi
   rm -f "$POUT"
 
@@ -104,9 +110,9 @@ while :; do
   c_ms=$(awk -v v="$c_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
   t_ms=$(awk -v v="$t_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
   [ -z "$code" ] && code=000
-  printf "%s\t%s\t%s\n" "$(date '+%H:%M:%S')" "$code" "$c_ms\t$t_ms" >> "$P_HTTP_LOG"
-  status=$([ "$code" = "200" ] && echo ok || echo fail)
-  printf "%s\thttp_ping\t%s\t%s\t%s\t%s\t-\t-\t-\t-\t-\t-\n" "$(date '+%H:%M:%S')" "$status" "$code" "$c_ms" "$t_ms" >> "$OUT_NET"
+  printf "%s\t%s\t%s\n" "$TS" "$code" "$c_ms\t$t_ms" >> "$P_HTTP_LOG"
+  HP_STATUS=$([ "$code" = "200" ] && echo ok || echo fail)
+  HP_CODE=$code; HP_CONNECT_MS=$c_ms; HP_TOTAL_MS=$t_ms
 
   # /health every 30s
   if [ $ELAPSED -ge $NEXT_HEALTH ]; then
@@ -119,8 +125,13 @@ while :; do
     c_ms=$(awk -v v="$c_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
     t_ms=$(awk -v v="$t_s" 'BEGIN{ if(v=="") v=0; printf "%.1f", v*1000 }')
     [ -z "$code" ] && code=000
-    printf "%s\t%s\t%s\n" "$(date '+%H:%M:%S')" "$code" "$c_ms\t$t_ms" >> "$H_HTTP_LOG"
-    status=$([ "$code" = "200" ] && echo ok || echo fail)
+    printf "%s\t%s\t%s\n" "$TS" "$code" "$c_ms\t$t_ms" >> "$H_HTTP_LOG"
+
+    HL_STATUS=$([ "$code" = "200" ] && echo ok || echo fail)
+    HL_CODE=$code; HL_CONNECT_MS=$c_ms; HL_TOTAL_MS=$t_ms
+    LAST_HEALTH_AGE=0
+    LAST_HEALTH_JSON="$HJSON"
+
     # Defaults for consolidated health fields
     WIFI_RSSI="-"; WIFI_DISC="-"; WIFI_RECONN="-"; HEAP_KB="-"; UPTIME_S="-"
     if [ "$code" = "200" ] && [ -s "$HJSON" ]; then
@@ -142,15 +153,17 @@ except Exception:
   print('-', '-', '-', '-', '-')
 PY
 )
-      WIFI_RSSI=$(echo "$PYOUT" | awk '{print $1}')
-      WIFI_DISC=$(echo "$PYOUT" | awk '{print $2}')
-      WIFI_RECONN=$(echo "$PYOUT" | awk '{print $3}')
-      HEAP_KB=$(echo "$PYOUT" | awk '{print $4}')
-      UPTIME_S=$(echo "$PYOUT" | awk '{print $5}')
+      LAST_WIFI_RSSI=$(echo "$PYOUT" | awk '{print $1}')
+      LAST_WIFI_DISC=$(echo "$PYOUT" | awk '{print $2}')
+      LAST_WIFI_RECONN=$(echo "$PYOUT" | awk '{print $3}')
+      LAST_HEAP_KB=$(echo "$PYOUT" | awk '{print $4}')
+      LAST_UPTIME_S=$(echo "$PYOUT" | awk '{print $5}')
     fi
-    printf "%s\thttp_health\t%s\t%s\t%s\t%s\t-\t-\t%s\t%s\t%s\t%s\t%s\n" \
-      "$(date '+%H:%M:%S')" "$status" "$code" "$c_ms" "$t_ms" "$WIFI_RSSI" "$WIFI_DISC" "$WIFI_RECONN" "$HEAP_KB" "$UPTIME_S" >> "$OUT_NET"
     NEXT_HEALTH=$(( ELAPSED + 30 ))
+  else
+    # Increment age since last health update
+    if [ $LAST_HEALTH_AGE -lt 999999 ]; then LAST_HEALTH_AGE=$(( LAST_HEALTH_AGE + INTERVAL )); fi
+    HL_STATUS="-"; HL_CODE="-"; HL_CONNECT_MS="-"; HL_TOTAL_MS="-"
   fi
 
   # SSE progress sampling (bytes written since last check)
@@ -160,9 +173,19 @@ PY
     DELTA=$(( SZ - LAST_SZ ))
     if [ $DELTA -lt 0 ]; then DELTA=$SZ; fi
     LAST_SZ=$SZ
-    STATUS=$([ $DELTA -gt 0 ] && echo ok || echo fail)
-    printf "%s\tsse\t%s\t-\t-\t-\t-\t%d\t-\t-\t-\t-\n" "$(date '+%H:%M:%S')" "$STATUS" "$DELTA" >> "$OUT_NET"
+    SSE_BYTES=$DELTA
+  else
+    SSE_BYTES="-"
   fi
+
+  # Emit one consolidated row for this tick
+  printf "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+    "$TS" "$ELAPSED" \
+    "$ICMP_STATUS" "$ICMP_RTT" \
+    "$HP_STATUS" "$HP_CODE" "$HP_CONNECT_MS" "$HP_TOTAL_MS" \
+    "$HL_STATUS" "$HL_CODE" "$HL_CONNECT_MS" "$HL_TOTAL_MS" "$LAST_HEALTH_AGE" \
+    "$SSE_BYTES" "$LAST_WIFI_RSSI" "$LAST_WIFI_DISC" "$LAST_WIFI_RECONN" "$LAST_HEAP_KB" "$LAST_UPTIME_S" \
+    >> "$OUT_NET"
 
   sleep "$INTERVAL"
 done
