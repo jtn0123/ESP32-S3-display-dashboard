@@ -23,6 +23,7 @@ build/
 
 # Logs
 *.log
+diag-logs/
 
 # Temporary files
 *.bak
