@@ -201,14 +201,17 @@ impl WebConfigServer {
                 Err(_) => "Unknown".to_string(),
             };
             
-            let info = SystemInfo {
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                ssid,
-                free_heap: unsafe { esp_idf_sys::esp_get_free_heap_size() },
-                uptime_ms: unsafe { (esp_idf_sys::esp_timer_get_time() / 1000) as u64 },
-            };
-            
-            let json = serde_json::to_string(&info)?;
+            let reset_reason_str = crate::system::reset::get_reset_reason();
+            let reset_code = unsafe { esp_idf_sys::esp_reset_reason() } as i32;
+
+            let json = serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION").to_string(),
+                "ssid": ssid,
+                "free_heap": unsafe { esp_idf_sys::esp_get_free_heap_size() },
+                "uptime_ms": unsafe { (esp_idf_sys::esp_timer_get_time() / 1000) as u64 },
+                "reset_reason": reset_reason_str,
+                "reset_code": reset_code
+            }).to_string();
             let mut response = req.into_response(
                 200,
                 Some("OK"),
@@ -227,6 +230,8 @@ impl WebConfigServer {
             
             let uptime = unsafe { esp_idf_sys::esp_timer_get_time() / 1_000_000 } as u64;
             let heap = unsafe { esp_idf_sys::esp_get_free_heap_size() };
+            let reset_reason_str = crate::system::reset::get_reset_reason();
+            let reset_code = unsafe { esp_idf_sys::esp_reset_reason() } as i32;
             
             // Check system health
             let mut status = "healthy";
@@ -247,14 +252,15 @@ impl WebConfigServer {
             }
             
             // Simple JSON response
-            let health_json = format!(
-                r#"{{"status":"{}","uptime_seconds":{},"free_heap":{},"version":"{}","issues":{:?}}}"#,
-                status,
-                uptime,
-                heap,
-                crate::version::DISPLAY_VERSION,
-                issues
-            );
+            let health_json = serde_json::json!({
+                "status": status,
+                "uptime_seconds": uptime,
+                "free_heap": heap,
+                "version": crate::version::DISPLAY_VERSION,
+                "issues": issues,
+                "reset_reason": reset_reason_str,
+                "reset_code": reset_code
+            }).to_string();
             
             let mut response = req.into_response(
                 200,
