@@ -19,6 +19,12 @@ static SSE_LIMIT_REJECTIONS: AtomicU32 = AtomicU32::new(0);
 static SSE_BYTES_SENT: AtomicU32 = AtomicU32::new(0);
 static SSE_EVENTS_SENT: AtomicU32 = AtomicU32::new(0);
 
+// WebSocket diagnostics
+static WS_CONNECTIONS: AtomicU32 = AtomicU32::new(0);
+static WS_DISCONNECTS: AtomicU32 = AtomicU32::new(0);
+static WS_PRUNES: AtomicU32 = AtomicU32::new(0);
+static WS_SEND_FAILURES: AtomicU32 = AtomicU32::new(0);
+
 /// Memory allocation diagnostics
 pub fn log_allocation_failure(size: usize, context: &str) {
     MALLOC_FAILURES.fetch_add(1, Ordering::Relaxed);
@@ -136,6 +142,9 @@ pub fn log_system_health() {
         sse_stats.heap_rejections, sse_stats.limit_rejections);
     info!("SSE data sent: {} events, {} KB", 
         sse_stats.events_sent, sse_stats.bytes_sent / 1024);
+    let ws_stats = get_ws_stats();
+    info!("WS connections: {} (disconnects: {}, prunes: {}) | send failures: {}", 
+        ws_stats.total_connections, ws_stats.total_disconnects, ws_stats.prunes, ws_stats.send_failures);
     
     if is_critical {
         error!("CRITICAL ERROR STATE ACTIVE!");
@@ -261,4 +270,31 @@ pub struct SseStats {
     pub limit_rejections: u32,
     pub bytes_sent: u32,
     pub events_sent: u32,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct WsStats {
+    pub total_connections: u32,
+    pub total_disconnects: u32,
+    pub prunes: u32,
+    pub send_failures: u32,
+}
+
+pub fn get_ws_stats() -> WsStats {
+    WsStats {
+        total_connections: WS_CONNECTIONS.load(Ordering::Relaxed),
+        total_disconnects: WS_DISCONNECTS.load(Ordering::Relaxed),
+        prunes: WS_PRUNES.load(Ordering::Relaxed),
+        send_failures: WS_SEND_FAILURES.load(Ordering::Relaxed),
+    }
+}
+
+pub fn log_ws_event(event: &str, _connection_id: Option<u32>) {
+    match event {
+        "connect" => { WS_CONNECTIONS.fetch_add(1, Ordering::Relaxed); }
+        "disconnect" => { WS_DISCONNECTS.fetch_add(1, Ordering::Relaxed); }
+        "prune" => { WS_PRUNES.fetch_add(1, Ordering::Relaxed); }
+        "send_failure" => { WS_SEND_FAILURES.fetch_add(1, Ordering::Relaxed); }
+        _ => {}
+    }
 }

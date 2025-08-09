@@ -66,6 +66,7 @@ impl WebSocketServer {
             }
 
             log::info!("WebSocket client {} connected", conn_id);
+            crate::diagnostics::log_ws_event("connect", Some(conn_id));
 
             // Accept the connection
             let (sender, receiver) = ws.split();
@@ -145,6 +146,7 @@ impl WebSocketServer {
                 if let Ok(mut conns) = connections_clone.lock() {
                     conns.remove(&conn_id);
                 }
+                crate::diagnostics::log_ws_event("disconnect", Some(conn_id));
             });
 
             Ok(())
@@ -183,6 +185,7 @@ impl WebSocketServer {
             if let Ok(mut sender) = sender_arc.try_lock() {
                 if let Err(e) = sender.send(frame_type, data) {
                     log::warn!("Failed to send to WebSocket {}: {:?}", id, e);
+                    crate::diagnostics::log_ws_event("send_failure", Some(id));
                     failed_once.push(id);
                 }
             }
@@ -196,6 +199,7 @@ impl WebSocketServer {
                         conn.consecutive_failures = conn.consecutive_failures.saturating_add(1);
                         if conn.consecutive_failures >= 3 {
                             dead_connections.push(id);
+                            crate::diagnostics::log_ws_event("prune", Some(id));
                         }
                     }
                 }
@@ -246,6 +250,7 @@ impl WebSocketServer {
                     } else if let Ok(mut sender) = sender_arc.try_lock() {
                         if sender.send(FrameType::Ping, &[]).is_err() {
                             failed_once.push(id);
+                            crate::diagnostics::log_ws_event("send_failure", Some(id));
                         }
                     }
                 }
@@ -258,6 +263,7 @@ impl WebSocketServer {
                                 conn.consecutive_failures = conn.consecutive_failures.saturating_add(1);
                                 if conn.consecutive_failures >= 3 {
                                     dead_connections.push(id);
+                                    crate::diagnostics::log_ws_event("prune", Some(id));
                                 }
                             }
                         }
