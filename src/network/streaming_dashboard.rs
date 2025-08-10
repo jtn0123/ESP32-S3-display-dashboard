@@ -112,6 +112,57 @@ pub fn handle_dashboard_streaming(req: Request<&mut EspHttpConnection>) -> Resul
                 </div>
             </div>
         </div>
+        <div class="metric-card">
+            <h3>Display & Power Controls</h3>
+            <div class="controls">
+                <div class="cpu-core">
+                    <div class="core-label">Brightness <span id="dc_brightness_val" style="float:right">--</span></div>
+                    <input id="dc_brightness" type="range" min="0" max="255" value="128" />
+                </div>
+                <div class="cpu-core" style="display:flex; align-items:center; gap:.5rem">
+                    <input type="checkbox" id="dc_display" />
+                    <label for="dc_display">Display Power</label>
+                </div>
+                <div class="cpu-core" style="display:flex; align-items:center; gap:.5rem">
+                    <input type="checkbox" id="dc_autodim" />
+                    <label for="dc_autodim">Auto-dim when idle</label>
+                </div>
+                <div class="cpu-core">
+                    <div class="core-label">Performance Mode</div>
+                    <select id="dc_mode">
+                        <option value="eco">Eco</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="turbo">Turbo</option>
+                    </select>
+                </div>
+                <div class="cpu-core">
+                    <div class="core-label">Dim Timeout <span id="dc_dim_val" style="float:right">--</span></div>
+                    <input id="dc_dim_timeout" type="range" min="10" max="300" step="10" value="30" />
+                </div>
+                <div class="cpu-core">
+                    <div class="core-label">Sleep Timeout <span id="dc_sleep_val" style="float:right">--</span></div>
+                    <input id="dc_sleep_timeout" type="range" min="60" max="1800" step="60" value="300" />
+                </div>
+                <div class="cpu-core" style="display:flex; gap:.5rem; flex-wrap:wrap">
+                    <button id="dc_save_power" class="theme-toggle">Save Power Settings</button>
+                    <button id="dc_restart" class="theme-toggle">Restart</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <h3>Battery</h3>
+            <div class="network-info">
+                <div class="network-item">
+                    <span class="network-label">Level</span>
+                    <span class="network-value" id="battery_percent">--%</span>
+                </div>
+                <div class="network-item">
+                    <span class="network-label">Status</span>
+                    <span class="network-value" id="battery_status">--</span>
+                </div>
+            </div>
+        </div>
     </div>
 "#)?;
     
@@ -313,13 +364,12 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
     <nav class="navbar">
         <div class="nav-brand">ESP32-S3 Dashboard</div>
         <div class="nav-links">
-            <!-- Global Navbar: keep links consistent across apps -->
+            <!-- Global Navbar: Control merged into Dashboard -->
             <a href="/">Home</a>
             <a href="/dashboard" class="active">Dashboard</a>
             <a href="/logs">Logs</a>
             <a href="/files">Files</a>
             <a href="/ota">Update</a>
-            <a href="/control">Control</a>
             <a href="/dev">Dev Tools</a>
         </div>
         <div style="display:flex; gap:.5rem; align-items:center">
@@ -348,7 +398,7 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
         </div>
         <div class="stat">
             <span class="stat-label">Version</span>
-            <span class="stat-value">v6.20</span>
+            <span class="stat-value" id="fw-version">--</span>
         </div>
         <div class="stat">
             <span class="stat-label">IP</span>
@@ -477,6 +527,56 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
                     </div>
                 </div>
             </div>
+            <div class="metric-card">
+                <h3>Display & Power Controls</h3>
+                <div class="controls">
+                    <div class="cpu-core">
+                        <div class="core-label">Brightness <span id=\"dc_brightness_val\" style=\"float:right\">--</span></div>
+                        <input id=\"dc_brightness\" type=\"range\" min=\"0\" max=\"255\" value=\"128\" />
+                    </div>
+                    <div class="cpu-core" style="display:flex; align-items:center; gap:.5rem">
+                        <input type="checkbox" id="dc_display" />
+                        <label for="dc_display">Display Power</label>
+                    </div>
+                    <div class="cpu-core" style="display:flex; align-items:center; gap:.5rem">
+                        <input type="checkbox" id="dc_autodim" />
+                        <label for="dc_autodim">Auto-dim when idle</label>
+                    </div>
+                    <div class="cpu-core">
+                        <div class="core-label">Performance Mode</div>
+                        <select id="dc_mode">
+                            <option value="eco">Eco</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="turbo">Turbo</option>
+                        </select>
+                    </div>
+                    <div class="cpu-core">
+                        <div class="core-label">Dim Timeout <span id="dc_dim_val" style="float:right">--</span></div>
+                        <input id="dc_dim_timeout" type="range" min="10" max="300" step="10" value="30" />
+                    </div>
+                    <div class="cpu-core">
+                        <div class="core-label">Sleep Timeout <span id="dc_sleep_val" style="float:right">--</span></div>
+                        <input id="dc_sleep_timeout" type="range" min="60" max="1800" step="60" value="300" />
+                    </div>
+                    <div class="cpu-core" style="display:flex; gap:.5rem; flex-wrap:wrap">
+                        <button id="dc_save_power" class="theme-toggle">Save Power Settings</button>
+                        <button id="dc_restart" class="theme-toggle">Restart</button>
+                    </div>
+                </div>
+            </div>
+            <div class="metric-card">
+                <h3>Battery</h3>
+                <div class="network-info">
+                    <div class="network-item">
+                        <span class="network-label">Level</span>
+                        <span class="network-value" id="battery_percent">--%</span>
+                    </div>
+                    <div class="network-item">
+                        <span class="network-label">Status</span>
+                        <span class="network-value" id="battery_status">--</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 "#)?;
@@ -597,6 +697,8 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             font-size: 0.875rem;
             color: var(--text-dim);
         }
+        .control-embed { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-card); }
+        .control-embed iframe { width: 100%; border: 0; min-height: 900px; background: var(--bg-card); }
         @media (max-width: 768px) {
             .nav-links {
                 display: none;
@@ -727,7 +829,8 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
                 document.getElementById('skip-rate').textContent = data.skip_rate.toFixed(0) + '%';
             }
             if (data.render_time_ms !== undefined) {
-                document.getElementById('render-time').textContent = data.render_time_ms + ' ms';
+                const el = document.getElementById('render-time');
+                if (el) el.textContent = data.render_time_ms + ' ms';
             }
             
             // Update Network
@@ -744,6 +847,10 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             if (data.ip_address) {
                 document.getElementById('ip-address').textContent = data.ip_address;
             }
+            if (data.version) {
+                const v = document.getElementById('fw-version');
+                if (v) v.textContent = data.version;
+            }
 
             // Update Health
             if (data.uptime_ms) {
@@ -756,6 +863,69 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
                 document.getElementById('httpd-lwm').textContent = data.httpd_stack_low_water + ' B';
             }
         }
+        
+        // Controls wiring
+        (function(){
+            const dcB = document.getElementById('dc_brightness');
+            const dcBVal = document.getElementById('dc_brightness_val');
+            const dcAD = document.getElementById('dc_autodim');
+            const dcMode = document.getElementById('dc_mode');
+            const dcRestart = document.getElementById('dc_restart');
+            const dcDisplay = document.getElementById('dc_display');
+            const dimSlider = document.getElementById('dc_dim_timeout');
+            const dimVal = document.getElementById('dc_dim_val');
+            const sleepSlider = document.getElementById('dc_sleep_timeout');
+            const sleepVal = document.getElementById('dc_sleep_val');
+            const savePower = document.getElementById('dc_save_power');
+
+            if (dcB) dcB.addEventListener('input', ()=>{
+                dcBVal.textContent = dcB.value;
+                fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brightness: Number(dcB.value)})});
+            });
+            if (dcAD) dcAD.addEventListener('change', ()=>{
+                fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({auto_dim: !!dcAD.checked})});
+            });
+            if (dcMode) dcMode.addEventListener('change', ()=>{
+                fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode: dcMode.value})});
+            });
+            if (dcRestart) dcRestart.addEventListener('click', async ()=>{
+                if (!confirm('Restart device now?')) return;
+                try{
+                    const r = await fetch('/api/restart', {method:'POST', headers:{'X-Restart-Token':'esp32-restart'}});
+                    if (r.ok){ dcRestart.textContent='Restarting...'; setTimeout(()=>location.reload(), 4000);} else { alert('Restart failed: '+r.status); }
+                }catch(e){ alert('Restart error'); }
+            });
+            if (dcDisplay) dcDisplay.addEventListener('change', ()=>{
+                fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({display: !!dcDisplay.checked})});
+            });
+            if (dimSlider) dimSlider.addEventListener('input', ()=>{ dimVal.textContent = dimSlider.value + 's'; });
+            if (sleepSlider) sleepSlider.addEventListener('input', ()=>{ sleepVal.textContent = Math.floor(sleepSlider.value/60) + 'm'; });
+            if (savePower) savePower.addEventListener('click', async ()=>{
+                const body = {
+                    dim_timeout: Number(dimSlider.value),
+                    sleep_timeout: Number(sleepSlider.value),
+                    auto_dim: !!dcAD.checked
+                };
+                try { await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); } catch(e){}
+            });
+
+            // Initialize controls from /api/config
+            (async function(){
+                try{
+                    const r = await fetch('/api/config');
+                    const j = await r.json();
+                    if (j){
+                        if (typeof j.brightness==='number' && dcB){ dcB.value = Math.max(0, Math.min(255, j.brightness)); dcBVal.textContent = dcB.value; }
+                        if (typeof j.auto_dim==='boolean' && dcAD){ dcAD.checked = j.auto_dim; }
+                        else if (typeof j.auto_brightness==='boolean' && dcAD){ dcAD.checked = j.auto_brightness; }
+                        const dim = (j.dim_timeout ?? j.dim_timeout_secs ?? 30);
+                        const sleep = (j.sleep_timeout ?? j.sleep_timeout_secs ?? 300);
+                        if (dimSlider){ dimSlider.value = dim; dimVal.textContent = dim + 's'; }
+                        if (sleepSlider){ sleepSlider.value = sleep; sleepVal.textContent = Math.floor(sleep/60) + 'm'; }
+                    }
+                }catch(e){}
+            })();
+        })();
         
         function formatUptime(ms) {
             const seconds = Math.floor(ms / 1000);
@@ -801,6 +971,17 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
                 eventSource.close();
             }
         });
+        // Resize embedded control to content height when loaded
+        const controlFrame = document.getElementById('controlFrame');
+        if (controlFrame) {
+            controlFrame.addEventListener('load', () => {
+                try {
+                    const d = controlFrame.contentWindow.document;
+                    const h = Math.max(d.body.scrollHeight, d.documentElement.scrollHeight);
+                    if (h && h > 0) controlFrame.style.minHeight = (h + 40) + 'px';
+                } catch (e) { /* ignore */ }
+            });
+        }
     </script>
 </body>
 </html>"#)?;

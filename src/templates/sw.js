@@ -1,15 +1,14 @@
 // Service Worker for ESP32-S3 Dashboard PWA
-const CACHE_NAME = 'esp32-dashboard-v1';
-const STATIC_CACHE = 'esp32-static-v1';
-const DYNAMIC_CACHE = 'esp32-dynamic-v1';
+const CACHE_NAME = 'esp32-dashboard-v2';
+const STATIC_CACHE = 'esp32-static-v2';
+const DYNAMIC_CACHE = 'esp32-dynamic-v2';
 
 // Files to cache immediately
 const STATIC_ASSETS = [
     '/',
-    '/dashboard',
     '/logs',
     '/manifest.json',
-    // HTML pages are included in responses, not as separate files
+    // Intentionally exclude '/dashboard' to avoid serving stale HTML
 ];
 
 // Install event - cache static assets
@@ -70,26 +69,10 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Cache-first strategy for static assets
-    event.respondWith(
-        caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-                // Update cache in background
-                const fetchPromise = fetch(request).then((networkResponse) => {
-                    if (networkResponse && networkResponse.status === 200) {
-                        const responseToCache = networkResponse.clone();
-                        caches.open(DYNAMIC_CACHE).then((cache) => {
-                            cache.put(request, responseToCache);
-                        });
-                    }
-                    return networkResponse;
-                });
-                
-                return cachedResponse;
-            }
-
-            // Network-first for non-cached resources
-            return fetch(request).then((networkResponse) => {
+    // Network-first for HTML documents to avoid stale dashboard
+    if (request.destination === 'document') {
+        event.respondWith(
+            fetch(request, { cache: 'no-store' }).then((networkResponse) => {
                 if (networkResponse && networkResponse.status === 200) {
                     const responseToCache = networkResponse.clone();
                     caches.open(DYNAMIC_CACHE).then((cache) => {
@@ -98,13 +81,10 @@ self.addEventListener('fetch', (event) => {
                 }
                 return networkResponse;
             }).catch(() => {
-                // Offline fallback
-                if (request.destination === 'document') {
-                    return caches.match('/').then((response) => {
-                        if (response) return response;
-                        
-                        // Ultimate fallback - offline page
-                        return new Response(
+                return caches.match(request).then((cached) => {
+                    if (cached) return cached;
+                    // Ultimate fallback - offline page
+                    return new Response(
                             `<!DOCTYPE html>
                             <html>
                             <head>
@@ -160,12 +140,34 @@ self.addEventListener('fetch', (event) => {
                                 headers: { 'Content-Type': 'text/html' }
                             }
                         );
+                });
+            })
+        );
+        return;
+    }
+
+    // Cache-first strategy for non-document static assets
+    event.respondWith(
+        caches.match(request).then((cachedResponse) => {
+            if (cachedResponse) {
+                // Update cache in background
+                fetch(request).then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        caches.open(DYNAMIC_CACHE).then((cache) => {
+                            cache.put(request, networkResponse.clone());
+                        });
+                    }
+                }).catch(() => {});
+                return cachedResponse;
+            }
+            return fetch(request).then((networkResponse) => {
+                if (networkResponse && networkResponse.status === 200) {
+                    caches.open(DYNAMIC_CACHE).then((cache) => {
+                        cache.put(request, networkResponse.clone());
                     });
                 }
-                
-                // For other resources, return network error
-                return new Response('Network error', { status: 408 });
-            });
+                return networkResponse;
+            }).catch(() => new Response('Network error', { status: 408 }));
         })
     );
 });

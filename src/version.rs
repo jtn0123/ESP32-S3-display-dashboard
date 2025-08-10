@@ -2,7 +2,7 @@
 
 // Display version - this is what users see on screen
 // Update this when making significant changes
-pub const DISPLAY_VERSION: &str = "v6.25";
+pub const DISPLAY_VERSION: &str = "v6.26";
 
 // Cargo package version from Cargo.toml
 pub const CARGO_VERSION: &str = env!("CARGO_PKG_VERSION");

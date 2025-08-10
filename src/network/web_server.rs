@@ -159,7 +159,7 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // Update configuration
+        // Update configuration (accepts dim_timeout/sleep_timeout/auto_dim)
         let config_clone3 = config.clone();
         server.fn_handler("/api/config", esp_idf_svc::http::Method::Post, move |mut req| {
             // Cap config payload size to 1KB
@@ -172,21 +172,30 @@ impl WebConfigServer {
             
             let json_str = std::str::from_utf8(&buf)?;
             
-            // Parse the web config format
-            let web_config: WebConfig = serde_json::from_str(json_str)?;
+            // Parse the web config format; allow partial updates
+            let web_config_value: serde_json::Value = serde_json::from_str(json_str)?;
+            let web_config: WebConfig = serde_json::from_value(web_config_value.clone())?;
             
             // Convert to internal config format
-            let new_config = Config {
-                wifi_ssid: web_config.wifi_ssid,
-                wifi_password: web_config.wifi_password,
-                brightness: web_config.brightness,
-                auto_brightness: web_config.auto_dim,
-                dim_timeout_secs: 30, // Default
-                sleep_timeout_secs: 300, // Default
-                theme: crate::config::Theme::Dark, // Default
-                show_animations: true, // Default
-                ota_enabled: web_config.auto_update,
-                ota_check_interval_hours: web_config.update_interval as u32 * 3600 / 3600, // Convert seconds to hours
+            let new_config = {
+                // Start from existing config to support partial updates
+                let mut cfg = match config_clone3.lock() {
+                    Ok(cfg) => cfg.clone(),
+                    Err(e) => {
+                        log::error!("Failed to lock config: {}", e);
+                        return ErrorResponse::bad_request("Configuration lock failed").send(req);
+                    }
+                };
+                // Apply fields present in request
+                if let Some(ssid) = web_config_value.get("wifi_ssid").and_then(|v| v.as_str()) { cfg.wifi_ssid = ssid.to_string(); }
+                if let Some(pw) = web_config_value.get("wifi_password").and_then(|v| v.as_str()) { cfg.wifi_password = pw.to_string(); }
+                cfg.brightness = web_config.brightness;
+                cfg.auto_brightness = web_config.auto_dim;
+                if let Some(dim) = web_config_value.get("dim_timeout").and_then(|v| v.as_u64()) { cfg.dim_timeout_secs = (dim as u32).clamp(5, 3600); }
+                if let Some(slp) = web_config_value.get("sleep_timeout").and_then(|v| v.as_u64()) { cfg.sleep_timeout_secs = (slp as u32).clamp(10, 24*3600); }
+                if let Some(update) = web_config_value.get("auto_update").and_then(|v| v.as_bool()) { cfg.ota_enabled = update; }
+                if let Some(iv) = web_config_value.get("update_interval").and_then(|v| v.as_u64()) { cfg.ota_check_interval_hours = (iv as u32).max(1); }
+                cfg
             };
             
             // Update and save config
@@ -219,13 +228,32 @@ impl WebConfigServer {
             let reset_reason_str = crate::system::reset::get_reset_reason();
             let reset_code = unsafe { esp_idf_sys::esp_reset_reason() } as i32;
 
+            // Compute current IP address if connected
+            let ip_address = unsafe {
+                let key = b"WIFI_STA_DEF\0";
+                let netif = esp_idf_sys::esp_netif_get_handle_from_ifkey(key.as_ptr() as *const ::core::ffi::c_char);
+                if !netif.is_null() {
+                    let mut ip_info = esp_idf_sys::esp_netif_ip_info_t::default();
+                    if esp_idf_sys::esp_netif_get_ip_info(netif, &mut ip_info) == esp_idf_sys::ESP_OK && ip_info.ip.addr != 0 {
+                        Some(format!("{}.{}.{}.{}",
+                            ip_info.ip.addr & 0xff,
+                            (ip_info.ip.addr >> 8) & 0xff,
+                            (ip_info.ip.addr >> 16) & 0xff,
+                            (ip_info.ip.addr >> 24) & 0xff))
+                    } else { None }
+                } else { None }
+            };
+
             let json = serde_json::json!({
-                "version": env!("CARGO_PKG_VERSION").to_string(),
+                "version": crate::version::DISPLAY_VERSION,
                 "ssid": ssid,
                 "free_heap": unsafe { esp_idf_sys::esp_get_free_heap_size() },
                 "uptime_ms": unsafe { (esp_idf_sys::esp_timer_get_time() / 1000) as u64 },
                 "reset_reason": reset_reason_str,
-                "reset_code": reset_code
+                "reset_code": reset_code,
+                "wifi": {
+                    "ip": ip_address.unwrap_or_else(|| "".to_string())
+                }
             }).to_string();
             let mut response = req.into_response(
                 200,
@@ -624,15 +652,14 @@ impl WebConfigServer {
             crate::network::streaming_dashboard::handle_dashboard_css(req)
         })?;
 
-        // Control Center page - serve uncompressed to avoid gzip heap spikes
+        // Deprecated Control Center page -> redirect to dashboard
         server.fn_handler("/control", esp_idf_svc::http::Method::Get, move |req| {
-            let html = include_str!("../templates/control.html");
             let mut response = req.into_response(
-                200,
-                Some("OK"),
-                &[("Content-Type", "text/html; charset=utf-8"), ("Connection", "close")],
+                302,
+                Some("Found"),
+                &[("Location", "/dashboard"), ("Cache-Control", "no-store"), ("Connection", "close")],
             )?;
-            response.write_all(html.as_bytes())?;
+            response.write_all(b"")?;
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 

@@ -28,6 +28,7 @@
             padding: 20px;
             background-color: var(--bg-main);
             color: var(--text);
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         .container {
             max-width: 600px;
@@ -180,6 +181,69 @@
 </head>
 <body>
     <div class="container">
+        <!-- Status ribbon and theme toggle -->
+        <div class="info" style="display:flex; justify-content:space-between; align-items:center; gap:12px">
+            <div id="statusRibbon">IP: <span id="ipAddr">—</span> · SSID: <span id="ssidVal">—</span></div>
+            <button id="themeBtn" style="width:auto">Toggle Theme</button>
+        </div>
+
+        <!-- Quick Controls -->
+        <div class="card" style="margin-top:16px">
+            <h2>Quick Controls</h2>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:12px">
+                <div>
+                    <label for="qc_brightness" style="display:block; margin-bottom:6px">Brightness</label>
+                    <input type="range" id="qc_brightness" min="0" max="255" value="255" oninput="qc_setBrightness(this.value)">
+                    <div style="font-size:12px; color:var(--text-dim)">Value: <span id="qc_brightness_val">255</span></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px">
+                    <input type="checkbox" id="qc_autodim" onchange="qc_setAutoDim(this.checked)">
+                    <label for="qc_autodim">Auto-dim when idle</label>
+                </div>
+                <div>
+                    <label for="qc_mode" style="display:block; margin-bottom:6px">Performance Mode</label>
+                    <select id="qc_mode" onchange="qc_setMode(this.value)">
+                        <option value="eco">Eco</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="turbo">Turbo</option>
+                    </select>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center">
+                    <button type="button" onclick="qc_restart()" style="width:auto">Restart</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Metrics -->
+        <div class="card" style="margin-top:16px">
+            <h2>Quick Metrics</h2>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:12px">
+                <div>
+                    <div style="color:var(--text-dim); font-size:12px">CPU Frequency</div>
+                    <div id="qm_cpu_freq">—</div>
+                </div>
+                <div>
+                    <div style="color:var(--text-dim); font-size:12px">CPU0 / CPU1</div>
+                    <div><span id="qm_cpu0">—</span>% / <span id="qm_cpu1">—</span>%</div>
+                </div>
+                <div>
+                    <div style="color:var(--text-dim); font-size:12px">Heap Free</div>
+                    <div id="qm_heap">—</div>
+                </div>
+                <div>
+                    <div style="color:var(--text-dim); font-size:12px">PSRAM Free</div>
+                    <div id="qm_psram">—</div>
+                </div>
+                <div>
+                    <div style="color:var(--text-dim); font-size:12px">Temp / FPS</div>
+                    <div><span id="qm_temp">—</span> °C · <span id="qm_fps">—</span> fps</div>
+                </div>
+                <div>
+                    <div style="color:var(--text-dim); font-size:12px">Wi‑Fi RSSI</div>
+                    <div id="qm_rssi">—</div>
+                </div>
+            </div>
+        </div>
         <h1>ESP32-S3 Dashboard</h1>
         <div class="info">
             <strong>System Status:</strong>
@@ -244,7 +308,6 @@
                 <a href="/files">📁 Files</a>
                 <a href="/ota">⬆️ Update</a>
                 <a href="/dev">🛠️ Dev</a>
-                <a href="/control">🎛️ Control</a>
             </div>
         </div>
         
@@ -256,6 +319,97 @@
     </div>
 
     <script>
+        // Theme handling
+        (function(){
+            const root = document.documentElement;
+            const saved = localStorage.getItem('theme') || 'dark';
+            root.setAttribute('data-theme', saved);
+            const btn = document.getElementById('themeBtn');
+            if (btn) btn.addEventListener('click', ()=>{
+                const cur = root.getAttribute('data-theme') || 'dark';
+                const next = cur === 'dark' ? 'light' : 'dark';
+                root.setAttribute('data-theme', next);
+                localStorage.setItem('theme', next);
+            });
+        })();
+
+        // Status ribbon updater
+        async function updateStatusRibbon(){
+            try{
+                const r = await fetch('/api/system');
+                const j = await r.json();
+                if (j && j.wifi){
+                    document.getElementById('ipAddr').textContent = j.wifi.ip || '—';
+                }
+                if (j && j.ssid){
+                    document.getElementById('ssidVal').textContent = j.ssid;
+                }
+            }catch(e){}
+        }
+        updateStatusRibbon();
+        setInterval(updateStatusRibbon, 10000);
+
+        // Quick Controls API helpers
+        function qc_setBrightness(v){
+            document.getElementById('qc_brightness_val').textContent = v;
+            fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brightness: Number(v)})});
+        }
+        function qc_setAutoDim(on){
+            // Persist in config for now via /api/config (partial)
+            fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({auto_dim: !!on})}).catch(()=>{});
+        }
+        function qc_setMode(mode){
+            fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode})});
+        }
+        async function qc_restart(){
+            if (!confirm('Restart device now?')) return;
+            try{
+                const r = await fetch('/api/restart', {method:'POST', headers:{'X-Restart-Token':'esp32-restart'}});
+                if (r.ok){
+                    alert('Restarting...');
+                    setTimeout(()=>location.reload(), 4000);
+                } else {
+                    alert('Restart failed: '+r.status);
+                }
+            }catch(e){ alert('Restart error'); }
+        }
+        // Initialize QC from current config
+        (async function(){
+            try{
+                const r = await fetch('/api/config');
+                const j = await r.json();
+                if (j){
+                    if (typeof j.brightness === 'number'){
+                        const el = document.getElementById('qc_brightness');
+                        const val = Math.max(0, Math.min(255, j.brightness));
+                        el.value = val; document.getElementById('qc_brightness_val').textContent = val;
+                    }
+                    if (typeof j.auto_dim === 'boolean'){
+                        document.getElementById('qc_autodim').checked = j.auto_dim;
+                    }
+                }
+            }catch(e){}
+        })();
+
+        // Quick Metrics updater (poll to avoid extra SSE connection)
+        async function updateQuickMetrics(){
+            try{
+                const r = await fetch('/api/metrics');
+                const m = await r.json();
+                if (m){
+                    if (m.cpu_freq_mhz) document.getElementById('qm_cpu_freq').textContent = m.cpu_freq_mhz + ' MHz';
+                    if (m.cpu0_usage !== undefined) document.getElementById('qm_cpu0').textContent = Math.round(m.cpu0_usage);
+                    if (m.cpu1_usage !== undefined) document.getElementById('qm_cpu1').textContent = Math.round(m.cpu1_usage);
+                    if (m.heap_free_kb !== undefined) document.getElementById('qm_heap').textContent = m.heap_free_kb + ' KB';
+                    if (m.psram_free_kb !== undefined) document.getElementById('qm_psram').textContent = m.psram_free_kb + ' KB';
+                    if (m.temperature !== undefined) document.getElementById('qm_temp').textContent = m.temperature.toFixed(1);
+                    if (m.fps_actual !== undefined) document.getElementById('qm_fps').textContent = m.fps_actual.toFixed(1);
+                    if (m.wifi_rssi !== undefined) document.getElementById('qm_rssi').textContent = m.wifi_rssi + ' dBm';
+                }
+            }catch(e){}
+        }
+        updateQuickMetrics();
+        setInterval(updateQuickMetrics, 5000);
         // Load current configuration
         async function loadConfig() {
             try {

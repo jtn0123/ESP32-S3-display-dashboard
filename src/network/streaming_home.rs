@@ -259,7 +259,6 @@ pub fn handle_home_streaming(req: Request<&mut EspHttpConnection>) -> Result<(),
         <div class="card">
             <h2>Navigation</h2>
             <a href="/dashboard" class="button">Dashboard</a>
-            <a href="/control" class="button">Control Center</a>
             <a href="/dev" class="button">Dev Tools</a>
             <a href="/settings" class="button">Settings</a>
         </div>
