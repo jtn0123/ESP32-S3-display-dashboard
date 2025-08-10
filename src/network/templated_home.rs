@@ -159,9 +159,19 @@ pub fn handle_home_templated(req: Request<&mut EspHttpConnection>) -> Result<(),
     partials.insert("styles", STYLES);
     partials.insert("header", HEADER_PARTIAL);
     partials.insert("metrics", METRICS_PARTIAL);
+    partials.insert("navbar", include_str!("../templates/partials/navbar.html"));
     
+    // Prepare active flags for navbar
+    let mut flags = HashMap::new();
+    flags.insert("HOME_ACTIVE", "class=\"active\"");
+    flags.insert("DASH_ACTIVE", "");
+    flags.insert("LOGS_ACTIVE", "");
+    flags.insert("FILES_ACTIVE", "");
+    flags.insert("OTA_ACTIVE", "");
+    flags.insert("DEV_ACTIVE", "");
+
     // Render the template
-    let html = TemplateEngine::render_with_partials(HOME_TEMPLATE, &vars, &partials);
+    let html = TemplateEngine::render_with_partials_and_flags(HOME_TEMPLATE, &vars, &partials, &flags);
     
     // Send response
     let response_bytes = html.as_bytes();

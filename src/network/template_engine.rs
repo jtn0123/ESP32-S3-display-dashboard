@@ -36,4 +36,19 @@ impl TemplateEngine {
         // Then process variables
         Self::render(&result, vars)
     }
+
+    /// Render with partials and additional string flags (e.g., active navbar classes)
+    pub fn render_with_partials_and_flags(
+        template: &str,
+        vars: &HashMap<&str, String>,
+        partials: &HashMap<&str, &str>,
+        flags: &HashMap<&str, &str>
+    ) -> String {
+        let mut result = Self::render_with_partials(template, vars, partials);
+        for (key, value) in flags {
+            let placeholder = format!("{{{{{}}}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        result
+    }
 }

@@ -7,17 +7,7 @@
 </head>
 <body>
     <div class="container">
-        <!-- Global Navbar: keep links consistent across apps -->
-        <div class="card" style="margin-bottom:16px">
-            <div style="display:flex; gap:.5rem; flex-wrap:wrap; justify-content:center">
-                <a href="/" class="button">🏠 Home</a>
-                <a href="/dashboard" class="button">📊 Dashboard</a>
-                <a href="/logs" class="button">📋 Logs</a>
-                <a href="/files" class="button">📁 Files</a>
-                <a href="/ota" class="button">⬆️ Update</a>
-                <a href="/dev" class="button">🛠️ Dev</a>
-            </div>
-        </div>
+        {{>navbar}}
         {{>header}}
         {{>metrics}}
         <div class="card">
