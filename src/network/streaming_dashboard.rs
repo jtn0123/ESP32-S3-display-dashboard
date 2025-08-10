@@ -665,6 +665,29 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             margin: 0 0 1rem;
             font-size: 1.125rem;
         }
+        /* Controls styling borrowed from control.html */
+        .control-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.5rem; box-shadow: var(--shadow); }
+        .slider-control { margin-bottom: 1rem; }
+        .slider-label { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+        .slider { width: 100%; height: 6px; background: var(--bg-input); border-radius: 3px; outline: none; -webkit-appearance: none; }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: var(--accent); cursor: pointer; border-radius: 50%; transition: all 0.2s; }
+        .slider::-webkit-slider-thumb:hover { background: var(--accent-hover); transform: scale(1.1); }
+        .toggle-control { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; padding: 0.5rem; background: var(--bg-hover); border-radius: 0.375rem; }
+        .toggle-switch { position: relative; width: 48px; height: 24px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--bg-input); transition: 0.4s; border-radius: 34px; }
+        .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: 0.4s; border-radius: 50%; }
+        input:checked + .toggle-slider { background-color: var(--accent); }
+        input:checked + .toggle-slider:before { transform: translateX(24px); }
+        .radio-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        .radio-option { display: flex; align-items: center; padding: 0.5rem; background: var(--bg-hover); border-radius: 0.375rem; cursor: pointer; }
+        .radio-option:hover { background: var(--bg-input); }
+        .radio-option input[type="radio"] { margin-right: 0.75rem; }
+        .radio-option.selected { background: var(--accent); color: white; }
+        .button-group { display: flex; gap: 0.5rem; margin-top: 1rem; }
+        .btn { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-secondary { background: var(--bg-hover); color: var(--text); border: 1px solid var(--border); }
         .progress-bar {
             background: var(--bg-hover);
             height: 8px;
@@ -864,7 +887,7 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             }
         }
         
-        // Controls wiring
+        // Controls wiring (legacy quick controls)
         (function(){
             const dcB = document.getElementById('dc_brightness');
             const dcBVal = document.getElementById('dc_brightness_val');
@@ -922,6 +945,72 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
                         const sleep = (j.sleep_timeout ?? j.sleep_timeout_secs ?? 300);
                         if (dimSlider){ dimSlider.value = dim; dimVal.textContent = dim + 's'; }
                         if (sleepSlider){ sleepSlider.value = sleep; sleepVal.textContent = Math.floor(sleep/60) + 'm'; }
+                    }
+                }catch(e){}
+            })();
+        })();
+
+        // Controls wiring (control-page style controls)
+        (function(){
+            const brightnessSlider = document.getElementById('brightnessSlider');
+            const brightnessValue = document.getElementById('brightnessValue');
+            const displayToggle = document.getElementById('displayToggle');
+            const autoDimToggle = document.getElementById('autoDimToggle');
+            const dimTimeoutSlider = document.getElementById('dimTimeoutSlider');
+            const dimTimeoutValue = document.getElementById('dimTimeoutValue');
+            const sleepTimeoutSlider = document.getElementById('sleepTimeoutSlider');
+            const sleepTimeoutValue = document.getElementById('sleepTimeoutValue');
+            const savePowerBtn = document.getElementById('savePowerBtn');
+
+            if (brightnessSlider && brightnessValue) {
+                brightnessSlider.addEventListener('input', (e)=>{
+                    brightnessValue.textContent = e.target.value + '%';
+                });
+                brightnessSlider.addEventListener('change', async (e)=>{
+                    const brightness = Math.round(Number(e.target.value) * 2.55);
+                    try { await fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brightness})}); } catch(e){}
+                });
+            }
+            document.querySelectorAll('input[name="powerMode"]').forEach(radio => {
+                radio.addEventListener('change', async (e) => {
+                    document.querySelectorAll('.radio-option').forEach(opt => opt.classList.remove('selected'));
+                    e.target.parentElement.classList.add('selected');
+                    try { await fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: e.target.value })}); } catch(e){}
+                });
+            });
+            if (displayToggle) displayToggle.addEventListener('change', async (e)=>{
+                try { await fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ display: !!e.target.checked })}); } catch(e){}
+            });
+            if (autoDimToggle) autoDimToggle.addEventListener('change', async (e)=>{
+                try { await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ auto_dim: !!e.target.checked })}); } catch(e){}
+            });
+            if (dimTimeoutSlider && dimTimeoutValue) dimTimeoutSlider.addEventListener('input', (e)=>{ dimTimeoutValue.textContent = e.target.value + 's'; });
+            if (sleepTimeoutSlider && sleepTimeoutValue) sleepTimeoutSlider.addEventListener('input', (e)=>{ sleepTimeoutValue.textContent = Math.floor(Number(e.target.value)/60) + 'm'; });
+            if (savePowerBtn) savePowerBtn.addEventListener('click', async ()=>{
+                const body = {
+                    dim_timeout: Number(dimTimeoutSlider?.value || 30),
+                    sleep_timeout: Number(sleepTimeoutSlider?.value || 300),
+                    auto_dim: !!(autoDimToggle && autoDimToggle.checked)
+                };
+                try { await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); } catch(e){}
+            });
+
+            // Initialize values from /api/config
+            (async function(){
+                try{
+                    const r = await fetch('/api/config');
+                    const j = await r.json();
+                    if (j){
+                        if (typeof j.brightness==='number' && brightnessSlider && brightnessValue){
+                            const pct = Math.round((Math.max(0, Math.min(255, j.brightness)) / 255) * 100);
+                            brightnessSlider.value = pct; brightnessValue.textContent = pct + '%';
+                        }
+                        if (typeof j.auto_dim==='boolean' && autoDimToggle){ autoDimToggle.checked = j.auto_dim; }
+                        if (typeof j.auto_brightness==='boolean' && autoDimToggle && j.auto_dim===undefined){ autoDimToggle.checked = j.auto_brightness; }
+                        const dim = (j.dim_timeout ?? j.dim_timeout_secs ?? 30);
+                        const sleep = (j.sleep_timeout ?? j.sleep_timeout_secs ?? 300);
+                        if (dimTimeoutSlider && dimTimeoutValue){ dimTimeoutSlider.value = dim; dimTimeoutValue.textContent = dim + 's'; }
+                        if (sleepTimeoutSlider && sleepTimeoutValue){ sleepTimeoutSlider.value = sleep; sleepTimeoutValue.textContent = Math.floor(sleep/60) + 'm'; }
                     }
                 }catch(e){}
             })();
