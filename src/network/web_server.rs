@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use esp_idf_hal::delay::FreeRtos;
 use crate::config::Config;
 use crate::ota::OtaManager;
+use crate::ota::manager::ensure_ota_boot_if_needed;
 use crate::metrics_formatter::MetricsFormatter;
 // use crate::network::compression::write_compressed_response;
 use crate::network::binary_protocol::MetricsBinaryPacket;
@@ -130,6 +131,12 @@ impl WebConfigServer {
         })?;
         */
 
+        // Self-heal: ensure device is running from an OTA slot (reboots if factory)
+        if ensure_ota_boot_if_needed() {
+            // If self-heal triggered, this process will restart; return okay here
+            return Ok(Self { _server: server });
+        }
+
         // Get current configuration
         let config_clone2 = config.clone();
         server.fn_handler("/api/config", esp_idf_svc::http::Method::Get, move |req| {
@@ -236,6 +243,16 @@ impl WebConfigServer {
             let reset_reason_str = crate::system::reset::get_reset_reason();
             let reset_code = unsafe { esp_idf_sys::esp_reset_reason() } as i32;
 
+            // Report running partition and OTA availability
+            let (running_label, ota_available) = unsafe {
+                let running = esp_idf_sys::esp_ota_get_running_partition();
+                let label = if !running.is_null() {
+                    core::ffi::CStr::from_ptr((*running).label.as_ptr()).to_string_lossy().to_string()
+                } else { "unknown".to_string() };
+                let next = esp_idf_sys::esp_ota_get_next_update_partition(core::ptr::null());
+                (label, !next.is_null())
+            };
+
             // Compute current IP address if connected
             let ip_address = unsafe {
                 let key = b"WIFI_STA_DEF\0";
@@ -261,6 +278,10 @@ impl WebConfigServer {
                 "reset_code": reset_code,
                 "wifi": {
                     "ip": ip_address.unwrap_or_else(|| "".to_string())
+                },
+                "ota": {
+                    "running_partition": running_label,
+                    "available": ota_available
                 }
             }).to_string();
             let mut response = req.into_response(

@@ -12,7 +12,7 @@ pub mod error_wrapper;
 pub mod validators;
 pub mod log_streamer;
 pub mod file_manager;
-pub mod compression;
+// pub mod compression; // removed (unused)
 pub mod binary_protocol;
 pub mod http_config;
 pub mod server_config;

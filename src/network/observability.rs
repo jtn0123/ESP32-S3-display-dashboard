@@ -1,5 +1,5 @@
 use core::sync::atomic::{AtomicU32, Ordering};
-use esp_idf_hal::delay::FreeRtos;
+use esp_idf_hal::delay::FreeRtos; // used elsewhere; keep if needed
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};

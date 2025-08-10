@@ -391,24 +391,7 @@ pub fn register_api_v1_routes(
         }
     })?;
 
-    // GET /api/v1/power/voltage
-    server.fn_handler("/api/v1/power/voltage", Method::Get, move |req| {
-        let instr = crate::network::server_config::RequestInstrumentation::capture(None);
-        let current_mv = crate::power::voltage_monitor::get_current_voltage();
-        let (min_mv, max_mv, last_mv, drop_count) = crate::power::voltage_monitor::get_voltage_stats();
-        let payload = serde_json::json!({
-            "current_mv": current_mv,
-            "min_mv": min_mv,
-            "max_mv": max_mv,
-            "last_mv": last_mv,
-            "drop_count": drop_count,
-        });
-        let json = serde_json::to_string(&payload)?;
-        let mut http_response = req.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
-        http_response.write_all(json.as_bytes())?;
-        instr.log_completion("/api/v1/power/voltage", 200);
-        Ok(()) as Result<(), Box<dyn std::error::Error>>
-    })?;
+    // NOTE: /api/v1/power/voltage removed (voltage monitor disabled)
 
     // GET /api/v1/status/errors — analyze recent logs for httpd/network error patterns
     server.fn_handler("/api/v1/status/errors", Method::Get, move |req| {

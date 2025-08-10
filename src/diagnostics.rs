@@ -95,12 +95,7 @@ pub fn log_boot_stage(stage: &str) {
         info!("BOOT STAGE: {} @ {}ms", stage, uptime);
         info!("  Free heap: {} KB", free_heap / 1024);
         
-        // Check voltage if ADC is available
-        // #[cfg(feature = "voltage_monitoring")] // Feature not in Cargo.toml
-        {
-            let voltage = crate::power::voltage_monitor::get_current_voltage();
-            info!("  System voltage: {:.2}V", voltage as f32 / 1000.0);
-        }
+        // Voltage monitoring disabled
     }
 }
 

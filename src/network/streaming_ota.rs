@@ -19,31 +19,47 @@ pub fn handle_ota_streaming(req: Request<&mut EspHttpConnection>, has_ota_manage
     )?;
     
     // Choose which template to stream
-    let template = if has_ota_manager {
+    let template_raw = if has_ota_manager {
         crate::templates::OTA_PAGE
     } else {
         crate::templates::OTA_UNAVAILABLE_PAGE
     };
-    
-    // Prepend a lightweight global navbar to ensure consistency
-    let navbar = r#"
-    <nav style=\"background:#1a1a1a; border-bottom:1px solid #374151; padding:.75rem 1rem; display:flex; gap:.5rem; justify-content:center\">
-        <a href=\"/\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Home</a>
-        <a href=\"/dashboard\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Dashboard</a>
-        <a href=\"/logs\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Logs</a>
-        <a href=\"/files\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Files</a>
-        <a href=\"/ota\" style=\"color:#60a5fa; text-decoration:none; padding:.25rem .5rem; background:#2a2a2a; border-radius:6px\">Update</a>
-        <a href=\"/control\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Control</a>
-        <a href=\"/dev\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Dev Tools</a>
-    </nav>
+
+    // Build shared navbar using partial with active state
+    let mut navbar = include_str!("../templates/partials/navbar.html").to_string();
+    navbar = navbar
+        .replace("{{HOME_ACTIVE}}", "")
+        .replace("{{DASH_ACTIVE}}", "")
+        .replace("{{LOGS_ACTIVE}}", "")
+        .replace("{{FILES_ACTIVE}}", "")
+        .replace("{{OTA_ACTIVE}}", "class=\\\"active\\\"")
+        .replace("{{DEV_ACTIVE}}", "");
+
+    // Minimal navbar CSS to match global style (uses OTA page CSS variables)
+    const NAV_CSS: &str = r#"
+    <style>
+      .navbar { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 1rem; display: flex; justify-content: center; }
+      .nav-links { display: flex; gap: 1rem; }
+      .nav-links a { color: var(--text-dim); text-decoration: none; padding: 0.5rem 0.75rem; border-radius: 6px; transition: background-color .2s, color .2s; }
+      .nav-links a:hover { color: var(--text); background: var(--bg-hover); }
+      .nav-links a.active { color: var(--accent); background: var(--bg-hover); }
+    </style>
     "#;
-    
-    // Merge navbar + template for streaming
-    let merged = [navbar.as_bytes(), template.as_bytes()].concat();
+
+    // Inject navbar and CSS into the template
+    let mut html = template_raw.to_string();
+    if !html.contains("<nav class=\"navbar\">") {
+        html = html.replacen("<body>", &format!("<body>\n{}", navbar), 1);
+    }
+    if !html.contains(".navbar") {
+        html = html.replacen("<head>", &format!("<head>\n{}", NAV_CSS), 1);
+    }
+
+    // Stream in 1KB chunks to avoid large allocations
+    let bytes = html.as_bytes();
     
     // Stream in 1KB chunks to avoid large allocations
     const CHUNK_SIZE: usize = 1024;
-    let bytes = merged.as_slice();
     let mut offset = 0;
     
     while offset < bytes.len() {

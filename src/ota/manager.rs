@@ -11,6 +11,7 @@ use esp_idf_sys::{
 use std::fmt;
 use std::ffi::CStr;
 use sha2::{Sha256, Digest};
+use esp_idf_hal::delay::FreeRtos;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OtaStatus {
@@ -279,6 +280,52 @@ impl OtaManager {
             OtaStatus::Ready => 100,
             _ => 0,
         }
+    }
+}
+
+/// Ensure the device is booted into an OTA slot (ota_0/ota_1). If currently
+/// running from the factory partition but an OTA partition exists, switch the
+/// boot partition to the first OTA slot and reboot. Returns true if a switch
+/// was initiated.
+pub fn ensure_ota_boot_if_needed() -> bool {
+    unsafe {
+        let running = esp_idf_sys::esp_ota_get_running_partition();
+        if running.is_null() {
+            log::warn!("OTA: Running partition is null; skipping self-heal");
+            return false;
+        }
+        let running_label = core::ffi::CStr::from_ptr((*running).label.as_ptr())
+            .to_string_lossy()
+            .to_string();
+
+        // If already on an OTA slot, nothing to do
+        if running_label.starts_with("ota_") {
+            return false;
+        }
+
+        // Find first OTA partition (ota_0)
+        let ota0 = esp_partition_find_first(
+            ESP_PARTITION_TYPE_APP,
+            ESP_PARTITION_SUBTYPE_APP_OTA_0,
+            core::ptr::null(),
+        );
+        if ota0.is_null() {
+            log::warn!("OTA: No OTA partition found; device likely flashed without OTA layout");
+            return false;
+        }
+
+        // Set boot partition to ota_0 and reboot
+        let r = esp_idf_sys::esp_ota_set_boot_partition(ota0);
+        if r != 0 {
+            log::error!("OTA: Failed to set boot partition to ota_0: {}", r);
+            return false;
+        }
+
+        log::warn!("OTA: Self-heal: switching boot to ota_0 and restarting (was: {})", running_label);
+        // Small delay to flush logs
+        FreeRtos::delay_ms(500);
+        esp_idf_sys::esp_restart();
+        true
     }
 }
 

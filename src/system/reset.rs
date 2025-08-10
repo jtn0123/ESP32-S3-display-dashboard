@@ -1,4 +1,4 @@
-use log::info;
+//
 
 /// Get the last reset reason as a string
 pub fn get_reset_reason() -> &'static str {
