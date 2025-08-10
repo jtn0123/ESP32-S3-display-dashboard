@@ -356,36 +356,11 @@
         }
 
         /* Navigation Bar */
-        .nav-bar {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px;
-            margin: 16px;
-            text-align: center;
-        }
-        .nav-links {
-            display: flex;
-            justify-content: center;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-        .nav-links a {
-            color: var(--text-dim);
-            text-decoration: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            transition: all 0.2s;
-            font-size: 14px;
-        }
-        .nav-links a:hover {
-            background: var(--bg-input);
-            color: var(--text);
-        }
-        .nav-links a.active {
-            background: var(--accent);
-            color: white;
-        }
+        .nav-bar { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 16px; text-align: center; }
+        .nav-links { display:flex; justify-content:center; gap: .5rem; flex-wrap:wrap; }
+        .nav-links a { color: var(--text-dim); text-decoration: none; padding: .25rem .5rem; border-radius: 6px; transition: all 0.2s; font-size: 14px; }
+        .nav-links a:hover { background: var(--bg-hover); color: var(--text); }
+        .nav-links a.active { background: var(--accent); color: white; }
     </style>
 </head>
 <body>
