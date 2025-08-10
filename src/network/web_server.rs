@@ -665,7 +665,13 @@ impl WebConfigServer {
 
         // Dev Tools page - serve uncompressed to avoid gzip heap spikes
         server.fn_handler("/dev", esp_idf_svc::http::Method::Get, move |req| {
-            let html = include_str!("../templates/dev.html");
+            let template = include_str!("../templates/dev.html");
+            let navbar = include_str!("../templates/partials/navbar.html");
+            let html = if template.contains("<nav class=\"navbar\">") {
+                template.to_string()
+            } else {
+                template.replacen("<header>", &format!("<header>\n{}", navbar), 1)
+            };
             let mut response = req.into_response(
                 200,
                 Some("OK"),
@@ -870,8 +876,16 @@ impl WebConfigServer {
         // Logs page (SSE-enabled)
         // NOTE (global-nav): This page participates in the shared navbar set.
         server.fn_handler("/logs", esp_idf_svc::http::Method::Get, move |req| {
-            // Serve uncompressed to avoid heap spikes from gzip on low-memory conditions
-            let html = include_str!("../templates/logs_enhanced.html");
+            // Serve logs page with shared navbar by injecting partials
+            use std::collections::HashMap;
+            let template = include_str!("../templates/logs_enhanced.html");
+            let navbar = include_str!("../templates/partials/navbar.html");
+            // Insert navbar at top of body if not already present
+            let html = if template.contains("<nav class=\"navbar\">") {
+                template.to_string()
+            } else {
+                template.replacen("<body>", &format!("<body>\n{}", navbar), 1)
+            };
             let mut response = req.into_response(
                 200,
                 Some("OK"),

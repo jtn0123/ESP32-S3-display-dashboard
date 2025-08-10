@@ -293,9 +293,15 @@ pub fn register_file_routes(server: &mut EspHttpServer<'static>) -> Result<()> {
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     })?;
 
-    // File manager UI page
+    // File manager UI page (inject shared navbar if missing)
     server.fn_handler("/files", Method::Get, |req| {
-        let html = include_str!("../templates/files.html");
+        let template = include_str!("../templates/files.html");
+        let navbar = include_str!("../templates/partials/navbar.html");
+        let html = if template.contains("<nav class=\"navbar\">") {
+            template.to_string()
+        } else {
+            template.replacen("<body>", &format!("<body>\n{}", navbar), 1)
+        };
         let mut response = req.into_ok_response()?;
         response.write_all(html.as_bytes())?;
         Ok(()) as Result<(), Box<dyn std::error::Error>>
