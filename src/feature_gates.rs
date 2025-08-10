@@ -9,7 +9,6 @@ pub const SSE_PER_CLIENT_KB: u32 = 10;          // 10KB per SSE client
 
 #[derive(Debug, Clone, Copy)]
 pub struct FeatureStatus {
-    pub static_files_enabled: bool,
     pub sse_enabled: bool,
     pub max_sse_clients: usize,
 }
@@ -22,13 +21,7 @@ impl FeatureStatus {
         info!("FEATURES: Checking heap - Free: {} KB, Min: {} KB", free_kb, min_kb);
         
         // Check static files
-        let static_files_enabled = free_kb >= STATIC_FILES_MIN_HEAP_KB && min_kb >= 80;
-        if static_files_enabled {
-            info!("FEATURES: Static files with ETags - ENABLED");
-        } else {
-            warn!("FEATURES: Static files - DISABLED (need {} KB, have {} KB)", 
-                  STATIC_FILES_MIN_HEAP_KB, free_kb);
-        }
+        let _static_files_enabled = free_kb >= STATIC_FILES_MIN_HEAP_KB && min_kb >= 80;
         
         // Check SSE
         let sse_enabled = free_kb >= SSE_MIN_HEAP_KB && min_kb >= 60;
@@ -45,18 +38,10 @@ impl FeatureStatus {
         };
         
         Self {
-            static_files_enabled,
             sse_enabled,
             max_sse_clients,
         }
     }
     
-    /// Log current status
-    pub fn log_status(&self) {
-        info!("FEATURES: Current status:");
-        info!("  - Static files: {}", if self.static_files_enabled { "ON" } else { "OFF" });
-        info!("  - SSE: {} (max {} clients)", 
-              if self.sse_enabled { "ON" } else { "OFF" }, 
-              self.max_sse_clients);
-    }
+    // Removed: verbose status logger
 }

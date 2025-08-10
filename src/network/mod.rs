@@ -2,7 +2,7 @@ pub mod wifi;
 pub mod wifi_reconnect;
 pub mod wifi_stats;
 pub mod web_server;
-pub mod simple_retry;
+// pub mod simple_retry; // removed (unused)
 pub mod telnet_server;
 // pub mod sse_broadcaster; // legacy SSE, replaced by sse_v2
 pub mod sse_v2;
@@ -16,7 +16,7 @@ pub mod compression;
 pub mod binary_protocol;
 pub mod http_config;
 pub mod server_config;
-pub mod streaming_home;
+// pub mod streaming_home; // removed (unused)
 pub mod streaming_ota;
 pub mod streaming_dashboard;
 pub mod template_engine;

@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 
 // Keep memory use bounded. Target ~2K entries by default; adjust if PSRAM abundant.
 const MAX_LOG_LINES: usize = 2000;
-const MAX_LOG_LINES_CRITICAL: usize = 500; // shrink under pressure (reserved for future pressure mode)
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LogEntry {

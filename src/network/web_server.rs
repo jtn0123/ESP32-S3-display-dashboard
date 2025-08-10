@@ -19,15 +19,7 @@ pub struct WebConfigServer {
     _server: EspHttpServer<'static>,
 }
 
-#[derive(serde::Deserialize)]
-struct WebConfig {
-    wifi_ssid: String,
-    wifi_password: String,
-    brightness: u8,
-    auto_dim: bool,
-    update_interval: u32,
-    auto_update: bool,
-}
+// Legacy struct removed; using WebConfigUpdate per-handler for clarity
 
 impl WebConfigServer {
     pub fn new_with_ota(config: Arc<Mutex<Config>>, ota_manager: Option<Arc<Mutex<OtaManager>>>) -> Result<Self> {
@@ -159,9 +151,9 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // Update configuration (accepts dim_timeout/sleep_timeout/auto_dim)
-        let config_clone3 = config.clone();
-        server.fn_handler("/api/config", esp_idf_svc::http::Method::Post, move |mut req| {
+    // Update configuration (accepts partial updates via WebConfigUpdate)
+    let config_clone3 = config.clone();
+    server.fn_handler("/api/config", esp_idf_svc::http::Method::Post, move |mut req| {
             // Cap config payload size to 1KB
             let mut buf = vec![0; 1024];
             let len = req.read(&mut buf)?;
@@ -170,14 +162,30 @@ impl WebConfigServer {
             }
             buf.truncate(len);
             
-            let json_str = std::str::from_utf8(&buf)?;
-            
-            // Parse the web config format; allow partial updates
-            let web_config_value: serde_json::Value = serde_json::from_str(json_str)?;
-            let web_config: WebConfig = serde_json::from_value(web_config_value.clone())?;
+        let json_str = std::str::from_utf8(&buf)?;
+        
+        // Parse the web config update format; allow partial updates
+        #[derive(serde::Deserialize)]
+        struct WebConfigUpdate {
+            wifi_ssid: Option<String>,
+            wifi_password: Option<String>,
+            brightness: Option<u8>,
+            auto_dim: Option<bool>,
+            dim_timeout: Option<u32>,
+            sleep_timeout: Option<u32>,
+            auto_update: Option<bool>,
+            update_interval: Option<u32>,
+        }
+        let web_update: WebConfigUpdate = match serde_json::from_str(json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Invalid config update JSON: {}", e);
+                return ErrorResponse::bad_request("Invalid JSON").send(req);
+            }
+        };
             
             // Convert to internal config format
-            let new_config = {
+        let new_config = {
                 // Start from existing config to support partial updates
                 let mut cfg = match config_clone3.lock() {
                     Ok(cfg) => cfg.clone(),
@@ -186,15 +194,15 @@ impl WebConfigServer {
                         return ErrorResponse::bad_request("Configuration lock failed").send(req);
                     }
                 };
-                // Apply fields present in request
-                if let Some(ssid) = web_config_value.get("wifi_ssid").and_then(|v| v.as_str()) { cfg.wifi_ssid = ssid.to_string(); }
-                if let Some(pw) = web_config_value.get("wifi_password").and_then(|v| v.as_str()) { cfg.wifi_password = pw.to_string(); }
-                cfg.brightness = web_config.brightness;
-                cfg.auto_brightness = web_config.auto_dim;
-                if let Some(dim) = web_config_value.get("dim_timeout").and_then(|v| v.as_u64()) { cfg.dim_timeout_secs = (dim as u32).clamp(5, 3600); }
-                if let Some(slp) = web_config_value.get("sleep_timeout").and_then(|v| v.as_u64()) { cfg.sleep_timeout_secs = (slp as u32).clamp(10, 24*3600); }
-                if let Some(update) = web_config_value.get("auto_update").and_then(|v| v.as_bool()) { cfg.ota_enabled = update; }
-                if let Some(iv) = web_config_value.get("update_interval").and_then(|v| v.as_u64()) { cfg.ota_check_interval_hours = (iv as u32).max(1); }
+            // Apply fields present in request (only those provided)
+            if let Some(ssid) = web_update.wifi_ssid { cfg.wifi_ssid = ssid; }
+            if let Some(pw) = web_update.wifi_password { cfg.wifi_password = pw; }
+            if let Some(br) = web_update.brightness { cfg.brightness = br; }
+            if let Some(ad) = web_update.auto_dim { cfg.auto_brightness = ad; }
+            if let Some(dim) = web_update.dim_timeout { cfg.dim_timeout_secs = dim.clamp(5, 3600); }
+            if let Some(slp) = web_update.sleep_timeout { cfg.sleep_timeout_secs = slp.clamp(10, 24*3600); }
+            if let Some(update) = web_update.auto_update { cfg.ota_enabled = update; }
+            if let Some(iv) = web_update.update_interval { cfg.ota_check_interval_hours = iv.max(1); }
                 cfg
             };
             
@@ -211,7 +219,7 @@ impl WebConfigServer {
                 config.save()?;
             }
             
-            let _response = req.into_ok_response()?;
+        let _response = req.into_ok_response()?;
             Ok(()) as Result<(), Box<dyn std::error::Error>> as Result<(), Box<dyn std::error::Error>>
         })?;
 
@@ -884,7 +892,6 @@ impl WebConfigServer {
         // NOTE (global-nav): This page participates in the shared navbar set.
         server.fn_handler("/logs", esp_idf_svc::http::Method::Get, move |req| {
             // Serve logs page with shared navbar by injecting partials
-            use std::collections::HashMap;
             let template = include_str!("../templates/logs_enhanced.html");
             let mut navbar = include_str!("../templates/partials/navbar.html").to_string();
             navbar = navbar

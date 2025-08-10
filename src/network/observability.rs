@@ -10,7 +10,6 @@ use std::sync::{Mutex, OnceLock};
 pub enum Endpoint {
     Ping,
     Health,
-    Other, // reserved for future endpoints
 }
 
 #[derive(Default, Serialize, Clone)]
@@ -104,7 +103,7 @@ pub fn end_request(start_us: u64, ep: Endpoint, status: u16) {
                 }
             }
         }
-        Endpoint::Other => {}
+        _ => {}
     }
 }
 
@@ -212,10 +211,7 @@ pub fn events_snapshot() -> EventsSnapshot {
 }
 
 // Optional helper to lightly yield if system appears slammed (not used by default)
-pub fn maybe_yield_on_pressure() {
-    let act = ACTIVE_REQUESTS.load(Ordering::Relaxed);
-    if act > 8 { FreeRtos::delay_ms(1); }
-}
+// Removed: maybe_yield_on_pressure (unused)
 
 // Record the current HTTP server task stack watermark (remaining bytes) and keep the minimum
 #[inline]

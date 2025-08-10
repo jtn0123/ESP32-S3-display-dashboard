@@ -124,28 +124,10 @@ impl UptimeTracker {
         format_duration(self.get_total_uptime())
     }
     
-    /// Get uptime statistics
-    pub fn get_stats(&self) -> UptimeStats {
-        UptimeStats {
-            session_uptime: self.get_session_uptime(),
-            total_uptime: self.get_total_uptime(),
-            boot_count: self.boot_count,
-            average_uptime: if self.boot_count > 0 {
-                Duration::from_secs(self.get_total_uptime().as_secs() / self.boot_count as u64)
-            } else {
-                Duration::from_secs(0)
-            },
-        }
-    }
+    // Removed structured stats aggregation to reduce footprint
 }
 
-#[derive(Debug)]
-pub struct UptimeStats {
-    pub session_uptime: Duration,
-    pub total_uptime: Duration,
-    pub boot_count: u32,
-    pub average_uptime: Duration,
-}
+// Removed: UptimeStats, prefer direct accessors for less overhead
 
 /// Format a duration into a human-readable string
 fn format_duration(duration: Duration) -> String {

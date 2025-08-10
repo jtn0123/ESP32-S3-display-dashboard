@@ -195,22 +195,7 @@ pub fn log_watchdog_feed(_task_name: &str) {
 }
 
 /// Power supply diagnostics
-pub fn log_power_issue(context: &str, report: &crate::power::voltage_monitor::VoltageReport) {
-    POWER_ISSUES.fetch_add(1, Ordering::Relaxed);
-    
-    error!("POWER ISSUE DETECTED: {}", context);
-    error!("  Initial voltage: {}mV", report.initial_voltage);
-    error!("  Min voltage: {}mV", report.min_voltage);
-    error!("  Max drop: {}mV", report.max_drop);
-    error!("  Drop events: {}", report.drop_count);
-    error!("  Diagnosis: {}", report.get_diagnosis());
-    error!("  Total power issues: {}", POWER_ISSUES.load(Ordering::Relaxed));
-    
-    if report.min_voltage < 3300 {
-        CRITICAL_ERROR.store(true, Ordering::Relaxed);
-        error!("CRITICAL: Voltage dropped below safe operating threshold!");
-    }
-}
+// Removed: voltage monitor report logging (module trimmed)
 
 /// SSE connection diagnostics
 pub fn log_sse_event(event: &str, connection_id: Option<u32>) {

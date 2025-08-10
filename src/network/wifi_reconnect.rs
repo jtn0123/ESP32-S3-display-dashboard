@@ -156,6 +156,7 @@ impl WifiReconnectManager {
         ) {
             use esp_idf_sys::*;
             if event_base == WIFI_EVENT {
+                #[allow(non_upper_case_globals)]
                 match event_id as u32 {
                     wifi_event_t_WIFI_EVENT_STA_DISCONNECTED => {
                         // Capture reason code

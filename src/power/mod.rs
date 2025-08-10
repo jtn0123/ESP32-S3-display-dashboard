@@ -1,6 +1,6 @@
 // Power management system for ESP32-S3 dashboard
 
-pub mod voltage_monitor;
+// pub mod voltage_monitor; // removed (unused)
 
 use std::time::{Duration, Instant};
 use esp_idf_hal::gpio::{AnyIOPin, Output, PinDriver};
