@@ -10,7 +10,7 @@ use std::sync::{Mutex, OnceLock};
 pub enum Endpoint {
     Ping,
     Health,
-    // Other, // reserved for future endpoints
+    Other, // reserved for future endpoints
 }
 
 #[derive(Default, Serialize, Clone)]
