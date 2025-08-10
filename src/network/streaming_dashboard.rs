@@ -313,15 +313,21 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
     <nav class="navbar">
         <div class="nav-brand">ESP32-S3 Dashboard</div>
         <div class="nav-links">
+            <!-- Global Navbar: keep links consistent across apps -->
             <a href="/">Home</a>
             <a href="/dashboard" class="active">Dashboard</a>
+            <a href="/logs">Logs</a>
+            <a href="/files">Files</a>
+            <a href="/ota">Update</a>
             <a href="/control">Control</a>
             <a href="/dev">Dev Tools</a>
-            <a href="/settings">Settings</a>
         </div>
-        <button class="theme-toggle" id="themeToggle" title="Toggle theme">
-            <span class="theme-icon">&#x1F319;</span>
-        </button>
+        <div style="display:flex; gap:.5rem; align-items:center">
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+                <span class="theme-icon">&#x1F319;</span>
+            </button>
+            <button class="theme-toggle" id="restartBtn" title="Restart device">Restart</button>
+        </div>
     </nav>
 "#)?;
     
@@ -451,6 +457,23 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
                     <div class="network-item">
                         <span class="network-label">SSE Status</span>
                         <span class="network-value" id="sse-status">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+            <div class="metric-card">
+                <h3>System Health</h3>
+                <div class="perf-stats">
+                    <div class="perf-item">
+                        <span class="perf-label">Uptime</span>
+                        <span class="perf-value" id="uptime">--:--:--</span>
+                    </div>
+                    <div class="perf-item">
+                        <span class="perf-label">Reset Reason</span>
+                        <span class="perf-value" id="reset-reason">--</span>
+                    </div>
+                    <div class="perf-item">
+                        <span class="perf-label">HTTPD Stack LWM</span>
+                        <span class="perf-value" id="httpd-lwm">-- B</span>
                     </div>
                 </div>
             </div>
@@ -605,12 +628,32 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             themeToggle.textContent = newTheme === 'dark' ? 'Dark' : 'Light';
         });
         
+        // Restart button
+        const restartBtn = document.getElementById('restartBtn');
+        restartBtn.addEventListener('click', async () => {
+            if (!confirm('Restart device now?')) return;
+            try {
+                const resp = await fetch('/api/restart', {
+                    method: 'POST',
+                    headers: { 'X-Restart-Token': 'esp32-restart' }
+                });
+                if (resp.ok) {
+                    restartBtn.textContent = 'Restarting...';
+                    setTimeout(() => { window.location.reload(); }, 4000);
+                } else {
+                    alert('Restart failed: ' + resp.status);
+                }
+            } catch (e) {
+                alert('Restart error');
+            }
+        });
+        
         // SSE connection
         let eventSource;
         
         function connectSSE() {
             console.log('Connecting to SSE...');
-            eventSource = new EventSource('/api/events');
+            eventSource = new EventSource('/api/events'); // keep metrics on /api/events
             
             eventSource.onopen = () => {
                 console.log('SSE connected');
@@ -700,6 +743,17 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             }
             if (data.ip_address) {
                 document.getElementById('ip-address').textContent = data.ip_address;
+            }
+
+            // Update Health
+            if (data.uptime_ms) {
+                document.getElementById('uptime').textContent = formatUptime(data.uptime_ms);
+            }
+            if (data.reset_reason) {
+                document.getElementById('reset-reason').textContent = data.reset_reason;
+            }
+            if (data.httpd_stack_low_water) {
+                document.getElementById('httpd-lwm').textContent = data.httpd_stack_low_water + ' B';
             }
         }
         

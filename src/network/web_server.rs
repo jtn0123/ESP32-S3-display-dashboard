@@ -62,6 +62,12 @@ impl WebConfigServer {
         // Use optimized configuration to prevent socket exhaustion
         let server_config = crate::network::http_config::create_http_config();
         let mut server = EspHttpServer::new(&server_config)?;
+
+        // Record initial HTTPD stack low-watermark (remaining bytes)
+        unsafe {
+            let watermark = esp_idf_sys::uxTaskGetStackHighWaterMark(std::ptr::null_mut());
+            crate::network::observability::record_httpd_stack_low_water(watermark);
+        }
         // Reduce accept backlog issues by setting keep-alive where possible is handled per handler
         
         // Home page (templated, fast and memory-safe)
@@ -70,6 +76,11 @@ impl WebConfigServer {
             let result = crate::network::templated_home::handle_home_templated(req);
             let status = if result.is_ok() { 200 } else { 500 };
             instr.log_completion("/", status);
+            // Record stack watermark periodically per request
+            unsafe {
+                let watermark = esp_idf_sys::uxTaskGetStackHighWaterMark(std::ptr::null_mut());
+                crate::network::observability::record_httpd_stack_low_water(watermark);
+            }
             result
         })?;
         
@@ -278,6 +289,10 @@ impl WebConfigServer {
             response.write_all(health_json.as_bytes())?;
             // Observability end
             crate::network::observability::end_request(_obs_start, crate::network::observability::Endpoint::Health, 200);
+            unsafe {
+                let watermark = esp_idf_sys::uxTaskGetStackHighWaterMark(std::ptr::null_mut());
+                crate::network::observability::record_httpd_stack_low_water(watermark);
+            }
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
@@ -291,6 +306,10 @@ impl WebConfigServer {
             )?;
             response.write_all(b"OK")?;
             crate::network::observability::end_request(_obs_start, crate::network::observability::Endpoint::Ping, 200);
+            unsafe {
+                let watermark = esp_idf_sys::uxTaskGetStackHighWaterMark(std::ptr::null_mut());
+                crate::network::observability::record_httpd_stack_low_water(watermark);
+            }
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
@@ -605,16 +624,28 @@ impl WebConfigServer {
             crate::network::streaming_dashboard::handle_dashboard_css(req)
         })?;
 
-        // Control Center page (static template streamed by the engine)
+        // Control Center page - serve uncompressed to avoid gzip heap spikes
         server.fn_handler("/control", esp_idf_svc::http::Method::Get, move |req| {
             let html = include_str!("../templates/control.html");
-            crate::network::compression::write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "text/html; charset=utf-8"), ("Connection", "close")],
+            )?;
+            response.write_all(html.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // Dev Tools page (network/debug utilities)
+        // Dev Tools page - serve uncompressed to avoid gzip heap spikes
         server.fn_handler("/dev", esp_idf_svc::http::Method::Get, move |req| {
             let html = include_str!("../templates/dev.html");
-            crate::network::compression::write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "text/html; charset=utf-8"), ("Connection", "close")],
+            )?;
+            response.write_all(html.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // Common icon paths to suppress noisy 404s or serve tiny placeholder
@@ -631,10 +662,16 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
         
-        // Sensor graphs route
+        // Sensor graphs route - serve uncompressed to reduce peak allocations
         server.fn_handler("/graphs", esp_idf_svc::http::Method::Get, move |req| {
             let html = crate::templates::GRAPHS_PAGE;
-            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "text/html; charset=utf-8"), ("Connection", "close")],
+            )?;
+            response.write_all(html.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
         
         // Config backup endpoint - exports current config as JSON
@@ -803,10 +840,18 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // Logs page
+        // Logs page (SSE-enabled)
+        // NOTE (global-nav): This page participates in the shared navbar set.
         server.fn_handler("/logs", esp_idf_svc::http::Method::Get, move |req| {
-            let html = include_str!("../templates/logs.html");
-            write_compressed_response(req, html.as_bytes(), "text/html; charset=utf-8")
+            // Serve uncompressed to avoid heap spikes from gzip on low-memory conditions
+            let html = include_str!("../templates/logs_enhanced.html");
+            let mut response = req.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "text/html; charset=utf-8"), ("Connection", "close")],
+            )?;
+            response.write_all(html.as_bytes())?;
+            Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
         // Logs API endpoint - returns recent log entries from in-memory streamer
@@ -920,9 +965,10 @@ impl WebConfigServer {
             Ok(()) as Result<(), Box<dyn std::error::Error>>
         })?;
 
-        // SSE (Server-Sent Events) endpoint - register with broadcaster (ensure early registration)
-        let sse_broadcaster = crate::network::sse_broadcaster::init();
-        sse_broadcaster.register_endpoints(&mut server)?;
+        // SSE (Server-Sent Events) endpoints - register v2 manager with feature-gated client caps
+        // NOTE (sse): Replaces the legacy broadcaster to support named events (logs, stats) and client caps
+        let sse_manager = crate::network::sse_v2::init();
+        sse_manager.register_endpoints(&mut server)?;
 
         // Register API v1 routes
         let sensor_history = sensor_history.unwrap_or_else(|| {

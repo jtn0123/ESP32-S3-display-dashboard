@@ -7,7 +7,7 @@ use esp_idf_hal::delay::FreeRtos;
 use log::{info, warn, error};
 
 // SSE configuration constants
-const MAX_SSE_CONNECTIONS: u32 = 2;  // Per test requirements
+const MAX_SSE_CONNECTIONS: u32 = 1;  // Constrain to 1 to protect sockets/heap during logs viewing
 const SSE_TIMEOUT_SECS: u64 = 300;   // 5 minutes
 const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const METRICS_UPDATE_INTERVAL_SECS: u64 = 1;
@@ -104,22 +104,24 @@ impl SseManager {
         let manager = self.clone();
         
         server.fn_handler("/sse/logs", Method::Get, move |req| {
-            handle_sse_connection(req, &manager, "logs", |response, _heartbeat_count| {
-                // Get recent log entries from the in-memory log streamer
-                let streamer = crate::network::log_streamer::init(None);
-                let logs = streamer.get_recent_logs(50);
-                for entry in logs {
-                    let event = format!(
-                        "event: log\ndata: {}\n\n",
-                        serde_json::json!({
-                            "level": entry.level,
-                            "module": entry.module.unwrap_or_else(|| "unknown".to_string()),
-                            "msg": entry.message,
-                            "timestamp_ms": entry.timestamp
-                        })
-                    );
-                    if response.write_all(event.as_bytes()).is_err() {
-                        return Err(anyhow::anyhow!("Failed to write log event"));
+            handle_sse_connection(req, &manager, "logs", |response, heartbeat_count| {
+                // Send only an initial recent batch once to avoid repeated bursts
+                if heartbeat_count == 0 {
+                    let streamer = crate::network::log_streamer::init(None);
+                    let logs = streamer.get_recent_logs(20);
+                    for entry in logs {
+                        let event = format!(
+                            "event: log\ndata: {}\n\n",
+                            serde_json::json!({
+                                "level": entry.level,
+                                "module": entry.module.unwrap_or_else(|| "unknown".to_string()),
+                                "msg": entry.message,
+                                "timestamp_ms": entry.timestamp
+                            })
+                        );
+                        if response.write_all(event.as_bytes()).is_err() {
+                            return Err(anyhow::anyhow!("Failed to write log event"));
+                        }
                     }
                 }
                 Ok(())
@@ -206,6 +208,9 @@ impl SseManager {
                                 metrics.skip_count as f32 / metrics.frame_count as f32 * 100.0
                             } else { 0.0 },
                             "render_time_ms": metrics.render_time_ms,
+                            // Additional health/diagnostic fields
+                            "reset_reason": crate::system::reset::get_reset_reason(),
+                            "httpd_stack_low_water": crate::network::observability::http_snapshot().httpd_stack_low_water_bytes,
                             // ip_address intentionally omitted here to avoid stale values
                         })
                     );

@@ -245,6 +245,14 @@ impl WifiManager {
             let _ = esp_wifi_set_max_tx_power(78);
             // Prefer 20MHz bandwidth for stability in crowded environments
             let _ = esp_wifi_set_bandwidth(wifi_interface_t_WIFI_IF_STA, wifi_bandwidth_t_WIFI_BW_HT20);
+            // Optional: set PMF to optional (not required) to avoid strict MFP handshakes on some APs
+            #[cfg(any())]
+            {
+                let mut sta_cfg: wifi_sta_config_t = core::mem::zeroed();
+                // This block is illustrative; esp-idf-svc config usually drives PMF
+                sta_cfg.pmf_cfg.required = 0;
+                let _ = esp_wifi_set_config(wifi_interface_t_WIFI_IF_STA, &mut wifi_config_t { sta: sta_cfg } as *mut _);
+            }
         }
         
         // Give WiFi more time to stabilize with power save disabled

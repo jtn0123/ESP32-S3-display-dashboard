@@ -4,7 +4,8 @@ pub mod wifi_stats;
 pub mod web_server;
 pub mod simple_retry;
 pub mod telnet_server;
-pub mod sse_broadcaster;
+// pub mod sse_broadcaster; // legacy SSE, replaced by sse_v2
+pub mod sse_v2;
 pub mod api_routes;
 pub mod error_handler;
 pub mod error_wrapper;

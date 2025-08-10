@@ -42,6 +42,7 @@ mod logging;
 mod metrics;
 mod metrics_formatter;
 mod metrics_rwlock;
+mod feature_gates;
 // mod ring_buffer;  // TODO: Integrate ring buffer optimization
 mod templates;
 mod power;
@@ -267,8 +268,8 @@ fn main() -> Result<()> {
         log::warn!("Set RUN_DISPLAY_DEBUG_TEST to false for normal operation");
         
         // CRITICAL: Wait for power to stabilize before initializing display
-        use esp_idf_hal::delay::Ets;
-        Ets::delay_ms(500);  // Longer delay for power stability
+        // Use RTOS-friendly delay (yield) instead of ROM busy-wait
+        esp_idf_hal::delay::FreeRtos::delay_ms(500);  // Longer delay for power stability
         
         // LCD_CAM tests disabled - hardware acceleration not currently used
         log::warn!("LCD_CAM tests have been disabled");
@@ -289,8 +290,8 @@ fn main() -> Result<()> {
     info!("Initializing display with proper pin management...");
     
     // CRITICAL: Wait for power to stabilize before initializing display
-    use esp_idf_hal::delay::Ets;
-    Ets::delay_ms(500);  // Longer delay for power stability
+    use esp_idf_hal::delay::FreeRtos;
+    FreeRtos::delay_ms(500);  // Longer delay for power stability
     
     let mut display_manager = DisplayManager::new(
         peripherals.pins.gpio39, // D0
@@ -551,7 +552,8 @@ fn main() -> Result<()> {
                 unsafe { esp_idf_sys::esp_task_wdt_reset(); }
             }
             
-            Ets::delay_ms(50);
+            // Yield so TCPIP/HTTPD tasks can run
+            esp_idf_hal::delay::FreeRtos::delay_ms(50);
         }
     }
     
@@ -572,7 +574,8 @@ fn main() -> Result<()> {
                 unsafe { esp_idf_sys::esp_task_wdt_reset(); }
             }
             
-            Ets::delay_ms(100);
+            // Yield so TCPIP/HTTPD tasks can run
+            esp_idf_hal::delay::FreeRtos::delay_ms(100);
         }
         log::info!("Boot: Memory init animation complete");
     }
@@ -610,7 +613,8 @@ fn main() -> Result<()> {
             unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         }
         
-        Ets::delay_ms(50);
+        // Yield so TCPIP/HTTPD tasks can run
+        esp_idf_hal::delay::FreeRtos::delay_ms(50);
     }
 
     // Initialize buttons
@@ -681,7 +685,8 @@ fn main() -> Result<()> {
         if i % 5 == 0 {
             log::info!("Boot: Display still active during network init loop {}", i);
         }
-        Ets::delay_ms(50);
+        // Yield so TCPIP/HTTPD tasks can run
+        esp_idf_hal::delay::FreeRtos::delay_ms(50);
     }
     log::info!("Boot: Network animation complete, display should still be on");
 
@@ -832,7 +837,8 @@ fn main() -> Result<()> {
             unsafe { esp_idf_sys::esp_task_wdt_reset(); }
         }
         
-        Ets::delay_ms(50);
+        // Yield so TCPIP/HTTPD tasks can run
+        esp_idf_hal::delay::FreeRtos::delay_ms(50);
     }
     
     // Smooth transition to main UI
@@ -845,7 +851,8 @@ fn main() -> Result<()> {
         let gray = colors::rgb565(fade_level as u8 / 4, fade_level as u8 / 4, fade_level as u8 / 4);
         display_manager.clear(gray)?;
         display_manager.flush()?;
-        Ets::delay_ms(50);
+        // Yield so TCPIP/HTTPD tasks can run
+        esp_idf_hal::delay::FreeRtos::delay_ms(50);
     }
     
     // Final clear to black
@@ -863,7 +870,8 @@ fn main() -> Result<()> {
     display_manager.flush()?;
     
     info!("Test pattern drawn - checking for corruption...");
-    Ets::delay_ms(2000);
+    // Yield so TCPIP/HTTPD tasks can run
+    esp_idf_hal::delay::FreeRtos::delay_ms(2000);
     
     // Clear and test with different pattern
     display_manager.clear(colors::BLACK)?;
@@ -871,7 +879,8 @@ fn main() -> Result<()> {
     display_manager.fill_rect(0, 158, 300, 10, 0x001F)?; // Blue stripe at bottom
     display_manager.flush()?;
     
-    Ets::delay_ms(2000);
+    // Yield so TCPIP/HTTPD tasks can run
+    esp_idf_hal::delay::FreeRtos::delay_ms(2000);
     
     // Start main application loop
     info!("Starting main loop - UI should now be visible");
@@ -1465,19 +1474,14 @@ fn run_app(
             last_memory_check = Instant::now();
         }
         
-        // Frame rate limiting - toggleable for performance testing
+        // Frame rate limiting – align to hardware (~10 FPS) and avoid busy-waiting
         const ENABLE_FPS_CAP: bool = true; // Set to true for production, false for benchmarking
-        
         if ENABLE_FPS_CAP {
-            let target_60fps = Duration::from_micros(16667); // ~60 FPS
-            if frame_time < target_60fps {
-                // Use busy wait for more precise timing
-                let wait_time = target_60fps - frame_time;
-                if wait_time > Duration::from_millis(1) {
-                    esp_idf_hal::delay::FreeRtos::delay_ms((wait_time.as_millis() - 1) as u32);
-                }
-                // Busy wait for the last millisecond for precision
-                while frame_start.elapsed() < target_60fps {}
+            let target_frame = Duration::from_millis(100); // ~10 FPS
+            if frame_time < target_frame {
+                let wait_time = target_frame - frame_time;
+                // Fully yield the CPU to other tasks (TCP/IP, HTTPD)
+                esp_idf_hal::delay::FreeRtos::delay_ms(wait_time.as_millis() as u32);
             }
         }
     }

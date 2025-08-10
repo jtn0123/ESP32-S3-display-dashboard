@@ -26,12 +26,18 @@ pub struct HttpEndpointStats {
 pub struct HttpStatsSnapshot {
     pub active_requests: u32,
     pub active_high_watermark: u32,
+    pub total_requests: u32,
+    pub httpd_stack_low_water_bytes: u32,
     pub ping: HttpEndpointStats,
     pub health: HttpEndpointStats,
 }
 
 static ACTIVE_REQUESTS: AtomicU32 = AtomicU32::new(0);
 static ACTIVE_HIGH_WATERMARK: AtomicU32 = AtomicU32::new(0);
+static TOTAL_REQUESTS: AtomicU32 = AtomicU32::new(0);
+// Track the minimum observed remaining stack watermark (bytes) during request handling
+// Initialize high; first observation will drop this down
+static HTTPD_STACK_LOW_WATER_BYTES: AtomicU32 = AtomicU32::new(u32::MAX);
 
 static PING_TOTAL: AtomicU32 = AtomicU32::new(0);
 static PING_OK: AtomicU32 = AtomicU32::new(0);
@@ -70,6 +76,8 @@ pub fn end_request(start_us: u64, ep: Endpoint, status: u16) {
     ACTIVE_REQUESTS.fetch_sub(1, Ordering::Relaxed);
 
     let is_ok = (200..300).contains(&status);
+    // Count every completed request
+    TOTAL_REQUESTS.fetch_add(1, Ordering::Relaxed);
     match ep {
         Endpoint::Ping => {
             PING_TOTAL.fetch_add(1, Ordering::Relaxed);
@@ -104,6 +112,8 @@ pub fn http_snapshot() -> HttpStatsSnapshot {
     HttpStatsSnapshot {
         active_requests: ACTIVE_REQUESTS.load(Ordering::Relaxed),
         active_high_watermark: ACTIVE_HIGH_WATERMARK.load(Ordering::Relaxed),
+        total_requests: TOTAL_REQUESTS.load(Ordering::Relaxed),
+        httpd_stack_low_water_bytes: HTTPD_STACK_LOW_WATER_BYTES.load(Ordering::Relaxed),
         ping: HttpEndpointStats {
             total: PING_TOTAL.load(Ordering::Relaxed),
             ok_2xx: PING_OK.load(Ordering::Relaxed),
@@ -206,6 +216,26 @@ pub fn events_snapshot() -> EventsSnapshot {
 pub fn maybe_yield_on_pressure() {
     let act = ACTIVE_REQUESTS.load(Ordering::Relaxed);
     if act > 8 { FreeRtos::delay_ms(1); }
+}
+
+// Record the current HTTP server task stack watermark (remaining bytes) and keep the minimum
+#[inline]
+pub fn record_httpd_stack_low_water(remaining_bytes: u32) {
+    // Keep the minimum observed remaining stack
+    let mut cur = HTTPD_STACK_LOW_WATER_BYTES.load(Ordering::Relaxed);
+    if remaining_bytes < cur {
+        while remaining_bytes < cur {
+            match HTTPD_STACK_LOW_WATER_BYTES.compare_exchange(
+                cur,
+                remaining_bytes,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(v) => cur = v,
+            }
+        }
+    }
 }
 
 

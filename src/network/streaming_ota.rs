@@ -25,9 +25,25 @@ pub fn handle_ota_streaming(req: Request<&mut EspHttpConnection>, has_ota_manage
         crate::templates::OTA_UNAVAILABLE_PAGE
     };
     
+    // Prepend a lightweight global navbar to ensure consistency
+    let navbar = r#"
+    <nav style=\"background:#1a1a1a; border-bottom:1px solid #374151; padding:.75rem 1rem; display:flex; gap:.5rem; justify-content:center\">
+        <a href=\"/\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Home</a>
+        <a href=\"/dashboard\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Dashboard</a>
+        <a href=\"/logs\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Logs</a>
+        <a href=\"/files\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Files</a>
+        <a href=\"/ota\" style=\"color:#60a5fa; text-decoration:none; padding:.25rem .5rem; background:#2a2a2a; border-radius:6px\">Update</a>
+        <a href=\"/control\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Control</a>
+        <a href=\"/dev\" style=\"color:#9ca3af; text-decoration:none; padding:.25rem .5rem\">Dev Tools</a>
+    </nav>
+    "#;
+    
+    // Merge navbar + template for streaming
+    let merged = [navbar.as_bytes(), template.as_bytes()].concat();
+    
     // Stream in 1KB chunks to avoid large allocations
     const CHUNK_SIZE: usize = 1024;
-    let bytes = template.as_bytes();
+    let bytes = merged.as_slice();
     let mut offset = 0;
     
     while offset < bytes.len() {
