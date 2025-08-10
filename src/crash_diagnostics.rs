@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Advanced crash diagnostics module
 use esp_idf_sys::*;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};

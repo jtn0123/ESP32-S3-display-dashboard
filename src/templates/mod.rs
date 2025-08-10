@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // HTML templates for web server
 // Separated from web_server.rs for better maintainability
 

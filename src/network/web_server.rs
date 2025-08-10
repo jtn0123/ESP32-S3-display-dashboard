@@ -7,7 +7,7 @@ use esp_idf_hal::delay::FreeRtos;
 use crate::config::Config;
 use crate::ota::OtaManager;
 use crate::metrics_formatter::MetricsFormatter;
-use crate::network::compression::write_compressed_response;
+// use crate::network::compression::write_compressed_response;
 use crate::network::binary_protocol::MetricsBinaryPacket;
 use crate::network::error_wrapper::error_response;
 use crate::network::error_handler::ErrorResponse;
@@ -666,7 +666,14 @@ impl WebConfigServer {
         // Dev Tools page - serve uncompressed to avoid gzip heap spikes
         server.fn_handler("/dev", esp_idf_svc::http::Method::Get, move |req| {
             let template = include_str!("../templates/dev.html");
-            let navbar = include_str!("../templates/partials/navbar.html");
+            let mut navbar = include_str!("../templates/partials/navbar.html").to_string();
+            navbar = navbar
+                .replace("{{HOME_ACTIVE}}", "")
+                .replace("{{DASH_ACTIVE}}", "")
+                .replace("{{LOGS_ACTIVE}}", "")
+                .replace("{{FILES_ACTIVE}}", "")
+                .replace("{{OTA_ACTIVE}}", "")
+                .replace("{{DEV_ACTIVE}}", "class=\\\"active\\\"");
             let html = if template.contains("<nav class=\"navbar\">") {
                 template.to_string()
             } else {
@@ -879,7 +886,14 @@ impl WebConfigServer {
             // Serve logs page with shared navbar by injecting partials
             use std::collections::HashMap;
             let template = include_str!("../templates/logs_enhanced.html");
-            let navbar = include_str!("../templates/partials/navbar.html");
+            let mut navbar = include_str!("../templates/partials/navbar.html").to_string();
+            navbar = navbar
+                .replace("{{HOME_ACTIVE}}", "")
+                .replace("{{DASH_ACTIVE}}", "")
+                .replace("{{LOGS_ACTIVE}}", "class=\\\"active\\\"")
+                .replace("{{FILES_ACTIVE}}", "")
+                .replace("{{OTA_ACTIVE}}", "")
+                .replace("{{DEV_ACTIVE}}", "");
             // Insert navbar at top of body if not already present
             let html = if template.contains("<nav class=\"navbar\">") {
                 template.to_string()

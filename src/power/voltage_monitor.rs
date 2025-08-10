@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Voltage monitoring for power supply diagnostics
 // Especially useful during high-power operations like WiFi initialization
 

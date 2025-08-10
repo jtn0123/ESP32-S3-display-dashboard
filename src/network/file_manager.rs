@@ -296,7 +296,14 @@ pub fn register_file_routes(server: &mut EspHttpServer<'static>) -> Result<()> {
     // File manager UI page (inject shared navbar if missing)
     server.fn_handler("/files", Method::Get, |req| {
         let template = include_str!("../templates/files.html");
-        let navbar = include_str!("../templates/partials/navbar.html");
+        let mut navbar = include_str!("../templates/partials/navbar.html").to_string();
+        navbar = navbar
+            .replace("{{HOME_ACTIVE}}", "")
+            .replace("{{DASH_ACTIVE}}", "")
+            .replace("{{LOGS_ACTIVE}}", "")
+            .replace("{{FILES_ACTIVE}}", "class=\\\"active\\\"")
+            .replace("{{OTA_ACTIVE}}", "")
+            .replace("{{DEV_ACTIVE}}", "");
         let html = if template.contains("<nav class=\"navbar\">") {
             template.to_string()
         } else {

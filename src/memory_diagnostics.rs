@@ -36,7 +36,6 @@ pub fn log_memory_state(label: &str) {
 }
 
 /// Check if memory is critically low
-#[allow(dead_code)]
 pub fn is_memory_critical() -> bool {
     unsafe {
         let internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL as u32);
@@ -47,15 +46,12 @@ pub fn is_memory_critical() -> bool {
 }
 
 // Global heap pressure state
-#[allow(dead_code)]
 static HEAP_PRESSURE_LEVEL: AtomicU8 = AtomicU8::new(0); // 0=Normal,1=Warn,2=Critical
 
-#[allow(dead_code)]
 pub fn heap_pressure_level() -> u8 {
     HEAP_PRESSURE_LEVEL.load(Ordering::Relaxed)
 }
 
-#[allow(dead_code)]
 pub fn start_heap_pressure_monitor() {
     use esp_idf_hal::delay::FreeRtos;
     std::thread::spawn(|| loop {

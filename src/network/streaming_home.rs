@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Simplified streaming home page handler
 use esp_idf_svc::http::server::{EspHttpConnection, Request};
 use esp_idf_svc::io::Write;

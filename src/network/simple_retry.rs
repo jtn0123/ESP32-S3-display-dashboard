@@ -6,7 +6,6 @@ use crate::ota::OtaManager;
 use super::web_server::WebConfigServer;
 
 /// Simple retry wrapper that can be dropped into existing code
-#[allow(dead_code)]
 pub fn try_start_web_server_with_retries(
     config: Arc<Mutex<Config>>,
     ota_manager: Option<Arc<Mutex<OtaManager>>>,
@@ -71,7 +70,6 @@ pub fn try_start_web_server_with_retries(
 }
 
 /// Start web server in background if network becomes available later
-#[allow(dead_code)]
 pub fn spawn_web_server_retry_task(
     config: Arc<Mutex<Config>>,
     ota_manager: Option<Arc<Mutex<OtaManager>>>,

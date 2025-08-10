@@ -44,7 +44,6 @@ impl LogBuffer {
         }
     }
     
-    #[allow(dead_code)]
     pub(super) fn get_recent(&self, count: usize) -> Vec<String> {
         let all_logs = self.get_all();
         let start = all_logs.len().saturating_sub(count);

@@ -48,7 +48,6 @@ impl PowerManager {
         }
     }
     
-    #[allow(dead_code)] // Future use for PWM brightness control
     pub fn with_backlight(mut self, backlight_pin: PinDriver<'static, AnyIOPin, Output>) -> Self {
         self.backlight_pin = Some(backlight_pin);
         self
@@ -92,17 +91,14 @@ impl PowerManager {
         }
     }
     
-    #[allow(dead_code)] // Will be used for UI display
     pub fn get_mode(&self) -> PowerMode {
         self.current_mode
     }
     
-    #[allow(dead_code)] // Will be used for UI display
     pub fn get_brightness(&self) -> u8 {
         self.brightness_level
     }
     
-    #[allow(dead_code)] // Will be used for adaptive frame rate
     pub fn get_update_rate(&self) -> Duration {
         match self.current_mode {
             PowerMode::Active => Duration::from_millis(33),      // 30 FPS
@@ -112,7 +108,6 @@ impl PowerManager {
     }
     
     
-    #[allow(dead_code)] // Will be used for manual brightness control
     pub fn set_brightness(&mut self, brightness: u8) {
         // Manual brightness adjustment
         self.brightness_level = brightness.min(100);
@@ -124,7 +119,6 @@ impl PowerManager {
         }
     }
     
-    #[allow(dead_code)] // Will be used for power monitoring UI
     pub fn get_power_stats(&self) -> PowerStats {
         PowerStats {
             mode: self.current_mode,
@@ -136,7 +130,6 @@ impl PowerManager {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // Will be used for power monitoring UI
 pub struct PowerStats {
     pub mode: PowerMode,
     pub brightness: u8,
@@ -145,14 +138,12 @@ pub struct PowerStats {
 }
 
 // Task-specific power management
-#[allow(dead_code)] // Future use for dynamic power optimization
 pub struct TaskPowerManager {
     wifi_enabled: bool,
     sensor_polling_rate: Duration,
     display_refresh_rate: Duration,
 }
 
-#[allow(dead_code)] // Future use for dynamic power optimization
 impl TaskPowerManager {
     pub fn new() -> Self {
         Self {
@@ -196,7 +187,6 @@ impl TaskPowerManager {
 }
 
 // Battery-aware power optimization
-#[allow(dead_code)] // Will be used when light sensor is added
 pub fn calculate_optimal_brightness(battery_percentage: u8, ambient_light: u16) -> u8 {
     // Base brightness on ambient light
     let base_brightness = if ambient_light < 100 {

@@ -115,7 +115,6 @@ impl UptimeTracker {
     }
     
     /// Format session uptime
-    #[allow(dead_code)] // Will be used for UI display
     pub fn format_session_uptime(&self) -> String {
         format_duration(self.get_session_uptime())
     }
@@ -126,7 +125,6 @@ impl UptimeTracker {
     }
     
     /// Get uptime statistics
-    #[allow(dead_code)] // Used by telnet commands in the future
     pub fn get_stats(&self) -> UptimeStats {
         UptimeStats {
             session_uptime: self.get_session_uptime(),
@@ -142,7 +140,6 @@ impl UptimeTracker {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // Will be used for telnet commands
 pub struct UptimeStats {
     pub session_uptime: Duration,
     pub total_uptime: Duration,

@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use esp_idf_svc::eventloop::{EspEventLoop, System};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::sync::atomic::{AtomicBool, Ordering};
 use esp_idf_hal::delay::FreeRtos;
 

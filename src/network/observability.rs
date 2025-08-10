@@ -10,7 +10,7 @@ use std::sync::{Mutex, OnceLock};
 pub enum Endpoint {
     Ping,
     Health,
-    Other,
+    // Other, // reserved for future endpoints
 }
 
 #[derive(Default, Serialize, Clone)]
@@ -212,7 +212,6 @@ pub fn events_snapshot() -> EventsSnapshot {
 }
 
 // Optional helper to lightly yield if system appears slammed (not used by default)
-#[allow(dead_code)]
 pub fn maybe_yield_on_pressure() {
     let act = ACTIVE_REQUESTS.load(Ordering::Relaxed);
     if act > 8 { FreeRtos::delay_ms(1); }

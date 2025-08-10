@@ -5,7 +5,6 @@ use log::{info, warn};
 
 /// Performs a deep system reset using RTC control registers
 /// This is more thorough than esp_restart() and clears more system state
-#[allow(dead_code)]
 pub fn perform_deep_reset() {
     info!("Performing deep RTC reset...");
     
@@ -55,7 +54,6 @@ pub fn get_reset_reason() -> &'static str {
 }
 
 /// Check if the last reset was an RTC reset (indicating our deep reset worked)
-#[allow(dead_code)] // Kept for debugging reset issues
 pub fn was_rtc_reset() -> bool {
     // After RTC reset, the reason typically shows as power-on
     let reason = unsafe { esp_idf_sys::esp_reset_reason() };
