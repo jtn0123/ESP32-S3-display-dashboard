@@ -949,6 +949,7 @@ fn run_app(
         power_save_brightness: 10,
     };
     let mut power_manager = PowerManager::new(power_config);
+    let _web_dim_deadline: Option<std::time::Instant> = None;
     
     // CRITICAL: Mark activity immediately to prevent instant sleep
     power_manager.activity_detected();
@@ -1003,8 +1004,8 @@ fn run_app(
     let mut last_cpu0_usage = 0u8;
     
     // Power manager startup grace period - prevent sleep during initialization
-    let _startup_time = Instant::now();
-    let _startup_grace_period = Duration::from_secs(30); // 30 seconds grace period
+    let startup_time = Instant::now();
+    let startup_grace_period = Duration::from_secs(20); // 20 seconds grace period
     let mut last_cpu1_usage = 0u8;
     
     // Button polling optimization - only check every 20ms
@@ -1268,6 +1269,26 @@ fn run_app(
             }
         }
         
+        // Determine auto-dim state from recent activity
+        let mut should_display_on = true;
+        if let Ok(cfg) = _config.lock() {
+            if cfg.auto_brightness {
+                // Keep bright for a short time after boot
+                if startup_time.elapsed() < startup_grace_period {
+                    should_display_on = true;
+                }
+                // Idle dimming using power manager idle timer
+                let idle_secs = power_manager.get_power_stats().idle_time.as_secs();
+                let dim_after = cfg.dim_timeout_secs.max(5) as u64;
+                should_display_on = should_display_on && (idle_secs < dim_after);
+                // Optional deeper sleep after longer idle
+                let sleep_after = cfg.sleep_timeout_secs.max(dim_after as u32) as u64;
+                if idle_secs >= sleep_after {
+                    should_display_on = false;
+                }
+            }
+        }
+
         // Update and render UI
         ui_manager.update()?;
         
@@ -1279,8 +1300,7 @@ fn run_app(
         if rendered {
             perf_metrics.record_render_time(render_time);
             
-            // TEMPORARILY HARDCODED: Always keep display on
-            display_manager.update_auto_dim(true)?;
+            display_manager.update_auto_dim(should_display_on)?;
             
             // Flush to display
             let flush_start = Instant::now();
@@ -1291,8 +1311,7 @@ fn run_app(
             // Frame was skipped by UI manager
             perf_metrics.fps_tracker.frame_skipped();
             
-            // TEMPORARILY HARDCODED: Always keep display on
-            display_manager.update_auto_dim(true)?;
+            display_manager.update_auto_dim(should_display_on)?;
         }
         
         // Track ALL loop iterations for accurate main loop FPS

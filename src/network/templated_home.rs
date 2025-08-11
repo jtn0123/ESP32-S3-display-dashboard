@@ -42,6 +42,12 @@ const STYLES: &str = r#"<style>
         color: var(--text-primary);
         transition: background-color 0.3s, color 0.3s;
     }
+    /* Shared navbar */
+    .navbar { background: var(--bg-primary); border-bottom: 1px solid var(--border-color); padding: .75rem 1rem; display: flex; justify-content: center; }
+    .nav-links { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; padding: .25rem .5rem; border-radius: 6px; transition: background-color .2s, color .2s; }
+    .nav-links a:hover { background: var(--bg-secondary); color: var(--text-primary); }
+    .nav-links a.active { background: var(--accent); color: #fff; }
     .container { max-width: 1200px; margin: 0 auto; }
     .header { 
         background: var(--bg-primary); 

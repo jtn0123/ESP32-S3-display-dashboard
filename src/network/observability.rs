@@ -154,6 +154,7 @@ const HTTP_ERR_RING_CAP: usize = 16;
 
 static WIFI_RING: OnceLock<Mutex<VecDeque<WifiEventEntry>>> = OnceLock::new();
 static HTTP_RING: OnceLock<Mutex<VecDeque<HttpErrorEntry>>> = OnceLock::new();
+static LAST_WEB_ACTIVITY_MS: AtomicU32 = AtomicU32::new(0);
 
 fn wifi_ring() -> &'static Mutex<VecDeque<WifiEventEntry>> {
     WIFI_RING.get_or_init(|| Mutex::new(VecDeque::with_capacity(WIFI_RING_CAP)))
@@ -208,6 +209,17 @@ pub fn events_snapshot() -> EventsSnapshot {
         q.iter().cloned().collect()
     } else { vec![] };
     EventsSnapshot { boot_id: boot_id(), uptime_ms, wifi_events: wifi, http_errors: http }
+}
+
+#[inline]
+pub fn mark_web_activity() {
+    let now_ms = unsafe { (esp_idf_sys::esp_timer_get_time() / 1000) as u64 } as u32;
+    LAST_WEB_ACTIVITY_MS.store(now_ms, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn last_web_activity_ms() -> u64 {
+    LAST_WEB_ACTIVITY_MS.load(Ordering::Relaxed) as u64
 }
 
 // Optional helper to lightly yield if system appears slammed (not used by default)
