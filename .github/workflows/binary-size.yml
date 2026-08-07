@@ -92,40 +92,48 @@ jobs:
           touch base-binary
         fi
 
+    # Writes the report to size-report.md, then copies it into the step
+    # summary. It cannot be built in $GITHUB_STEP_SUMMARY directly: that
+    # variable points at a DIFFERENT file for every step, so the "Comment PR"
+    # step below used to read an empty file and the API rejected the comment
+    # with "Body cannot be blank".
     - name: Compare sizes
       run: |
-        echo "## Binary Size Comparison" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-
         # Host binutils `size` cannot always read an Xtensa ELF; prefer the
         # cross `size` espup installs.
         SIZE_BIN=$(command -v xtensa-esp-elf-size || command -v xtensa-esp32s3-elf-size || command -v size || true)
+        detail() {
+          if [ -n "$SIZE_BIN" ] && "$SIZE_BIN" current-binary >/dev/null 2>&1; then
+            "$SIZE_BIN" current-binary
+          else
+            echo "bytes: $(stat -c%s current-binary)"
+          fi
+        }
 
-        if [ -s base-binary ]; then
-          BASE_SIZE=$(stat -c%s base-binary)
-          CURRENT_SIZE=$(stat -c%s current-binary)
-          DIFF=$((CURRENT_SIZE - BASE_SIZE))
-          PERCENT=$(awk "BEGIN {printf \"%.2f\", ($DIFF / $BASE_SIZE) * 100}")
+        {
+          echo "## Binary Size Comparison"
+          echo ""
+          if [ -s base-binary ]; then
+            BASE_SIZE=$(stat -c%s base-binary)
+            CURRENT_SIZE=$(stat -c%s current-binary)
+            DIFF=$((CURRENT_SIZE - BASE_SIZE))
+            PERCENT=$(awk "BEGIN {printf \"%.2f\", ($DIFF / $BASE_SIZE) * 100}")
 
-          echo "| Branch | Size | Change |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Base | $(numfmt --to=iec $BASE_SIZE) | - |" >> $GITHUB_STEP_SUMMARY
-          echo "| Current | $(numfmt --to=iec $CURRENT_SIZE) | $(numfmt --to=iec $DIFF) ($PERCENT%) |" >> $GITHUB_STEP_SUMMARY
+            echo "| Branch | Size | Change |"
+            echo "|--------|------|--------|"
+            echo "| Base | $(numfmt --to=iec "$BASE_SIZE") | - |"
+            echo "| Current | $(numfmt --to=iec "$CURRENT_SIZE") | $(numfmt --to=iec "$DIFF") ($PERCENT%) |"
+          else
+            echo "No base binary to compare against (the base branch did not build)."
+          fi
+          echo ""
+          echo "### Current Binary Size"
+          echo '```'
+          detail
+          echo '```'
+        } > size-report.md
 
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Detailed Size Information" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          { [ -n "$SIZE_BIN" ] && "$SIZE_BIN" current-binary; } 2>/dev/null | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "No base binary to compare against" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Current Binary Size" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "bytes: $(stat -c%s current-binary)" >> $GITHUB_STEP_SUMMARY
-          { [ -n "$SIZE_BIN" ] && "$SIZE_BIN" current-binary; } 2>/dev/null | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        fi
+        cat size-report.md >> "$GITHUB_STEP_SUMMARY"
 
     - name: Comment PR
       if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -133,7 +141,7 @@ jobs:
       with:
         script: |
           const fs = require('fs');
-          const summary = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
+          const summary = fs.readFileSync('size-report.md', 'utf8');
 
           // Find and update existing comment or create new one
           const { data: comments } = await github.rest.issues.listComments({

@@ -234,10 +234,11 @@ jobs:
         {
           echo "## Binary Size Report (${{ matrix.profile }})"
           echo '```'
-          if [ -n "$SIZE_BIN" ] && "$SIZE_BIN" "$BINARY_PATH" 2>/dev/null; then
+          echo "bytes: $(stat -c%s "$BINARY_PATH")"
+          # Probe quietly first: a host `size` that cannot read the ELF must not
+          # emit a half-line into the report before failing.
+          if [ -n "$SIZE_BIN" ] && "$SIZE_BIN" "$BINARY_PATH" >/dev/null 2>&1; then
             "$SIZE_BIN" "$BINARY_PATH"
-          else
-            echo "bytes: $(stat -c%s "$BINARY_PATH")"
           fi
           echo '```'
         } | tee -a "$GITHUB_STEP_SUMMARY" > binary-size-${{ matrix.profile }}.txt
