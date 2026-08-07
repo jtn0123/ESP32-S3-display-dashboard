@@ -364,7 +364,7 @@
         async function qc_restart(){
             if (!confirm('Restart device now?')) return;
             try{
-                const r = await fetch('/api/restart', {method:'POST', headers:{'X-Restart-Token':'esp32-restart'}});
+                const r = await fetch('/api/restart', {method:'POST', headers:{'X-Restart-Token':'{{RESTART_TOKEN}}'}});
                 if (r.ok){
                     alert('Restarting...');
                     setTimeout(()=>location.reload(), 4000);

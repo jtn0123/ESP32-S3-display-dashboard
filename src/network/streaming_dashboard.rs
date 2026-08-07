@@ -733,8 +733,16 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
 "#)?;
     
     // Part 10: JavaScript for updates
+    //
+    // The restart token is injected here rather than hardcoded in the script
+    // below, so the value lives only in the build (see network::restart_auth)
+    // and never in this repository. It is empty when the build provisioned no
+    // token, in which case the restart endpoints return 503 anyway.
     response.write_all(br#"
     <script>
+        const RESTART_TOKEN = '"#)?;
+    response.write_all(crate::network::restart_auth::token_for_js().as_bytes())?;
+    response.write_all(br#"';
         // Theme toggle
         const themeToggle = document.getElementById('themeToggle');
         const root = document.documentElement;
@@ -759,7 +767,7 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             try {
                 const resp = await fetch('/api/restart', {
                     method: 'POST',
-                    headers: { 'X-Restart-Token': 'esp32-restart' }
+                    headers: { 'X-Restart-Token': RESTART_TOKEN }
                 });
                 if (resp.ok) {
                     restartBtn.textContent = 'Restarting...';
@@ -913,7 +921,7 @@ pub fn handle_dashboard_enhanced(req: Request<&mut EspHttpConnection>) -> Result
             if (dcRestart) dcRestart.addEventListener('click', async ()=>{
                 if (!confirm('Restart device now?')) return;
                 try{
-                    const r = await fetch('/api/restart', {method:'POST', headers:{'X-Restart-Token':'esp32-restart'}});
+                    const r = await fetch('/api/restart', {method:'POST', headers:{'X-Restart-Token':RESTART_TOKEN}});
                     if (r.ok){ dcRestart.textContent='Restarting...'; setTimeout(()=>location.reload(), 4000);} else { alert('Restart failed: '+r.status); }
                 }catch(e){ alert('Restart error'); }
             });

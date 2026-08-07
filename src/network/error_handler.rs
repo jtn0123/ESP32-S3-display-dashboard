@@ -9,6 +9,7 @@ use std::error::Error as StdError;
 pub enum ErrorCode {
     NotFound,
     BadRequest,
+    ServiceUnavailable,
 }
 
 impl ErrorCode {
@@ -16,6 +17,7 @@ impl ErrorCode {
         match self {
             ErrorCode::NotFound => "NOT_FOUND",
             ErrorCode::BadRequest => "BAD_REQUEST",
+            ErrorCode::ServiceUnavailable => "SERVICE_UNAVAILABLE",
         }
     }
 }
@@ -74,6 +76,12 @@ impl ErrorResponse {
         Self::new(ErrorCode::BadRequest, message)
     }
 
+    /// For a feature that is compiled in but not usable in this build, such as
+    /// a restart endpoint with no token provisioned.
+    pub fn service_unavailable(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::ServiceUnavailable, message)
+    }
+
     pub fn send<T>(self, req: EspHttpRequest<T>) -> Result<(), Box<dyn std::error::Error>> 
     where 
         T: esp_idf_svc::http::server::Connection,
@@ -83,6 +91,7 @@ impl ErrorResponse {
         let status_code = match self.error.code.as_str() {
             "BAD_REQUEST" => 400,
             "NOT_FOUND" => 404,
+            "SERVICE_UNAVAILABLE" => 503,
             _ => 500,
         };
         // Guard against double send: try to write once; if it fails with already sent, just log

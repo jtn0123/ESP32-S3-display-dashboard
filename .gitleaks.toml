@@ -14,6 +14,12 @@
 
 title = "ESP32-S3-display-dashboard gitleaks config"
 
+# A custom config REPLACES gitleaks' built-in rules unless it extends them, so
+# without this the AWS-key / GitHub-PAT / private-key detectors below would be
+# silently switched off in favour of only the project rules in this file.
+[extend]
+useDefault = true
+
 [allowlist]
 description = "Allowlisted files and patterns"
 
@@ -23,6 +29,19 @@ paths = [
     '''\.env\.example$''',
     '''device\.sample\.yaml$''',
     '''requirements.*\.txt$''',
+
+    # Documentation placeholder: `curl -H "X-OTA-Token: your-secret"`. The
+    # literal value is "your-secret" -- an instruction to the reader, not a
+    # credential. Scoped to this one file rather than to *.md.
+    '''IMPROVEMENTS_QUICK_REFERENCE\.md$''',
+
+    # History-only path (the script now lives at tests/scripts/test-web-server.sh).
+    # Old commits here carry the retired "esp32-restart" restart token, which the
+    # commit adding this line removes from the firmware: the value no longer
+    # authenticates anything, so the historical copies are inert. Allowlisted by
+    # path, not by value -- `esp32-restart` appearing anywhere else, including in
+    # the current tests/scripts/ copy, still reports.
+    '''^scripts/test-web-server\.sh$''',
 ]
 
 # Placeholder values, not private IP ranges. The old config allowlisted every
@@ -35,6 +54,14 @@ regexes = [
     '''\$\{[A-Z_]+\}''',       # ${MQTT_PASSWORD} style indirection
     '''\$[A-Z_]{3,}''',        # $MQTT_PASS style indirection
     '''["']?:\?[A-Z_ ]+not set''',  # ${VAR:?VAR not set} shell guards
+
+    # Code reading a credential rather than stating one. These match only when
+    # the ENTIRE captured value is a call opener, a format placeholder or a
+    # stray backtick -- shapes a literal secret cannot take. Deliberately not a
+    # keyword allowlist: `TOKEN = "actual-value"` is still reported.
+    '''^[A-Za-z_][A-Za-z0-9_:.]*\($''',  # os.environ.get( , std::env::var(
+    '''^\{[a-z_]+\}$''',                 # {token} in a format string
+    '''^`$''',                           # backtick from a doc comment
 ]
 
 # Bare shell-style assignment of a credential: PASS=hunter2, MQPASS=<digits>,
@@ -84,3 +111,27 @@ description = "WiFi Password"
 regex = '''(?i)wifi[_\s]?pass(?:word)?["']?\s*[:=]\s*["']([^"']+)["']'''
 secretGroup = 1
 keywords = ["wifi", "pass"]
+
+# Rust declares constants as `NAME: &str = "value"`, so bare-credential-assignment
+# above -- which expects `NAME=value` -- structurally cannot match them. That is
+# precisely the shape of the hardcoded restart token this repo shipped:
+#
+#     const RESTART_TOKEN: &str = "esp32-restart";
+#
+# It sat in nine places in a public repo and no rule here ever fired on it; it
+# was found by a human reading the file. This rule closes that gap.
+#
+# Header *names* are excluded by the allowlist below: `const H: &str =
+# "X-Restart-Token"` names a header, it does not state a credential.
+[[rules]]
+id = "rust-const-credential"
+description = "Credential literal in a Rust const/static declaration"
+regex = '''(?i)\b(?:const|static)\s+[A-Z0-9_]*(?:PASSWORD|PASSWD|PASS|SECRET|TOKEN|API_?KEY)[A-Z0-9_]*\s*:[^=\n]*=\s*"([^"\n]{4,})"'''
+secretGroup = 1
+keywords = ["const", "static"]
+
+[rules.allowlist]
+regexes = [
+    '''^X-[A-Za-z-]+$''',   # HTTP header names, e.g. X-Restart-Token
+    '''^[A-Za-z-]+-Token$''',
+]

@@ -3,7 +3,11 @@
 
 DEVICE_IP="${1:-}"
 RESTART_TOKEN_HEADER="X-Restart-Token"
-RESTART_TOKEN_VALUE="${RESTART_TOKEN:-esp32-restart}"
+# Provisioned per build (see build.rs / src/network/restart_auth.rs) and
+# deliberately not present in this repository. No default: this used to fall
+# back to a token that was hardcoded in the firmware and readable by anyone
+# with access to the repo.
+RESTART_TOKEN_VALUE="${RESTART_TOKEN:-}"
 CURL="curl -sS --max-time 5"
 PASS=0; FAIL=0
 
@@ -85,7 +89,11 @@ fi
 test_endpoint "/api/restart" "403" "POST"
 
 echo -e "\n4. Testing with authentication (optional):"
-if [ "${RUN_RESTART:-0}" = "1" ]; then
+if [ "${RUN_RESTART:-0}" = "1" ] && [ -z "$RESTART_TOKEN_VALUE" ]; then
+    echo "RUN_RESTART=1 but RESTART_TOKEN is unset — cannot test authenticated restart."
+    echo "Export the token this firmware was built with, e.g. RESTART_TOKEN=... RUN_RESTART=1 $0 $DEVICE_IP"
+    FAIL=$((FAIL+1))
+elif [ "${RUN_RESTART:-0}" = "1" ]; then
     echo -n "Testing POST /restart with auth... "
     code=$($CURL -X POST -H "$RESTART_TOKEN_HEADER: $RESTART_TOKEN_VALUE" -w "%{http_code}" "http://$DEVICE_IP/restart" -o /dev/null 2>/dev/null)
     if [ "$code" = "200" ]; then
@@ -120,4 +128,10 @@ fi
 echo -e "\n======================================"
 echo "Summary: $PASS passed, $FAIL failed"
 echo "- If tests fail: ./scripts/debug-web-server.sh"
-echo "- Auth header used: $RESTART_TOKEN_HEADER: $RESTART_TOKEN_VALUE"
+# Print only whether a token was supplied, never the value — this output gets
+# pasted into issues and CI logs.
+if [ -n "$RESTART_TOKEN_VALUE" ]; then
+    echo "- Auth header used: $RESTART_TOKEN_HEADER: <RESTART_TOKEN set, ${#RESTART_TOKEN_VALUE} chars>"
+else
+    echo "- Auth header used: $RESTART_TOKEN_HEADER: <unset — export RESTART_TOKEN to test authenticated restart>"
+fi
