@@ -21,6 +21,16 @@ env:
   CARGO_TERM_COLOR: always
   # espup queries the GitHub API; an unauthenticated runner hits the rate limit.
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Pin the Xtensa Rust version instead of tracking `latest`.
+  #
+  # 1.95.0.0 turned `panic_immediate_abort` from a build-std feature into a
+  # real panic strategy, so the `build-std-features` line in .cargo/config.toml
+  # makes `core` fail to compile there:
+  #   "panic_immediate_abort is now a real panic strategy!"
+  # 1.88.0.0 is what the project is developed against. Moving to 1.95+ means
+  # dropping build-std-features and setting `panic = "immediate-abort"` in
+  # Cargo.toml instead -- a deliberate change, not a silent CI-only drift.
+  XTENSA_RUST_VERSION: 1.88.0.0
 
 jobs:
   size-check:
@@ -43,6 +53,7 @@ jobs:
     - name: Install Rust for Xtensa
       uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7.0
       with:
+        version: ${{ env.XTENSA_RUST_VERSION }}
         buildtargets: esp32s3
         ldproxy: true
         default: true
