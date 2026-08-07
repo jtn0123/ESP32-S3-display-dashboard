@@ -116,34 +116,33 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    if let Some(contents) = wifi_config_contents.as_deref() {
-        // Set SSID/PASSWORD env vars without emitting cargo warnings on success
-        // Parse SSID
-        if let Some(ssid_line) = contents.lines().find(|l| l.contains("#define WIFI_SSID")) {
-            if let Some(ssid) = ssid_line.split('"').nth(1) {
-                println!("cargo:rustc-env=WIFI_SSID={ssid}");
-            } else {
-                println!("cargo:warning=Failed to parse WIFI_SSID from line: {ssid_line}");
-            }
-        } else {
-            println!("cargo:warning=WIFI_SSID not found in wifi_config.h");
-        }
-        
-        // Parse Password  
-        if let Some(pass_line) = contents.lines().find(|l| l.contains("#define WIFI_PASSWORD")) {
-            if let Some(pass) = pass_line.split('"').nth(1) {
-                println!("cargo:rustc-env=WIFI_PASSWORD={pass}");
-            } else {
-                println!("cargo:warning=Failed to parse WIFI_PASSWORD from line: {pass_line}");
-            }
-        } else {
-            println!("cargo:warning=WIFI_PASSWORD not found in wifi_config.h");
-        }
-    } else {
-        // Use empty defaults if no config file
-        println!("cargo:rustc-env=WIFI_SSID=");
-        println!("cargo:rustc-env=WIFI_PASSWORD=");
+    // WiFi credentials use the same strict parser as the endpoint credentials
+    // above: they had the identical substring-matching defect, where a
+    // commented-out directive or a longer macro name could be selected ahead of
+    // the real one.
+    //
+    // Unlike RESTART_TOKEN/OTA_PASSWORD these are always emitted, empty if
+    // absent, because config.rs reads them with env!() rather than option_env!()
+    // -- a missing variable is a compile error rather than a disabled feature.
+    if wifi_config_contents.is_none() {
         println!("cargo:warning=wifi_config.h not found! Copy wifi_config.h.example to wifi_config.h and add your credentials.");
+    }
+    for name in ["WIFI_SSID", "WIFI_PASSWORD"] {
+        match wifi_config_contents.as_deref().and_then(|c| define_from_header(c, name)) {
+            Some(value) => println!("cargo:rustc-env={name}={value}"),
+            None => {
+                println!("cargo:rustc-env={name}=");
+                if wifi_config_contents.is_some() {
+                    // Deliberately does not echo the offending line: for
+                    // WIFI_PASSWORD that would print the password into the
+                    // build log, which CI retains and people paste into issues.
+                    println!(
+                        "cargo:warning={name} not found in wifi_config.h, or its #define is \
+                         malformed (expected: #define {name} \"value\"). Building with an empty value."
+                    );
+                }
+            }
+        }
     }
     
     Ok(())
