@@ -77,6 +77,14 @@ test_artifacts/
 test-report.html
 test-report.xml
 
+# Environment files
+# The root .env was previously tracked. Only tests/python/.env was ignored, so
+# the root one carried WiFi credentials into every clone. Commit .env.example
+# instead and keep the real values local.
+.env
+.env.local
+.env.*.local
+
 # Virtual environments
 venv/
 env/

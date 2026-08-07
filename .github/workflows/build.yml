@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Default-deny: without this, jobs inherit the repository default GITHUB_TOKEN
+# scope, which can be read/write. This workflow only reads the repo.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -15,8 +20,13 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       
+      # NOT SHA-pinned: esp-rs/espup-action does not exist (the repository
+      # returns 404), so there is no commit to pin and this step has been
+      # failing the Build workflow since it was added. Left untouched here
+      # because fixing it means choosing a replacement -- the sibling steps in
+      # rust-ci.yml install espup by curling the release binary instead.
       - name: Setup Rust ESP toolchain
         uses: esp-rs/espup-action@v1
         
@@ -38,7 +48,7 @@ jobs:
           size target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard || true
         
       - name: Upload firmware artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: github.event_name == 'push'
         with:
           name: firmware

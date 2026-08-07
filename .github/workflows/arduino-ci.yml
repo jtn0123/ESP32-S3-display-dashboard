@@ -12,16 +12,21 @@ on:
       - 'minimal_dashboard/**'
       - '.github/workflows/arduino-ci.yml'
 
+# Default-deny: without this, jobs inherit the repository default GITHUB_TOKEN
+# scope, which can be read/write. This workflow only reads the repo.
+permissions:
+  contents: read
+
 jobs:
   compile:
     name: Compile Arduino Sketch
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
     
     - name: Setup Arduino CLI
-      uses: arduino/setup-arduino-cli@v1
+      uses: arduino/setup-arduino-cli@28065f7e0317cc0dde372e0c11631963d743ee3b # v1
       
     - name: Install ESP32 platform
       run: |
