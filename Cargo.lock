@@ -327,9 +327,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.18"
+version = "0.9.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
+checksum = "2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -768,7 +768,7 @@ dependencies = [
 [[package]]
 name = "esp-idf-sys"
 version = "0.36.1"
-source = "git+https://github.com/esp-rs/esp-idf-sys.git?branch=master#521f0f3730958a1cc2bba273b0429d789a1cef2e"
+source = "git+https://github.com/esp-rs/esp-idf-sys.git?rev=293afef5c6c405430b12094016e3f9efa7d5a2df#293afef5c6c405430b12094016e3f9efa7d5a2df"
 dependencies = [
  "anyhow",
  "build-time",

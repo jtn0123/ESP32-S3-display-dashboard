@@ -72,7 +72,19 @@ embuild = { version = "0.33.0", features = ["espidf"] }
 anyhow = "=1.0.95"
 
 [patch.crates-io]
-esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git", branch = "master" }
+# Pinned to a specific rev, not `branch = "master"`.
+#
+# The patch is required: released esp-idf-sys 0.36.1 predates the fix for
+# `esp_app_desc_t` on ESP-IDF 5.3.x where x >= 3 (upstream 5fc6b55). Without it
+# the `esp_app_desc!()` macro in main.rs fails to compile against ESP-IDF
+# v5.3.3 with "missing field `reserv2`" -- every cfg arm for that field lists
+# 5.3.0/5.3.1/5.3.2 explicitly and falls through for 5.3.3.
+#
+# It must stay pinned: master has since moved to 0.37.x, which no longer
+# satisfies the `esp-idf-sys = "0.36.1"` requirement of esp-idf-svc 0.51 /
+# esp-idf-hal 0.45, so a floating `branch = "master"` now breaks the patch
+# entirely. This rev is the last one carrying the fix while still at 0.36.1.
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git", rev = "293afef5c6c405430b12094016e3f9efa7d5a2df" }
 
 [package.metadata.esp-idf-sys]
 esp_idf_version = "v5.3"
