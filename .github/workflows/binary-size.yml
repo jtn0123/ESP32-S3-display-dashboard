@@ -84,6 +84,11 @@ jobs:
 
     - name: Build base branch
       run: |
+        # Delete the current-branch binary first. Without this, a base build
+        # that fails leaves the previous step's artifact on disk, the -f check
+        # below finds it, and the report silently compares the branch against
+        # itself -- "0 (0.00%)" for what was actually a broken base.
+        rm -f target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard
         cargo build --release || true
         if [ -f target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard ]; then
           cp target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard base-binary
