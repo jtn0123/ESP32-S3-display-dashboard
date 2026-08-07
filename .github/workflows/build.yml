@@ -1,10 +1,37 @@
 name: Build
 
-on: 
+# Produces the release firmware image and uploads it as an artifact.
+#
+# Lint / format / audit deliberately live in rust-ci.yml and are NOT duplicated
+# here: running them twice doubles a ~20 minute ESP-IDF build for no extra
+# signal. The old `cargo test --lib` step was removed outright -- see the note
+# at the bottom of rust-ci.yml for why host tests cannot compile for this crate.
+
+on:
   push:
     branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - 'sdkconfig.defaults*'
+      - 'partitions*.csv'
+      - 'rust-toolchain.toml'
+      - '.cargo/config.toml'
+      - '.github/workflows/build.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - 'sdkconfig.defaults*'
+      - 'partitions*.csv'
+      - 'rust-toolchain.toml'
+      - '.cargo/config.toml'
+      - '.github/workflows/build.yml'
 
 # Default-deny: without this, jobs inherit the repository default GITHUB_TOKEN
 # scope, which can be read/write. This workflow only reads the repo.
@@ -13,40 +40,58 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # espup queries the GitHub API; an unauthenticated runner hits the rate limit.
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      
-      # NOT SHA-pinned: esp-rs/espup-action does not exist (the repository
-      # returns 404), so there is no commit to pin and this step has been
-      # failing the Build workflow since it was added. Left untouched here
-      # because fixing it means choosing a replacement -- the sibling steps in
-      # rust-ci.yml install espup by curling the release binary instead.
-      - name: Setup Rust ESP toolchain
-        uses: esp-rs/espup-action@v1
-        
+
+      # Was `esp-rs/espup-action@v1`, which 404s -- that repository does not
+      # exist, so this step failed on every run since it was added. The
+      # maintained action is esp-rs/xtensa-toolchain, which installs espup and
+      # the Xtensa Rust fork (upstream stable has no Xtensa target at all).
+      - name: Install Rust for Xtensa
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7.0
+        with:
+          buildtargets: esp32s3
+          ldproxy: true   # required for std / ESP-IDF linking
+          default: true
+
+      - name: Cache cargo + ESP-IDF
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .embuild
+            target
+          key: ${{ runner.os }}-esp-firmware-${{ hashFiles('**/Cargo.lock', '.cargo/config.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-esp-firmware-
+
+      # The target comes from `[build] target` in .cargo/config.toml
+      # (xtensa-esp32s3-espidf), so no --target flag is needed.
       - name: Build firmware
         run: cargo build --release
-        
-      - name: Run Clippy
-        run: cargo clippy -- -D warnings
-        
-      - name: Run tests (host-side only)
-        run: cargo test --lib
-        
-      - name: Check formatting
-        run: cargo fmt -- --check
-        
+
       - name: Check binary size
         run: |
-          ls -lh target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard
-          size target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard || true
-        
+          BINARY_PATH="target/xtensa-esp32s3-espidf/release/esp32-s3-dashboard"
+          ls -lh "$BINARY_PATH"
+          # Host binutils `size` cannot always read an Xtensa ELF; prefer the
+          # cross `size` espup installs, and fall back to the raw file size.
+          SIZE_BIN=$(command -v xtensa-esp-elf-size || command -v xtensa-esp32s3-elf-size || command -v size || true)
+          if [ -n "$SIZE_BIN" ]; then
+            "$SIZE_BIN" "$BINARY_PATH" || stat -c%s "$BINARY_PATH"
+          else
+            stat -c%s "$BINARY_PATH"
+          fi
+
       - name: Upload firmware artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: github.event_name == 'push'
