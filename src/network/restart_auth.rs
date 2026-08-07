@@ -14,9 +14,10 @@
 
 /// The token provisioned at build time, or `None` if the build had none.
 ///
-/// An empty value is treated as absent so that `RESTART_TOKEN=` (which is what
-/// `build.rs` emits when `wifi_config.h` carries no token) does not authorise a
-/// request that presents an empty header.
+/// When nothing is provisioned `build.rs` emits no `cargo:rustc-env` directive
+/// at all, so `option_env!` resolves to `None`. The empty-string arm covers the
+/// other route in: a variable exported as `RESTART_TOKEN=` in the build
+/// environment, which must not authorise a request presenting an empty header.
 pub fn restart_token() -> Option<&'static str> {
     match option_env!("RESTART_TOKEN") {
         Some(token) if !token.is_empty() => Some(token),

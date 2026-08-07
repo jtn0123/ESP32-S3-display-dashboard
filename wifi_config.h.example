@@ -5,18 +5,21 @@
 #define WIFI_SSID "YourWiFiSSID"
 #define WIFI_PASSWORD "YourWiFiPassword"
 
+// Each credential below is resolved at build time from the RESTART_TOKEN /
+// OTA_PASSWORD environment variable FIRST, falling back to the #define here.
+// An endpoint is disabled (503) only when neither source supplies a non-empty
+// value -- an unset environment variable alone does not disable it if the
+// #define is present. The firmware never falls back to a default.
+//
+// Values previously hardcoded in the public repository are rejected outright:
+// the build refuses them and disables the endpoint. Generate fresh ones.
+
 // Shared secret for the remote restart endpoints (POST /restart, POST
-// /api/restart). Generate a unique random value per device, e.g.
+// /api/restart). Unique random value per device, e.g.
 //     openssl rand -hex 24
-// If this is absent (or the RESTART_TOKEN environment variable is unset at
-// build time) both endpoints are DISABLED and return 503 — the firmware will
-// not fall back to a default. Earlier builds hardcoded a shared token that was
-// published in this repository; do not reintroduce one.
 #define RESTART_TOKEN "generate-a-unique-random-value-per-device"
 
 // Password for the OTA firmware-upload endpoint (POST /ota/update, header
-// X-OTA-Password). Same rules as above: unique, random, per device. If absent
-// the endpoint is DISABLED and returns 503. This guards arbitrary firmware
-// upload, so treat it as the most sensitive value in this file. Earlier builds
-// hardcoded "esp32" here.
+// X-OTA-Password). Same rules. This one guards arbitrary firmware upload, so
+// treat it as the most sensitive value in this file.
 #define OTA_PASSWORD "generate-a-unique-random-value-per-device"
