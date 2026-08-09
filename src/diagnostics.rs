@@ -181,7 +181,7 @@ pub fn log_watchdog_feed(_task_name: &str) {
             if *prev != 0 {
                 let delta = now - *prev;
                 if delta > 5_000_000 { // More than 5 seconds
-                    warn!("WATCHDOG: Long gap in {} task: {}ms", task_name, delta / 1000);
+                    warn!("WATCHDOG: Long gap in {} task: {}ms", _task_name, delta / 1000);
                 }
             }
             *prev = now;

@@ -11,8 +11,13 @@ target = "xtensa-esp32s3-espidf"
 [env]
 # Reduce logging in release builds
 ESP_LOGLEVEL = { value = "WARN", force = false }
+# esp-idf-sys checks out and manages ESP-IDF itself, keyed off ESP_IDF_VERSION.
+# Do NOT add IDF_PATH here: a hardcoded absolute path breaks the build for every
+# machine that is not the one it was written on (and for CI), because
+# esp-idf-sys then tries to read tools/cmake/version.cmake out of a directory
+# that does not exist. Point IDF_PATH at an existing checkout via the
+# environment if you deliberately want to reuse a local ESP-IDF.
 ESP_IDF_VERSION = "v5.3.3"
-IDF_PATH = "/Users/justin/.espressif/esp-idf/v5.3"
 # Set Rust log level based on profile
 RUST_LOG = { value = "warn", force = false }
 

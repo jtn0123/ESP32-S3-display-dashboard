@@ -3,6 +3,9 @@ name: Deploy Docs to GitHub Pages
 on:
   push:
     branches: [ main ]
+  # Dispatchable on any branch to verify the docs build. The deploy job below
+  # is gated on `push`, so a manual run from a feature branch builds the docs
+  # without publishing them.
   workflow_dispatch:
 
 permissions:
@@ -14,6 +17,21 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+  # espup queries the GitHub API; an unauthenticated runner hits the rate limit.
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Pin the Xtensa Rust version instead of tracking `latest`.
+  #
+  # 1.95.0.0 turned `panic_immediate_abort` from a build-std feature into a
+  # real panic strategy, so the `build-std-features` line in .cargo/config.toml
+  # makes `core` fail to compile there:
+  #   "panic_immediate_abort is now a real panic strategy!"
+  # 1.88.0.0 is what the project is developed against. Moving to 1.95+ means
+  # dropping build-std-features and setting `panic = "immediate-abort"` in
+  # Cargo.toml instead -- a deliberate change, not a silent CI-only drift.
+  XTENSA_RUST_VERSION: 1.88.0.0
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,64 +39,63 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      # `dtolnay/rust-toolchain@stable` cannot build this crate: Xtensa is not
+      # an upstream Rust target, and rust-toolchain.toml pins `channel = "esp"`.
+      # This action installs espup + Espressif's Rust fork.
+      - name: Install Rust for Xtensa
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7.0
         with:
-          components: rust-docs
+          version: ${{ env.XTENSA_RUST_VERSION }}
+          buildtargets: esp32s3
+          ldproxy: true   # required for std / ESP-IDF linking
+          default: true
 
       - name: Install ESP-IDF dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git wget flex bison gperf python3 python3-pip python3-setuptools cmake ninja-build ccache libffi-dev libssl-dev dfu-util
 
-      - name: Cache ESP-IDF
+      - name: Cache cargo + ESP-IDF
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.espressif
-          key: ${{ runner.os }}-esp-idf-v5.1
-          restore-keys: |
-            ${{ runner.os }}-esp-idf-
-
-      - name: Install ESP toolchain
-        run: |
-          curl -LO https://github.com/esp-rs/espup/releases/latest/download/espup-x86_64-unknown-linux-gnu
-          chmod +x espup-x86_64-unknown-linux-gnu
-          ./espup-x86_64-unknown-linux-gnu install
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Cache cargo registry
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
+          # .embuild is where esp-idf-sys checks out ESP-IDF (the version comes
+          # from ESP_IDF_VERSION in .cargo/config.toml -- do NOT re-declare it
+          # as a step env var here, that silently pins a different ESP-IDF).
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            .embuild
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-esp-docs-${{ hashFiles('**/Cargo.lock', '.cargo/config.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-esp-docs-
 
       - name: Build documentation
         env:
-          ESP_IDF_VERSION: v5.1
-          ESP_IDF_SDKCONFIG_DEFAULTS: $(pwd)/sdkconfig.defaults
+          # Was `$(pwd)/sdkconfig.defaults`, which is not expanded in a YAML env
+          # block and was passed to esp-idf-sys as a literal string.
+          ESP_IDF_SDKCONFIG_DEFAULTS: ${{ github.workspace }}/sdkconfig.defaults
           RUSTDOCFLAGS: --enable-index-page -Zunstable-options
-        run: |
-          source $HOME/export-esp.sh
-          cargo doc --no-deps --document-private-items
+        run: cargo doc --no-deps --document-private-items
 
       - name: Add index redirect
         run: |
-          echo '<meta http-equiv="refresh" content="0; url=esp32_s3_display_dashboard/index.html">' > target/doc/index.html
+          echo '<meta http-equiv="refresh" content="0; url=esp32_s3_display_dashboard/index.html">' > target/xtensa-esp32s3-espidf/doc/index.html
 
       - name: Setup Pages
+        if: github.event_name == 'push'
         uses: actions/configure-pages@1f0c5cde4bc74cd7e1254d0cb4de8d49e9068c7d # v4
 
       - name: Upload artifact
+        if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
-          path: ./target/doc
+          path: ./target/xtensa-esp32s3-espidf/doc
 
   deploy:
+    # Only publish from main. A workflow_dispatch run on a feature branch stops
+    # after the build job, which is what makes the docs build verifiable in CI.
+    if: github.event_name == 'push'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
