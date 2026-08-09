@@ -7,6 +7,7 @@ Tests all endpoints, methods, edge cases, and security aspects.
 import pytest
 import requests
 import json
+import os
 import time
 import base64
 from typing import Dict, List, Tuple, Optional
@@ -15,6 +16,15 @@ import random
 import string
 
 from utils.base_test import ESP32TestBase as BaseTest
+
+# The restart token is provisioned per build (see build.rs / network::restart_auth)
+# and is deliberately absent from this repository. Tests that exercise a
+# successful restart need the same value the firmware under test was built with.
+RESTART_TOKEN = os.environ.get("RESTART_TOKEN", "")
+requires_restart_token = pytest.mark.skipif(
+    not RESTART_TOKEN,
+    reason="RESTART_TOKEN not set; export the token this firmware was built with",
+)
 
 
 class TestWebServerComplete(BaseTest):
@@ -76,25 +86,26 @@ class TestWebServerComplete(BaseTest):
             batch = get_endpoints[i:i+batch_size]
             
             for endpoint, expected_status, expected_content_type in batch:
-            try:
-                response = tracked_request("GET", endpoint)
-                
-                # Check status code
-                if response.status_code != expected_status:
-                    failed.append(f"{endpoint}: status {response.status_code} != {expected_status}")
-                    continue
-                    
-                # Check content type
-                content_type = response.headers.get("Content-Type", "").split(";")[0].strip()
-                if content_type != expected_content_type:
-                    failed.append(f"{endpoint}: content-type '{content_type}' != '{expected_content_type}'")
-                    
-                self.log_info(f"✓ GET {endpoint} [{expected_status}, {expected_content_type}]")
-                
-            except Exception as e:
-                failed.append(f"{endpoint}: {str(e)}")
-                self.log_error(f"✗ GET {endpoint}: {str(e)}")
-            
+                try:
+                    response = tracked_request("GET", endpoint)
+
+                    # Check status code
+                    if response.status_code != expected_status:
+                        failed.append(f"{endpoint}: status {response.status_code} != {expected_status}")
+                        continue
+
+                    # Check content type
+                    content_type = response.headers.get("Content-Type", "").split(";")[0].strip()
+                    if content_type != expected_content_type:
+                        failed.append(f"{endpoint}: content-type '{content_type}' != '{expected_content_type}'")
+
+                    self.log_info(f"✓ GET {endpoint} [{expected_status}, {expected_content_type}]")
+
+                except Exception as e:
+                    failed.append(f"{endpoint}: {str(e)}")
+                    self.log_error(f"✗ GET {endpoint}: {str(e)}")
+
+
             # Delay between batches
             if i + batch_size < len(get_endpoints):
                 time.sleep(2)
@@ -128,18 +139,12 @@ class TestWebServerComplete(BaseTest):
                 "data": {"brightness": 200},
                 "expected_status": 200
             },
-            # Restart with auth
+            # Restart without auth (always rejected; 503 when the build
+            # provisioned no token at all, 403 when it did)
             {
                 "endpoint": "/api/restart",
                 "data": {},
-                "headers": {"X-Restart-Token": "esp32-restart"},
-                "expected_status": 200
-            },
-            # Restart without auth
-            {
-                "endpoint": "/api/restart",
-                "data": {},
-                "expected_status": 403
+                "expected_status": [403, 503]
             },
             # Screenshot request
             {
@@ -155,9 +160,12 @@ class TestWebServerComplete(BaseTest):
             headers = test.get("headers", {})
             expected = test["expected_status"]
             
+            # expected_status may be a single code or a list of acceptable codes
+            allowed = expected if isinstance(expected, (list, tuple)) else [expected]
+
             try:
                 response = tracked_request("POST", endpoint, json=data, headers=headers)
-                assert response.status_code == expected, \
+                assert response.status_code in allowed, \
                     f"{endpoint}: got {response.status_code}, expected {expected}"
                 self.log_info(f"✓ POST {endpoint} -> {response.status_code}")
             except Exception as e:
@@ -318,24 +326,34 @@ class TestWebServerComplete(BaseTest):
                 pass
                 
     def test_authentication_endpoints(self, tracked_request):
-        """Test authentication on protected endpoints."""
-        # Test restart endpoint authentication
+        """Test authentication on protected endpoints.
+
+        The correct-token case is deliberately absent: a successful call
+        restarts the device out from under the rest of the suite. What matters
+        for security is that every wrong credential is refused, which is what
+        this covers. The old version asserted 200 for the hardcoded
+        "esp32-restart" token -- that constant is gone, and the value is now
+        provisioned per build.
+        """
+        # Rejections are 403 when a token is provisioned, 503 when the build
+        # has none (endpoint disabled). Both are refusals; neither restarts.
+        refused = [403, 503]
         auth_tests = [
-            # Correct token
-            ("esp32-restart", 200),
             # Wrong token
-            ("wrong-token", 403),
+            ("wrong-token", refused),
+            # The token this repo used to hardcode -- must no longer work
+            ("esp32-restart", refused),
             # No token
-            (None, 403),
+            (None, refused),
             # Empty token
-            ("", 403),
+            ("", refused),
         ]
-        
+
         for token, expected_status in auth_tests:
             headers = {"X-Restart-Token": token} if token is not None else {}
             response = tracked_request("POST", "/api/restart", headers=headers)
-            assert response.status_code == expected_status, \
-                f"Token '{token}': got {response.status_code}, expected {expected_status}"
+            assert response.status_code in expected_status, \
+                f"Token '{token}': got {response.status_code}, expected one of {expected_status}"
                 
     def test_config_backup_restore(self, tracked_request):
         """Test configuration backup and restore cycle."""

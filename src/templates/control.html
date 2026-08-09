@@ -753,7 +753,9 @@
             try {
                 const response = await fetch('/api/restart', {
                     method: 'POST',
-                    headers: { 'X-Restart-Token': 'esp32-restart' }
+                    // Substituted at serve time; see network::restart_auth.
+                    // Never hardcode a token here.
+                    headers: { 'X-Restart-Token': '{{RESTART_TOKEN}}' }
                 });
                 if (response.ok) {
                     showAlert('Device restarting...', 'success');

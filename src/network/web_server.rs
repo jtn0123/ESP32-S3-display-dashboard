@@ -387,11 +387,20 @@ impl WebConfigServer {
 
         // Restart endpoint for remote device management - protected
         server.fn_handler("/restart", esp_idf_svc::http::Method::Post, move |req| {
-            // Check for authentication header
-            const RESTART_TOKEN: &str = "esp32-restart";
+            // Token is provisioned at build time; see network::restart_auth.
+            // With none provisioned the endpoint is closed rather than falling
+            // back to a shared default.
+            if crate::network::restart_auth::restart_token().is_none() {
+                log::error!("Restart rejected - no RESTART_TOKEN provisioned at build time");
+                return ErrorResponse::service_unavailable(
+                    "Restart endpoint disabled - no restart token provisioned in this build",
+                )
+                .send(req);
+            }
+
             let auth_header = req.header("X-Restart-Token").unwrap_or("");
-            
-            if auth_header != RESTART_TOKEN {
+
+            if !crate::network::restart_auth::token_matches(auth_header) {
                 log::warn!("Restart rejected - invalid or missing authentication token");
                 return ErrorResponse::bad_request("Forbidden - Invalid restart token").send(req);
             }
@@ -510,11 +519,22 @@ impl WebConfigServer {
             // OTA update endpoint
             let ota_manager_clone2 = ota_manager.clone();
             server.fn_handler("/ota/update", esp_idf_svc::http::Method::Post, move |mut req| {
-                // Basic password protection for OTA
-                const OTA_PASSWORD: &str = "esp32"; // Change this to your preferred password
-                
+                // Password is provisioned at build time; see network::restart_auth.
+                // This was a four-letter hardcoded constant in a public repo, which
+                // made flashing arbitrary firmware to any reachable device a matter
+                // of reading the source. No default: an unprovisioned build closes
+                // the endpoint.
+                if crate::network::restart_auth::ota_password().is_none() {
+                    log::error!("OTA update rejected - no OTA_PASSWORD provisioned at build time");
+                    return error_response(
+                        req,
+                        503,
+                        "OTA endpoint disabled - no OTA password provisioned in this build",
+                    );
+                }
+
                 let auth_header = req.header("X-OTA-Password").unwrap_or("");
-                if auth_header != OTA_PASSWORD {
+                if !crate::network::restart_auth::ota_password_matches(auth_header) {
                     log::warn!("OTA update rejected - invalid password");
                     return error_response(req, 401, "Unauthorized - Invalid OTA password");
                 }
@@ -1024,11 +1044,21 @@ impl WebConfigServer {
 
         // Restart endpoint - protected
         server.fn_handler("/api/restart", esp_idf_svc::http::Method::Post, move |req| {
-            // Check for authentication header
-            const RESTART_TOKEN: &str = "esp32-restart";
+            // Token is provisioned at build time; see network::restart_auth.
+            // With none provisioned the endpoint is closed rather than falling
+            // back to a shared default.
+            if crate::network::restart_auth::restart_token().is_none() {
+                log::error!("API restart rejected - no RESTART_TOKEN provisioned at build time");
+                return error_response(
+                    req,
+                    503,
+                    "Restart endpoint disabled - no restart token provisioned in this build",
+                );
+            }
+
             let auth_header = req.header("X-Restart-Token").unwrap_or("");
-            
-            if auth_header != RESTART_TOKEN {
+
+            if !crate::network::restart_auth::token_matches(auth_header) {
                 log::warn!("API restart rejected - invalid or missing authentication token");
                 return error_response(req, 403, "Invalid restart token");
             }
