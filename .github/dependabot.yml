@@ -26,13 +26,6 @@ updates:
     # Security updates get priority
     allow:
       - dependency-type: "all"
-    # Review direct dependencies more carefully
-    reviewers:
-      - "jtn0123"
-    # Ignore specific dependencies if needed
-    ignore:
-      # Example: - dependency-name: "esp-idf-sys"
-      #            versions: ["0.x.x"]
 
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
