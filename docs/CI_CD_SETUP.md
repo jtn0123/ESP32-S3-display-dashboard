@@ -1,6 +1,6 @@
 # CI/CD Setup for ESP32-S3 Display Dashboard
 
-This document describes the continuous integration and continuous deployment setup for both Arduino and Rust implementations.
+This document describes the continuous integration and continuous deployment setup for the Rust implementation.
 
 ## GitHub Actions Workflows
 
@@ -23,16 +23,6 @@ Runs on every push and pull request affecting the Rust codebase.
 - Checks binary size to prevent bloat
 - Runs security audits on dependencies
 
-### 2. Arduino CI (`.github/workflows/arduino-ci.yml`)
-
-Runs on every push and pull request affecting the Arduino codebase.
-
-#### Jobs:
-
-- **Compile**: Validates the Arduino sketch compiles
-- Installs all required libraries
-- Reports sketch size and memory usage
-
 ## Local CI Testing
 
 ### Running Rust CI Locally
@@ -53,20 +43,6 @@ cargo install cargo-audit
 cargo audit
 ```
 
-### Running Arduino CI Locally
-
-```bash
-# Install Arduino CLI
-curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
-
-# Install ESP32 board
-arduino-cli core update-index
-arduino-cli core install esp32:esp32
-
-# Compile
-arduino-cli compile --fqbn esp32:esp32:lilygo_t_display_s3 minimal_dashboard
-```
-
 ## Build Optimization
 
 ### Rust Release Builds
@@ -83,10 +59,9 @@ strip = true        # Strip symbols
 
 ### Size Monitoring
 
-Both workflows report binary/sketch sizes to track bloat:
+Binary sizes are reported to track bloat:
 
 - Rust: Uses `size` command on the compiled binary
-- Arduino: Parses compiler output for sketch size
 
 ## Branch Protection
 
@@ -97,7 +72,6 @@ Recommended branch protection rules for `main`:
    - Rust CI / Check
    - Rust CI / Test
    - Rust CI / Format
-   - Arduino CI / Compile
 3. Require branches to be up to date
 4. Include administrators
 
@@ -151,9 +125,6 @@ The CI tracks several metrics:
 
 3. **Format failures**
    - Auto-fix with: `cargo fmt`
-
-4. **Arduino library not found**
-   - Add to workflow: `arduino-cli lib install "LibraryName"`
 
 ## Future Enhancements
 
